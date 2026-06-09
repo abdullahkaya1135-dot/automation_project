@@ -99,14 +99,38 @@ Suggested `.env` values:
 
 ```text
 IFS_BASE_URL=https://ifs.simsekplastik.com
-IFS_TOKEN_URL=<token endpoint from IFS IAM/OpenID configuration>
-IFS_CLIENT_ID=<client id>
-IFS_CLIENT_SECRET=<client secret>
+IFS_TOKEN_URL=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/token
+IFS_CLIENT_ID=IFS_PRODUCTİON_DEPT
+IFS_CLIENT_SECRET=<store only in .env or a secret store; do not commit>
 IFS_CONTRACT=S01
 IFS_COMPANY_ID=C01
 IFS_DISPATCH_FILTER_ID=PET
 IFS_PART_PREFIX=HM-02
 IFS_U1_LOCATION=U1
+```
+
+Confirm the exact client ID spelling and case in `IAM Clients`. If the IFS
+record uses normal Latin `I` instead of Turkish dotted `İ`, copy the value from
+IFS exactly.
+
+The client secret was intentionally not written into this Markdown document.
+Store it only in local configuration such as `.env`, and keep `.env` out of
+version control.
+
+The OpenID discovery document was confirmed at:
+
+```text
+https://ifs.simsekplastik.com/auth/realms/prod/.well-known/openid-configuration
+```
+
+Confirmed OAuth details:
+
+```text
+issuer=https://ifs.simsekplastik.com/auth/realms/prod
+authorization_endpoint=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/auth
+token_endpoint=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/token
+client_credentials grant is supported
+client_secret_basic and client_secret_post are supported
 ```
 
 Use `httpx` for HTTP calls. It already exists in `requirements.txt`.
