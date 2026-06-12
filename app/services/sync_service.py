@@ -4,10 +4,9 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .config import Settings
-from .database import commit_session, create_session
-from .excel_service import ENTRY_FIELD_NAMES, append_entry_to_workbook
-from .models import (
+from ..config import Settings
+from ..database import commit_session, create_session
+from ..models import (
     SYNC_STATUS_FAILED_EXCEL,
     SYNC_STATUS_PENDING_EXCEL,
     SYNC_STATUS_SYNCED,
@@ -15,7 +14,7 @@ from .models import (
     TourContext,
     utc_now,
 )
-
+from .excel_service import ENTRY_FIELD_NAMES, append_entry_to_workbook
 
 UNSYNCED_STATUSES = (SYNC_STATUS_PENDING_EXCEL, SYNC_STATUS_FAILED_EXCEL)
 
@@ -38,6 +37,8 @@ def serialize_tour_context(context: TourContext | None) -> dict[str, Any] | None
         return None
     return {
         "id": context.id,
+        "client_request_id": context.client_request_id,
+        "client_recorded_at": _timestamp(context.client_recorded_at),
         "date": context.date,
         "ambient_temp": context.ambient_temp,
         "production_engineer": context.production_engineer,
@@ -51,6 +52,8 @@ def serialize_tour_context(context: TourContext | None) -> dict[str, Any] | None
 def serialize_entry(entry: Entry) -> dict[str, Any]:
     return {
         "id": entry.id,
+        "client_request_id": entry.client_request_id,
+        "client_recorded_at": _timestamp(entry.client_recorded_at),
         "tour_context_id": entry.tour_context_id,
         "tour_context": serialize_tour_context(entry.tour_context),
         "payload": entry_payload(entry),
@@ -96,7 +99,11 @@ def attempt_excel_append(
     failure_status: str,
 ) -> dict[str, Any]:
     try:
-        row_number = append_entry_to_workbook(settings, entry)
+        row_number = append_entry_to_workbook(
+            settings,
+            entry,
+            reuse_existing_match=failure_status == SYNC_STATUS_FAILED_EXCEL,
+        )
     except Exception as exc:
         entry.sync_status = failure_status
         entry.last_error = str(exc) or exc.__class__.__name__

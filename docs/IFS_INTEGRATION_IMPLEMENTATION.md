@@ -1,4 +1,4 @@
-# IFS Integration Implementation Guide
+﻿# IFS Integration Implementation Guide
 
 This document captures the confirmed IFS Cloud API integration needed to replace the
 manual Excel export process for:
@@ -84,13 +84,14 @@ OAuth token before testing.
 
 Use OAuth for the app integration.
 
-Recommended setup:
+Current setup:
 
 ```text
-Dedicated service/integration user
+Normal IFS user credentials
 Dedicated IAM client
-Client credentials or service-account OAuth flow
-Read-only permission set assigned to the service account user
+OAuth password grant
+Bearer token on every IFS projection request
+Read-only permission set assigned to the IFS user
 ```
 
 Do not store browser cookies or HAR tokens in the app.
@@ -100,8 +101,10 @@ Suggested `.env` values:
 ```text
 IFS_BASE_URL=https://ifs.simsekplastik.com
 IFS_TOKEN_URL=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/token
-IFS_CLIENT_ID=IFS_PRODUCTİON_DEPT
-IFS_CLIENT_SECRET=<store only in .env or a secret store; do not commit>
+IFS_CLIENT_ID=<store only in .env or a secret store; do not commit>
+IFS_CLIENT_SECRET=<optional; store only in .env or a secret store; do not commit>
+IFS_USERNAME=<store only in .env or a secret store; do not commit>
+IFS_PASSWORD=<store only in .env or a secret store; do not commit>
 IFS_CONTRACT=S01
 IFS_COMPANY_ID=C01
 IFS_DISPATCH_FILTER_ID=PET
@@ -124,12 +127,11 @@ https://ifs.simsekplastik.com/auth/realms/prod/.well-known/openid-configuration
 ```
 
 Confirmed OAuth details:
-
 ```text
 issuer=https://ifs.simsekplastik.com/auth/realms/prod
 authorization_endpoint=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/auth
 token_endpoint=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/token
-client_credentials grant is supported
+password grant is used by this app
 client_secret_basic and client_secret_post are supported
 ```
 
@@ -606,27 +608,10 @@ One operation material call succeeds
 Do not expose secrets in diagnostics output.
 
 ## Implementation Notes For Existing App
+The app calls `GetOperations` directly with a bearer token. It does not parse
+saved browser payloads.
 
-The current app already has `SHOP_ORDER_SOURCE_PATH` and parses a saved OData
-payload in:
-
-```text
-app/shop_order_source.py
-```
-
-The IFS integration can replace this manual file workflow by calling
-`GetOperations` directly.
-
-The existing `ShopOrderOption` model currently extracts:
-
-```text
-OrderNo
-ResourceId
-WorkCenterNo
-PartDescription
-```
-
-IFS `GetOperations` uses:
+The `ShopOrderOption` model extracts live IFS operation fields:
 
 ```text
 OrderNo
@@ -644,8 +629,7 @@ WorkCenterNo        -> work_center_no
 PartNoDesc          -> part_description
 ```
 
-If keeping backward compatibility, support both `ResourceId` and
-`PreferredResourceId` when parsing operation rows.
+The app only consumes the live IFS `PreferredResourceId` field.
 
 ## URL Builder Details
 

@@ -1,0 +1,35 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+exclude = [
+    ".git",
+    ".local",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "data/backups",
+    "local-certs",
+    "logs",
+    "phone-test",
+    "runtime-logs",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",
+    "RUF001",
+]
+
+[tool.mypy]
+python_version = "3.14"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+ignore_missing_imports = true
+pretty = true

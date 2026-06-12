@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Proses Girişi Oturumu</title>
-    <link rel="stylesheet" href="/static/app.css">
+    {% include "partials/app_styles.html" %}
   </head>
   <body class="login-page">
     <main class="app-shell auth-shell">
@@ -29,6 +29,6 @@
         <p id="login-error" class="form-message error" role="alert" hidden></p>
       </form>
     </main>
-    <script src="/static/app.js?v=20260609-no-machine-cache"></script>
+    {% include "partials/app_script.html" %}
   </body>
 </html>

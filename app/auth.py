@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from .config import Settings, get_settings
 
-
 SESSION_COOKIE_NAME = "process_session"
 SESSION_MAX_AGE_SECONDS = 12 * 60 * 60
 
@@ -34,7 +33,7 @@ def _base64_decode(value: str) -> bytes:
 
 
 def _session_key(settings: Settings) -> bytes:
-    return f"process-entry-session:{settings.app_pin}".encode("utf-8")
+    return f"process-entry-session:{settings.session_secret}".encode()
 
 
 def _sign(payload: str, settings: Settings) -> str:

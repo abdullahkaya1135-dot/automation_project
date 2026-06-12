@@ -7,3 +7,5 @@ class TourContextCreate(BaseModel):
     production_engineer: str = Field(..., min_length=1, max_length=255)
     shift_chief: str = Field(..., min_length=1, max_length=255)
     shift: str | None = Field(default=None, max_length=64)
+    client_request_id: str | None = Field(default=None, max_length=64)
+    client_recorded_at: str | None = Field(default=None, max_length=64)

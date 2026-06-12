@@ -1,9 +1,7 @@
 import re
 import shutil
-import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +10,20 @@ from openpyxl.utils import get_column_letter
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from .config import Settings
-
+from ..config import Settings
+from ..domain.entry_fields import (
+    ENTRY_FIELD_NAMES,
+    EXCEL_FIELD_NAME_BY_COLUMN,
+    blank_excluded_section_fields,
+)
+from .excel_write_lock import serialized_excel_write
+from .workbook_utils import (
+    backup_filename,
+    clean_text,
+    has_meaningful_value,
+    normalize_header,
+    prune_backups,
+)
 
 EXCEL_COLUMN_COUNT = 25
 HEADER_ROW = 1
@@ -21,36 +31,6 @@ EXCEL_COLUMN_LETTERS = tuple(
     get_column_letter(column_index)
     for column_index in range(1, EXCEL_COLUMN_COUNT + 1)
 )
-ENTRY_FIELD_NAMES = tuple(
-    f"col_{letter}" for letter in "abcdefghijklmnopq"
-)
-EXCEL_FIELD_NAME_BY_COLUMN = {
-    "A": "col_a",
-    "B": "col_b",
-    "C": "col_c",
-    "D": "col_d",
-    "E": "col_e",
-    "F": "col_f",
-    "G": None,
-    "H": "col_g",
-    "I": None,
-    "J": "col_h",
-    "K": "col_i",
-    "L": "col_j",
-    "M": "col_k",
-    "N": "col_l",
-    "O": "col_m",
-    "P": "col_n",
-    "Q": "col_o",
-    "R": None,
-    "S": None,
-    "T": None,
-    "U": None,
-    "V": None,
-    "W": None,
-    "X": "col_p",
-    "Y": "col_q",
-}
 NUMERIC_COLUMN_LETTERS = frozenset(
     {
         "B",
@@ -101,7 +81,6 @@ HEADER_KEYWORDS_BY_COLUMN = {
 }
 DECIMAL_NUMBER_PATTERN = re.compile(r"^[+-]?\d+(?:[,.]\d+)?$")
 HYPHEN_RANGE_PATTERN = re.compile(r"\d\s*-\s*\d")
-INVALID_BACKUP_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]+')
 
 
 class ExcelServiceError(RuntimeError):
@@ -174,45 +153,9 @@ def open_workbook_sheet(
     return workbook, workbook[settings.sheet_name]
 
 
-def _clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
-def _has_meaningful_value(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    return True
-
-
-def _normalize_header(value: Any) -> str:
-    text = _clean_text(value).casefold()
-    text = "".join(
-        character
-        for character in unicodedata.normalize("NFKD", text)
-        if not unicodedata.combining(character)
-    )
-    translation = str.maketrans(
-        {
-            "\u00e7": "c",
-            "\u011f": "g",
-            "\u0131": "i",
-            "\u00f6": "o",
-            "\u015f": "s",
-            "\u00fc": "u",
-        }
-    )
-    normalized = text.translate(translation)
-    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
-
-
 def read_headers(worksheet: Worksheet) -> list[str]:
     return [
-        _clean_text(worksheet.cell(row=HEADER_ROW, column=column_index).value)
+        clean_text(worksheet.cell(row=HEADER_ROW, column=column_index).value)
         for column_index in range(1, EXCEL_COLUMN_COUNT + 1)
     ]
 
@@ -231,7 +174,7 @@ def validate_headers(worksheet: Worksheet) -> list[str]:
         )
 
     normalized_headers = {
-        column_letter: _normalize_header(header)
+        column_letter: normalize_header(header)
         for column_letter, header in zip(EXCEL_COLUMN_LETTERS, headers, strict=True)
     }
     mismatches: list[str] = []
@@ -262,7 +205,7 @@ def detect_last_value_row(worksheet: Worksheet) -> int:
             ),
             start=1,
         ):
-            if any(_has_meaningful_value(value) for value in row):
+            if any(has_meaningful_value(value) for value in row):
                 last_row = row_index
         return last_row
 
@@ -273,7 +216,7 @@ def detect_last_value_row(worksheet: Worksheet) -> int:
     for (row_index, column_index), cell in cells.items():
         if column_index > EXCEL_COLUMN_COUNT:
             continue
-        if _has_meaningful_value(cell.value):
+        if has_meaningful_value(cell.value):
             last_row = max(last_row, row_index)
     return last_row
 
@@ -300,43 +243,61 @@ def normalize_excel_value(value: Any, column_letter: str) -> Any:
     return value
 
 
-def _payload_value(payload: Mapping[str, Any] | object, field_name: str | None) -> Any:
-    if field_name is None:
+def _normalized_existing_excel_value(value: Any) -> Any:
+    if value is None:
         return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return value
+
+
+def _excel_values_match(existing: Any, expected: Any) -> bool:
+    return _normalized_existing_excel_value(existing) == expected
+
+
+def _row_matches_expected(
+    existing_values: tuple[Any, ...],
+    expected_values: list[Any],
+) -> bool:
+    return all(
+        _excel_values_match(existing, expected)
+        for existing, expected in zip(existing_values, expected_values, strict=True)
+    )
+
+
+def _payload_value(payload: Mapping[str, Any] | object, field_name: str) -> Any:
     if isinstance(payload, Mapping):
         return payload.get(field_name)
     return getattr(payload, field_name, None)
 
 
 def build_excel_row(payload: Mapping[str, Any] | object) -> list[Any]:
+    if isinstance(payload, Mapping):
+        section_payload = blank_excluded_section_fields(payload)
+    else:
+        section_payload = blank_excluded_section_fields(
+            {
+                field_name: getattr(payload, field_name, None)
+                for field_name in ENTRY_FIELD_NAMES
+            }
+        )
+
     row_values: list[Any] = []
     for column_letter in EXCEL_COLUMN_LETTERS:
-        value = _payload_value(payload, EXCEL_FIELD_NAME_BY_COLUMN[column_letter])
+        value = _payload_value(
+            section_payload,
+            EXCEL_FIELD_NAME_BY_COLUMN[column_letter],
+        )
         row_values.append(normalize_excel_value(value, column_letter))
     return row_values
-
-
-def _backup_filename(source_path: Path) -> str:
-    safe_stem = INVALID_BACKUP_FILENAME_CHARS.sub("_", source_path.stem).strip()
-    if not safe_stem:
-        safe_stem = "workbook"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    return f"{safe_stem}_{timestamp}{source_path.suffix or '.xlsx'}"
-
-
-def _prune_backups(backup_dir: Path, source_path: Path, keep_count: int) -> None:
-    safe_stem = INVALID_BACKUP_FILENAME_CHARS.sub("_", source_path.stem).strip()
-    pattern = f"{safe_stem}_*{source_path.suffix or '.xlsx'}"
-    backups = sorted(backup_dir.glob(pattern), reverse=True)
-    for old_backup in backups[keep_count:]:
-        old_backup.unlink(missing_ok=True)
 
 
 def create_workbook_backup(settings: Settings) -> Path:
     source_path = Path(settings.excel_path)
     backup_dir = Path(settings.backup_dir)
     backup_dir.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_dir / _backup_filename(source_path)
+    backup_path = backup_dir / backup_filename(source_path, "workbook")
 
     try:
         shutil.copyfile(source_path, backup_path)
@@ -353,11 +314,55 @@ def create_workbook_backup(settings: Settings) -> Path:
             f"Çalışma kitabı yedeği oluşturulamadı: {settings.excel_path} ({exc})"
         ) from exc
 
-    _prune_backups(backup_dir, source_path, settings.backup_keep_count)
+    prune_backups(backup_dir, source_path, settings.backup_keep_count, "workbook")
     return backup_path
 
 
 def append_entry_to_workbook(
+    settings: Settings,
+    payload: Mapping[str, Any] | object,
+    *,
+    reuse_existing_match: bool = False,
+) -> int:
+    with serialized_excel_write("process_entry_append"):
+        if reuse_existing_match:
+            existing_row = _find_matching_entry_row_unlocked(settings, payload)
+            if existing_row is not None:
+                return existing_row
+        return _append_entry_to_workbook_unlocked(settings, payload)
+
+
+def _find_matching_entry_row_unlocked(
+    settings: Settings,
+    payload: Mapping[str, Any] | object,
+) -> int | None:
+    workbook: Workbook | None = None
+    try:
+        workbook, worksheet = open_workbook_sheet(settings)
+        validate_headers(worksheet)
+        last_value_row = detect_last_value_row(worksheet)
+        if last_value_row <= HEADER_ROW:
+            return None
+
+        expected_values = build_excel_row(payload)
+        for row_number, values in enumerate(
+            worksheet.iter_rows(
+                min_row=HEADER_ROW + 1,
+                max_row=last_value_row,
+                max_col=EXCEL_COLUMN_COUNT,
+                values_only=True,
+            ),
+            start=HEADER_ROW + 1,
+        ):
+            if _row_matches_expected(values, expected_values):
+                return row_number
+        return None
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+
+def _append_entry_to_workbook_unlocked(
     settings: Settings,
     payload: Mapping[str, Any] | object,
 ) -> int:

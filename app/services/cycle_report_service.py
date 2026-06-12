@@ -1,3 +1,4 @@
+import asyncio
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -11,10 +12,10 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
 
-from .config import Settings
+from ..config import Settings
+from ..integrations.ifs_client import fetch_pet_ongoing_operations
 from .excel_service import detect_last_value_row, open_workbook_sheet, validate_headers
-from .shop_order_source import ShopOrderOption, read_shop_order_options
-
+from .shop_order_source import ShopOrderOption, shop_order_options_from_ifs_operations
 
 REPORT_HEADERS = (
     "Makine Adı",
@@ -430,6 +431,14 @@ def build_cycle_report_rows(
     return report_rows
 
 
+def _read_shop_order_options(settings: Settings) -> list[ShopOrderOption]:
+    try:
+        rows = asyncio.run(fetch_pet_ongoing_operations(settings))
+    except Exception as exc:
+        raise CycleReportError(str(exc) or exc.__class__.__name__) from exc
+    return shop_order_options_from_ifs_operations(rows)
+
+
 def _write_report(output_path: Path, rows: list[CycleReportRow]) -> None:
     workbook = Workbook()
     worksheet = workbook.active
@@ -482,10 +491,7 @@ def create_cycle_report(settings: Settings, report_date: Date) -> CycleReportRes
             f"{report_date.isoformat()} tarihi için PROSES 2026 kaydı bulunamadı."
         )
 
-    try:
-        shop_orders = read_shop_order_options(settings.shop_order_source_path)
-    except Exception as exc:
-        raise CycleReportError(str(exc) or exc.__class__.__name__) from exc
+    shop_orders = _read_shop_order_options(settings)
 
     cycle_entries = _read_cycle_table(settings)
     report_rows = build_cycle_report_rows(process_rows, shop_orders, cycle_entries)

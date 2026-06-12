@@ -1,0 +1,172 @@
+      <section class="work-section" aria-labelledby="auxiliary-systems-heading">
+        <div class="section-heading row-heading">
+          <div>
+            <h2 id="auxiliary-systems-heading">Yardımcı Sistemler</h2>
+            <p id="auxiliary-date-label" class="form-message"></p>
+          </div>
+          <button id="retry-auxiliary-sync" type="button" class="secondary-action">Tekrar dene</button>
+        </div>
+        <p id="auxiliary-message" class="form-message" aria-live="polite"></p>
+
+        <form id="auxiliary-form" class="stacked-form">
+          <input id="auxiliary-date" name="recorded_date" type="hidden">
+
+          <fieldset class="field-group">
+            <legend>Elektromotorlar</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label for="tower-frequency">Kule çıkış frekansı (Hz)</label>
+                <input id="tower-frequency" name="tower_frequency" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="tower-set-pressure">Kule set değeri (bar)</label>
+                <input id="tower-set-pressure" name="tower_set_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="tower-feedback-pressure">Kule geri besleme (bar)</label>
+                <input id="tower-feedback-pressure" name="tower_feedback_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="chiller-motor-frequency">Chiller çıkış frekansı (Hz)</label>
+                <input id="chiller-motor-frequency" name="chiller_motor_frequency" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="chiller-motor-set-pressure">Chiller set değeri (bar)</label>
+                <input id="chiller-motor-set-pressure" name="chiller_motor_set_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="chiller-motor-feedback-pressure">Chiller geri besleme (bar)</label>
+                <input id="chiller-motor-feedback-pressure" name="chiller_motor_feedback_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend>Soğutucular</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label for="termokar-1-temp-set">Termokar 1 ısı set değeri</label>
+                <input id="termokar-1-temp-set" name="termokar_chiller_1_temp_set" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="termokar-1-inlet-temp">Termokar 1 giriş ısısı</label>
+                <input id="termokar-1-inlet-temp" name="termokar_chiller_1_inlet_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="termokar-1-outlet-temp">Termokar 1 çıkış ısısı</label>
+                <input id="termokar-1-outlet-temp" name="termokar_chiller_1_outlet_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="termokar-2-temp-set">Termokar 2 ısı set değeri</label>
+                <input id="termokar-2-temp-set" name="termokar_chiller_2_temp_set" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="termokar-2-inlet-temp">Termokar 2 giriş ısısı</label>
+                <input id="termokar-2-inlet-temp" name="termokar_chiller_2_inlet_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="termokar-2-outlet-temp">Termokar 2 çıkış ısısı</label>
+                <input id="termokar-2-outlet-temp" name="termokar_chiller_2_outlet_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="planer-temp-set">Planer ısı set değeri</label>
+                <input id="planer-temp-set" name="planer_temp_set" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="planer-inlet-temp">Planer giriş ısısı</label>
+                <input id="planer-inlet-temp" name="planer_inlet_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="planer-outlet-temp">Planer çıkış ısısı</label>
+                <input id="planer-outlet-temp" name="planer_outlet_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="itech-temp-set">ITECH ısı set değeri</label>
+                <input id="itech-temp-set" name="itech_temp_set" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="itech-current-temp">ITECH mevcut değer</label>
+                <input id="itech-current-temp" name="itech_current_temp" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend>Kompresörler</legend>
+            <div class="field-grid compact-grid">
+              <div class="field">
+                <label for="compressor-high-708-pressure">Yüksek basınç 708</label>
+                <input id="compressor-high-708-pressure" name="compressor_high_708_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-high-709-pressure">Yüksek basınç 709</label>
+                <input id="compressor-high-709-pressure" name="compressor_high_709_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-high-710-pressure">Yüksek basınç 710</label>
+                <input id="compressor-high-710-pressure" name="compressor_high_710_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-high-711-pressure">Yüksek basınç 711</label>
+                <input id="compressor-high-711-pressure" name="compressor_high_711_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-low-712-pressure">Alçak basınç 712</label>
+                <input id="compressor-low-712-pressure" name="compressor_low_712_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-low-713-pressure">Alçak basınç 713</label>
+                <input id="compressor-low-713-pressure" name="compressor_low_713_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-low-714-pressure">Alçak basınç 714</label>
+                <input id="compressor-low-714-pressure" name="compressor_low_714_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-low-715-pressure">Alçak basınç 715</label>
+                <input id="compressor-low-715-pressure" name="compressor_low_715_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="compressor-low-716-pressure">Alçak basınç 716</label>
+                <input id="compressor-low-716-pressure" name="compressor_low_716_pressure" type="text" inputmode="decimal" autocomplete="off">
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend>Kontroller</legend>
+            <div class="check-grid">
+              <label class="check-field">
+                <input name="oil_cooling_water_tank_checked" type="checkbox">
+                Yağ soğutma su tankı
+              </label>
+              <label class="check-field">
+                <input name="chiller_water_tank_checked" type="checkbox">
+                Chiller su tankı
+              </label>
+              <label class="check-field">
+                <input name="air_tank_1_drained" type="checkbox">
+                1. tank su tahliyesi
+              </label>
+              <label class="check-field">
+                <input name="air_tank_2_drained" type="checkbox">
+                2. tank su tahliyesi
+              </label>
+              <label class="check-field">
+                <input name="cleanliness_checked" type="checkbox">
+                Temizlik ve düzen
+              </label>
+            </div>
+          </fieldset>
+
+          <button type="submit" class="primary-action">Yardımcı sistemleri gönder</button>
+        </form>
+
+        <div class="section-heading row-heading subsection-heading">
+          <h3 id="auxiliary-submissions-heading">Yardımcı sistemler son gönderimler</h3>
+          <button id="refresh-auxiliary-submissions" type="button" class="secondary-action">Yenile</button>
+        </div>
+        <div id="auxiliary-submissions" class="entry-list" aria-live="polite">
+          <p class="empty-state">Son gönderim yok.</p>
+        </div>
+      </section>

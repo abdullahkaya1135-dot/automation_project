@@ -18,8 +18,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.config import Settings, SettingsError, get_settings  # noqa: E402
 from app.database import create_session, sqlite_health  # noqa: E402
-from app.excel_service import INVALID_BACKUP_FILENAME_CHARS, check_excel_reachable  # noqa: E402
 from app.models import Entry  # noqa: E402
+from app.services.excel_service import (  # noqa: E402
+    INVALID_BACKUP_FILENAME_CHARS,
+    check_excel_reachable,
+)
 
 
 def _ok(message: str) -> None:
