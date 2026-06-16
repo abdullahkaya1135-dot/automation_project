@@ -1,0 +1,117 @@
+      <section class="work-section" aria-labelledby="machine-entry-heading">
+        <div class="section-heading">
+          <h2 id="machine-entry-heading">Makine Girişi</h2>
+          <p id="entry-message" class="form-message" aria-live="polite"></p>
+        </div>
+
+        <form id="entry-form" class="stacked-form">
+          <div class="field-grid">
+            <div class="field span-two">
+              <label for="machine-select">Makine</label>
+              <select id="machine-select" name="col_f" required disabled>
+                <option value="">Makine listesi yükleniyor</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="product-name">Ürün Adı</label>
+              <input id="product-name" name="col_g" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="work-order">İş emri</label>
+              <select id="work-order" name="col_h" required disabled>
+                <option value="">İş emri listesi yükleniyor</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="raw-material">Hammadde</label>
+              <input id="raw-material" name="col_i" type="text" list="raw-material-options" autocomplete="off">
+              <datalist id="raw-material-options"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="total-cavity-count">Toplam Göz Sayısı</label>
+              <input id="total-cavity-count" name="col_j" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="active-cavity-count">Çalışan göz sayısı</label>
+              <input id="active-cavity-count" name="col_k" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="cycle-time">Çevrim Süresi</label>
+              <input id="cycle-time" name="col_l" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="cooling-time">Soğutma Süresi</label>
+              <input id="cooling-time" name="col_m" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="injection-time">Enjeksiyon Süresi</label>
+              <input id="injection-time" name="col_n" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="first">
+              <label for="blow-time">Üfleme Süresi</label>
+              <input id="blow-time" name="col_o" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="first">
+              <label for="conditioner-temp">Şartlandırıcı Sıcaklığı</label>
+              <input id="conditioner-temp" name="col_p" type="text" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="first">
+              <label for="dryer-temp">Kurutucu Sıcaklığı</label>
+              <input id="dryer-temp" name="col_q" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="second">
+              <label for="injection-pressures">Enjeksiyon Basınçları</label>
+              <input id="injection-pressures" name="col_r" type="text" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="second">
+              <label for="injection-speeds">Enjeksiyon Hızları</label>
+              <input id="injection-speeds" name="col_s" type="text" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="second">
+              <label for="holding-time">Ütüleme Zamanı</label>
+              <input id="holding-time" name="col_t" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="second">
+              <label for="holding-speed">Ütüleme Hızı</label>
+              <input id="holding-speed" name="col_u" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="second">
+              <label for="holding-pressure">Ütüleme Basıncı</label>
+              <input id="holding-pressure" name="col_v" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field" data-section-field="second">
+              <label for="clamp-force">Mengene Kuvveti</label>
+              <input id="clamp-force" name="col_w" type="text" inputmode="decimal" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="oven-temps">Ocak Isıları</label>
+              <input id="oven-temps" name="col_x" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="mold-temps">Kalıp Isıları</label>
+              <input id="mold-temps" name="col_y" type="text" autocomplete="off">
+            </div>
+          </div>
+
+          <button type="submit" class="primary-action">Girişi gönder</button>
+        </form>
+      </section>

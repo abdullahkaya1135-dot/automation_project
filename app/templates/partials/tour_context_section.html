@@ -1,0 +1,49 @@
+      <section class="work-section" aria-labelledby="tour-context-heading">
+        <div class="section-heading">
+          <h2 id="tour-context-heading">Tur Bilgileri</h2>
+          <p id="tour-context-message" class="form-message" aria-live="polite"></p>
+        </div>
+
+        <form id="tour-context-form" class="stacked-form">
+          <input id="tour-context-id" name="tour_context_id" type="hidden">
+          <input id="tour-date" name="date" type="hidden">
+          <input id="shift" name="shift" type="hidden">
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="ambient-temp">Ortam sıcaklığı</label>
+              <input
+                id="ambient-temp"
+                name="ambient_temp"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+              >
+            </div>
+
+            <div class="field">
+              <label for="production-engineer">Üretim mühendisi</label>
+              <input
+                id="production-engineer"
+                name="production_engineer"
+                type="text"
+                autocomplete="name"
+                required
+              >
+            </div>
+
+            <div class="field">
+              <label for="shift-chief">Vardiya amiri</label>
+              <select id="shift-chief" name="shift_chief" required>
+                <option value="">Vardiya amiri seçin</option>
+                <option value="Selman">Selman</option>
+                <option value="Serkan">Serkan</option>
+                <option value="Hakan">Hakan</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" class="primary-action">Tur bilgilerini kaydet</button>
+        </form>
+      </section>

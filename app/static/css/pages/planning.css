@@ -1,0 +1,40 @@
+.ifs-results {
+  display: grid;
+  gap: 12px;
+}
+
+.ifs-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ifs-summary-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d9e0e6;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.ifs-summary-item span,
+.ifs-summary-item strong {
+  display: block;
+}
+
+.ifs-summary-item span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ifs-summary-item strong {
+  margin-top: 4px;
+  color: #172026;
+  font-size: 1.1rem;
+}
+
+.ifs-generated-at,
+.ifs-planning-source {
+  grid-column: 1 / -1;
+}

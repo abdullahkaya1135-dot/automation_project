@@ -5,12 +5,15 @@ from pathlib import Path
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import Settings, get_settings
+from .db.migrations import ensure_schema_migrations
 
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
+
 
 _engine: Engine | None = None
 _database_url: str | None = None
@@ -73,7 +76,7 @@ def init_db(settings: Settings | None = None) -> None:
     engine = get_engine(settings)
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
-        connection.execute(text("DROP TABLE IF EXISTS machines_cache"))
+        ensure_schema_migrations(connection)
 
 
 def sqlite_health(settings: Settings | None = None) -> dict[str, str | bool]:

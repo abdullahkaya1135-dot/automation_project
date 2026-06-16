@@ -1,4 +1,3 @@
-import json
 from datetime import date
 from pathlib import Path
 
@@ -6,13 +5,12 @@ import pytest
 from openpyxl import Workbook, load_workbook
 
 from app.config import Settings
-from app.cycle_report_service import (
+from app.modules.reports.cycle_report_service import (
     NoTodayRowsError,
     create_cycle_report,
     normalize_machine_group,
     parse_part_description,
 )
-
 
 HEADERS = [
     "Date",
@@ -73,7 +71,7 @@ def _process_row(
     active_cavity: object,
     cycle_time: object,
 ) -> list[object]:
-    row = [None] * 25
+    row: list[object] = [None] * 25
     row[0] = day
     row[5] = machine_no
     row[7] = work_order
@@ -110,28 +108,21 @@ def _create_cycle_table(path: Path) -> None:
     workbook.close()
 
 
-def _create_shop_order_source(path: Path) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "value": [
-                    {
-                        "OrderNo": "2668",
-                        "ResourceId": "175",
-                        "WorkCenterNo": "70DPH",
-                        "PartDescription": "PET0207-01 750ML SEFFAF SEFFAF 28MM YIVLI 35GR",
-                    },
-                    {
-                        "OrderNo": "PF-ORDER",
-                        "ResourceId": "162",
-                        "WorkCenterNo": "PF-6",
-                        "PartDescription": "PET0001-01 400ML SEFFAF 28MM YIVLI 45GR",
-                    },
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
+def _ifs_operations() -> list[dict[str, object]]:
+    return [
+        {
+            "OrderNo": "2668",
+            "PreferredResourceId": "175",
+            "WorkCenterNo": "70DPH",
+            "PartNoDesc": "PET0207-01 750ML SEFFAF SEFFAF 28MM YIVLI 35GR",
+        },
+        {
+            "OrderNo": "PF-ORDER",
+            "PreferredResourceId": "162",
+            "WorkCenterNo": "PF-6",
+            "PartNoDesc": "PET0001-01 400ML SEFFAF 28MM YIVLI 45GR",
+        },
+    ]
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -140,7 +131,6 @@ def _settings(tmp_path: Path) -> Settings:
         app_pin="1234",
         sqlite_path=str(tmp_path / "process_entries.sqlite3"),
         backup_dir=str(tmp_path / "backups"),
-        shop_order_source_path=str(tmp_path / "html_to_parse.txt"),
         cycle_table_path=str(tmp_path / "cycle.xlsx"),
         report_output_dir=str(tmp_path / "reports"),
     )
@@ -163,7 +153,17 @@ def test_normalize_machine_group_aliases():
     assert normalize_machine_group("12M1") == "12M"
 
 
-def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(tmp_path):
+def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
+    tmp_path,
+    monkeypatch,
+):
+    async def fake_fetch_pet_ongoing_operations(_settings):
+        return _ifs_operations()
+
+    monkeypatch.setattr(
+        "app.modules.reports.cycle_report_service.fetch_pet_ongoing_operations",
+        fake_fetch_pet_ongoing_operations,
+    )
     _create_process_workbook(
         tmp_path / "process.xlsx",
         [
@@ -172,7 +172,6 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(tmp_pat
         ],
     )
     _create_cycle_table(tmp_path / "cycle.xlsx")
-    _create_shop_order_source(tmp_path / "html_to_parse.txt")
 
     result = create_cycle_report(_settings(tmp_path), date(2026, 6, 9))
 
@@ -215,7 +214,6 @@ def test_create_cycle_report_rejects_no_today_rows_without_output(tmp_path):
         [_process_row("08.06.2026", 175, 2668, 3, 2, 213)],
     )
     _create_cycle_table(tmp_path / "cycle.xlsx")
-    _create_shop_order_source(tmp_path / "html_to_parse.txt")
 
     with pytest.raises(NoTodayRowsError):
         create_cycle_report(_settings(tmp_path), date(2026, 6, 9))

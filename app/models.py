@@ -13,7 +13,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
-
 SYNC_STATUS_SYNCED = "synced"
 SYNC_STATUS_PENDING_EXCEL = "pending_excel"
 SYNC_STATUS_FAILED_EXCEL = "failed_excel"
@@ -30,8 +29,20 @@ def utc_now() -> datetime:
 
 class TourContext(Base):
     __tablename__ = "tour_contexts"
+    __table_args__ = (
+        Index(
+            "ux_tour_contexts_client_request_id",
+            "client_request_id",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
     date: Mapped[str] = mapped_column(String(32), nullable=False)
     ambient_temp: Mapped[str] = mapped_column(String(64), nullable=False)
     production_engineer: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -49,7 +60,7 @@ class TourContext(Base):
         nullable=False,
     )
 
-    entries: Mapped[list["Entry"]] = relationship(back_populates="tour_context")
+    entries: Mapped[list[Entry]] = relationship(back_populates="tour_context")
 
 
 class Entry(Base):
@@ -62,9 +73,15 @@ class Entry(Base):
         Index("ix_entries_sync_status", "sync_status"),
         Index("ix_entries_tour_context_id", "tour_context_id"),
         Index("ix_entries_created_at", "created_at"),
+        Index("ux_entries_client_request_id", "client_request_id", unique=True),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
     tour_context_id: Mapped[int | None] = mapped_column(
         ForeignKey("tour_contexts.id", ondelete="SET NULL"),
         nullable=True,
@@ -120,3 +137,61 @@ class Entry(Base):
     synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     tour_context: Mapped[TourContext | None] = relationship(back_populates="entries")
+
+
+class AuxiliarySystemsSubmission(Base):
+    __tablename__ = "auxiliary_systems_submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "sync_status IN ('synced', 'pending_excel', 'failed_excel')",
+            name="ck_auxiliary_systems_submissions_sync_status",
+        ),
+        Index(
+            "ix_auxiliary_systems_submissions_sync_status",
+            "sync_status",
+        ),
+        Index(
+            "ix_auxiliary_systems_submissions_recorded_date",
+            "recorded_date",
+        ),
+        Index(
+            "ix_auxiliary_systems_submissions_created_at",
+            "created_at",
+        ),
+        Index(
+            "ux_auxiliary_systems_submissions_client_request_id",
+            "client_request_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    recorded_date: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    sync_status: Mapped[str] = mapped_column(
+        String(32),
+        default=SYNC_STATUS_PENDING_EXCEL,
+        server_default=SYNC_STATUS_PENDING_EXCEL,
+        nullable=False,
+    )
+    excel_start_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    excel_end_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

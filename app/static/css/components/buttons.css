@@ -1,0 +1,32 @@
+button {
+  border: 1px solid transparent;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.primary-action {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.primary-action:hover {
+  background: var(--primary-dark);
+}
+
+.secondary-action {
+  width: auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-color: var(--border);
+  background: var(--surface);
+  color: #26323b;
+}
+
+.secondary-action:hover {
+  background: var(--surface-strong);
+}

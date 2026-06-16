@@ -1,0 +1,50 @@
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+    min-height: auto;
+  }
+
+  .app-shell {
+    display: none;
+  }
+
+  .print-only {
+    display: block;
+    width: 100%;
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .print-only .table-scroll {
+    overflow: visible;
+  }
+
+  .print-only .data-table {
+    min-width: 0;
+    background: #ffffff;
+    color: #000000;
+    font-size: 10pt;
+  }
+
+  .print-only .data-table th,
+  .print-only .data-table td {
+    padding: 6pt;
+    border: 1px solid #333333;
+    color: #000000;
+  }
+
+  .print-only .data-table th {
+    background: #f1f1f1;
+  }
+
+  .print-only .empty-state {
+    padding: 0;
+    color: #000000;
+    font-size: 12pt;
+  }
+}

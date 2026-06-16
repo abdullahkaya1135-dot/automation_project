@@ -1,10 +1,16 @@
 .env
 .venv/
+.local/
 __pycache__/
 *.py[cod]
+.mypy_cache/
 .pytest_cache/
 .ruff_cache/
 logs/
+runtime-logs/
 *.har
+cevrim_kontrol_*.xlsx
 data/*.sqlite3
 data/backups/*.xlsx
+local-certs/
+phone-test/

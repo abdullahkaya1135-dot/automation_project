@@ -1,0 +1,10 @@
+        {% if nav_items %}
+          <nav class="role-nav" aria-label="Rol sayfalari">
+            {% for item in nav_items %}
+              <a
+                class="role-nav-link{% if current_path == item.href %} active{% endif %}"
+                href="{{ item.href }}"
+              >{{ item.label }}</a>
+            {% endfor %}
+          </nav>
+        {% endif %}
