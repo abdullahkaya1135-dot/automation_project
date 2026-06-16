@@ -6,20 +6,28 @@ import pytest
 from openpyxl import Workbook
 
 from app.config import Settings
-from app.integrations.ifs_client import (
-    IFSClientError,
+from app.modules.ifs.auth import obtain_access_token
+from app.modules.ifs.errors import IFSClientError
+from app.modules.ifs.materials import (
     fetch_operation_hm02_materials,
-    fetch_pet_ongoing_operations,
     fetch_planning_used_hm02_materials,
-    fetch_shop_order_operations,
-    fetch_u1_hm02_stock,
     fetch_used_hm02_materials,
+)
+from app.modules.ifs.operations import (
+    fetch_pet_ongoing_operations,
+    fetch_shop_order_operations,
+)
+from app.modules.ifs.return_candidates import (
     find_u1_return_candidates,
-    obtain_access_token,
-    return_candidate_stock_rows,
+)
+from app.modules.ifs.serializers import (
     serialize_material_row,
     serialize_operation_row,
     serialize_stock_row,
+)
+from app.modules.ifs.stock import (
+    fetch_u1_hm02_stock,
+    return_candidate_stock_rows,
     used_hm02_part_numbers,
 )
 

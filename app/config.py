@@ -34,6 +34,7 @@ class Settings:
     excel_path: str = ""
     sheet_name: str = "PROSES 2026"
     app_pin: str = ""
+    app_role_pins: str = ""
     session_secret: str = ""
     host: str = "0.0.0.0"
     port: int = 8080
@@ -66,7 +67,6 @@ class Settings:
             for name, value in {
                 "EXCEL_PATH": self.excel_path,
                 "SHEET_NAME": self.sheet_name,
-                "APP_PIN": self.app_pin,
                 "SESSION_SECRET": self.session_secret,
                 "HOST": self.host,
                 "TIMEZONE": self.timezone,
@@ -80,6 +80,8 @@ class Settings:
             }.items()
             if not value.strip()
         ]
+        if not (self.app_pin.strip() or self.app_role_pins.strip()):
+            missing.append("APP_PIN or APP_ROLE_PINS")
         if not (
             self.production_planning_dir.strip()
             or self.production_planning_path.strip()
@@ -114,6 +116,7 @@ def get_settings(*, validate: bool = True) -> Settings:
         excel_path=_string_setting("EXCEL_PATH"),
         sheet_name=_string_setting("SHEET_NAME", "PROSES 2026"),
         app_pin=_string_setting("APP_PIN"),
+        app_role_pins=_string_setting("APP_ROLE_PINS"),
         session_secret=_string_setting("SESSION_SECRET"),
         host=_string_setting("HOST", "0.0.0.0"),
         port=_int_setting("PORT", "8080"),

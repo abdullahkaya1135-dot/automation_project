@@ -1,0 +1,6 @@
+.login-page .app-shell {
+  min-height: calc(100vh - 88px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}

@@ -1,3 +1,5 @@
+import json
+import shutil
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -5,11 +7,19 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
+from openpyxl.workbook.workbook import Workbook as OpenpyxlWorkbook
 
 from app.config import Settings
-from app.database import create_session
+from app.database import commit_session, create_session
+from app.domain.entry_fields import ENTRY_FORM_FIELD_NAMES, ENTRY_PAYLOAD_SCHEMA_VERSION
+from app.domain.entry_payloads import MULTI_VALUE_REPEAT_FIELDS
 from app.main import create_app
-from app.models import AuxiliarySystemsSubmission, Entry
+from app.models import SYNC_STATUS_PENDING_EXCEL, AuxiliarySystemsSubmission, Entry
+from app.modules.auxiliary_systems.workbook_service import (
+    AUXILIARY_CHECK_FIELD_NAMES,
+    AUXILIARY_FIELD_NAMES,
+    AUXILIARY_MEASUREMENT_FIELD_NAMES,
+)
 
 HEADERS = [
     "Date",
@@ -144,11 +154,11 @@ def client(monkeypatch, tmp_path) -> Generator[TestClient]:
         return _ifs_operations()
 
     monkeypatch.setattr(
-        "app.routers.bootstrap.fetch_pet_ongoing_operations",
+        "app.modules.bootstrap.service.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     monkeypatch.setattr(
-        "app.services.cycle_report_service.fetch_pet_ongoing_operations",
+        "app.modules.reports.cycle_report_service.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     monkeypatch.setenv("EXCEL_PATH", str(workbook_path))
@@ -486,6 +496,97 @@ def test_auxiliary_submission_is_idempotent_for_client_request_id(client, tmp_pa
         assert session.query(AuxiliarySystemsSubmission).count() == 1
 
 
+def test_auxiliary_retry_uses_batch_workbook_write(client, monkeypatch, tmp_path):
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        for index in range(3):
+            session.add(
+                AuxiliarySystemsSubmission(
+                    recorded_date=f"2026-06-{8 + index:02d}",
+                    payload_json=json.dumps(
+                        {
+                            "tower_frequency": str(50 + index),
+                            "tower_set_pressure": "3,6",
+                            "compressor_low_716_pressure": str(11 + index),
+                        }
+                    ),
+                    sync_status=SYNC_STATUS_PENDING_EXCEL,
+                )
+            )
+        commit_session(session)
+
+    load_count = 0
+    save_count = 0
+    backup_count = 0
+    real_load_workbook = load_workbook
+    real_save = OpenpyxlWorkbook.save
+    real_copyfile = shutil.copyfile
+
+    def counted_load_workbook(*args, **kwargs):
+        nonlocal load_count
+        load_count += 1
+        return real_load_workbook(*args, **kwargs)
+
+    def counted_save(self, filename):
+        nonlocal save_count
+        save_count += 1
+        return real_save(self, filename)
+
+    def counted_copyfile(source, destination):
+        nonlocal backup_count
+        backup_count += 1
+        return real_copyfile(source, destination)
+
+    monkeypatch.setattr(
+        "app.modules.auxiliary_systems.workbook_io.load_workbook",
+        counted_load_workbook,
+    )
+    monkeypatch.setattr(OpenpyxlWorkbook, "save", counted_save)
+    monkeypatch.setattr(
+        "app.modules.auxiliary_systems.workbook_io.shutil.copyfile",
+        counted_copyfile,
+    )
+
+    response = client.post("/api/auxiliary-systems/sync/retry")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["attempted"] == 3
+    assert payload["synced"] == 3
+    assert payload["failed"] == 0
+    assert payload["remaining"] == 0
+    assert payload["stopped_on_error"] is False
+    assert load_count == 1
+    assert save_count == 1
+    assert backup_count == 1
+
+    workbook = load_workbook(tmp_path / "auxiliary.xlsx")
+    worksheet = workbook.active
+    assert worksheet.cell(row=2, column=1).value == "08.06.2026"
+    assert worksheet.cell(row=17, column=1).value == "09.06.2026"
+    assert worksheet.cell(row=32, column=1).value == "10.06.2026"
+    assert worksheet.cell(row=46, column=9).value == 13
+    workbook.close()
+
+    with create_session(settings) as session:
+        rows = (
+            session.query(AuxiliarySystemsSubmission)
+            .order_by(AuxiliarySystemsSubmission.id.asc())
+            .all()
+        )
+        assert [(row.excel_start_row, row.excel_end_row) for row in rows] == [
+            (2, 16),
+            (17, 31),
+            (32, 46),
+        ]
+        assert {row.sync_status for row in rows} == {"synced"}
+
+
 def test_cycle_report_endpoint_creates_today_report(client):
     context_id = _tour_context(client)
     entry_response = client.post(
@@ -546,7 +647,7 @@ def test_ifs_stock_endpoint_returns_u1_hm02_stock(client, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_u1_hm02_stock", fake_fetch)
+    monkeypatch.setattr("app.modules.ifs.use_cases.fetch_u1_hm02_stock", fake_fetch)
 
     response = client.get("/api/ifs/u1-hm02-stock")
 
@@ -593,7 +694,10 @@ def test_ifs_operations_endpoint_returns_pet_ongoing_operations(client, monkeypa
             }
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.modules.ifs.use_cases.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
 
     response = client.get("/api/ifs/pet-ongoing-operations")
 
@@ -643,7 +747,10 @@ def test_ifs_operation_materials_endpoint_returns_hm02_materials(client, monkeyp
             }
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_operation_hm02_materials", fake_fetch)
+    monkeypatch.setattr(
+        "app.modules.ifs.use_cases.fetch_operation_hm02_materials",
+        fake_fetch,
+    )
 
     response = client.get(
         "/api/ifs/operation-hm02-materials",
@@ -726,7 +833,10 @@ def test_ifs_used_materials_endpoint_returns_used_hm02_set(client, monkeypatch):
             ],
         }
 
-    monkeypatch.setattr("app.routers.ifs.fetch_used_hm02_materials", fake_fetch)
+    monkeypatch.setattr(
+        "app.modules.ifs.use_cases.fetch_used_hm02_materials",
+        fake_fetch,
+    )
 
     response = client.get("/api/ifs/used-hm02-materials")
 
@@ -811,7 +921,10 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
             ],
         }
 
-    monkeypatch.setattr("app.routers.ifs.find_u1_return_candidates", fake_find)
+    monkeypatch.setattr(
+        "app.modules.ifs.use_cases.find_u1_return_candidates",
+        fake_find,
+    )
 
     response = client.get("/api/ifs/u1-return-candidates")
 
@@ -879,6 +992,22 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
     assert bootstrap_payload["current_tour_timing"]["date"] == "08.06.2026"
     assert bootstrap_payload["current_tour_timing"]["shift"] == "08.00-16.00"
     assert bootstrap_payload["current_auxiliary_date"] == "08.06.2026"
+    assert bootstrap_payload["field_definitions"] == {
+        "process_entry": {
+            "payload_schema_version": ENTRY_PAYLOAD_SCHEMA_VERSION,
+            "payload_fields": list(ENTRY_FORM_FIELD_NAMES),
+            "temperature_repeat_fields": [
+                field_name
+                for field_name in ENTRY_FORM_FIELD_NAMES
+                if field_name in MULTI_VALUE_REPEAT_FIELDS
+            ],
+        },
+        "auxiliary": {
+            "payload_fields": list(AUXILIARY_FIELD_NAMES),
+            "measurement_fields": list(AUXILIARY_MEASUREMENT_FIELD_NAMES),
+            "check_fields": list(AUXILIARY_CHECK_FIELD_NAMES),
+        },
+    }
     assert bootstrap_payload["latest_tour_context"] is None
     assert bootstrap_payload["last_sync_error"] is None
     assert bootstrap_payload["last_auxiliary_sync_error"] is None
@@ -900,22 +1029,113 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
     assert health_payload["excel_write_lock"]["waiting"] == 0
 
 
+def test_field_definitions_endpoint_matches_backend_constants(client):
+    response = client.get("/api/field-definitions")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "process_entry": {
+            "payload_schema_version": ENTRY_PAYLOAD_SCHEMA_VERSION,
+            "payload_fields": list(ENTRY_FORM_FIELD_NAMES),
+            "temperature_repeat_fields": [
+                field_name
+                for field_name in ENTRY_FORM_FIELD_NAMES
+                if field_name in MULTI_VALUE_REPEAT_FIELDS
+            ],
+        },
+        "auxiliary": {
+            "payload_fields": list(AUXILIARY_FIELD_NAMES),
+            "measurement_fields": list(AUXILIARY_MEASUREMENT_FIELD_NAMES),
+            "check_fields": list(AUXILIARY_CHECK_FIELD_NAMES),
+        },
+    }
+
+
 def test_static_shell_references_current_shared_section_assets(client):
     page_response = client.get("/")
     service_worker_response = client.get("/service-worker.js")
 
     assert page_response.status_code == 200
     assert service_worker_response.status_code == 200
-    assert 'type="module" src="/static/js/app.js?v=20260612-refactor"' in (
+    assert 'type="module" src="/static/js/app.js?v=20260615-shop-orders"' in (
         page_response.text
     )
-    assert "/static/css/app.css?v=20260612-structured" in page_response.text
-    assert "process-offline-shell-v4" in service_worker_response.text
+    assert "/static/css/app.css?v=20260615-css" in page_response.text
+    assert "process-offline-shell-v9" in service_worker_response.text
     assert "api.js?v=20260612-refactor" in service_worker_response.text
-    assert "app.js?v=20260612-refactor" in service_worker_response.text
-    assert "modules/main-page.js?v=20260612-refactor" in service_worker_response.text
-    assert "modules/offline.js?v=20260612-refactor" in service_worker_response.text
-    assert "app.css?v=20260612-structured" in service_worker_response.text
+    assert "app.js?v=20260615-shop-orders" in service_worker_response.text
+    assert "modules/bootstrap.js?v=20260612-refactor" in service_worker_response.text
+    assert "modules/field-definitions.js?v=20260615-fields" in (
+        service_worker_response.text
+    )
+    assert "modules/pages/operator.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/pages/utility.js?v=20260615-pages" in service_worker_response.text
+    assert "modules/pages/supervisor.js?v=20260615-pages" in (
+        service_worker_response.text
+    )
+    assert "modules/pages/planning.js?v=20260615-pages" in service_worker_response.text
+    assert "modules/offline.js?v=20260612-refactor" not in service_worker_response.text
+    assert "modules/shop-orders.js?v=20260615-shop-orders" not in (
+        service_worker_response.text
+    )
+    assert "modules/offline/outbox-sync.js?v=20260616-offline-split" in (
+        service_worker_response.text
+    )
+    assert "modules/shop-orders/dropdowns.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/shop-orders/materials.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/shop-orders/machine-section.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/shop-orders/normalization.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/shop-orders/state.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/shop-orders/status.js?v=20260615-shop-orders" in (
+        service_worker_response.text
+    )
+    assert "modules/render/process-entries.js?v=20260615-render" in (
+        service_worker_response.text
+    )
+    assert "modules/render/auxiliary-submissions.js?v=20260615-render" in (
+        service_worker_response.text
+    )
+    assert "modules/pages/planning-ifs-return.js?v=20260616-planning-ifs" in (
+        service_worker_response.text
+    )
+    assert "modules/render/ifs-return.js?v=20260615-render" in (
+        service_worker_response.text
+    )
+    assert "modules/ifs-return.js?v=20260612-refactor" not in (
+        service_worker_response.text
+    )
+    assert "modules/render/shared.js?v=20260615-render" in (
+        service_worker_response.text
+    )
+    assert "modules/render.js?v=20260612-refactor" not in (
+        service_worker_response.text
+    )
+    assert "app.css?v=20260615-css" in service_worker_response.text
+    assert "css/tokens.css?v=20260615-css" in service_worker_response.text
+    assert "css/base.css?v=20260615-css" in service_worker_response.text
+    assert "css/layout.css?v=20260615-css" in service_worker_response.text
+    assert "css/components/nav.css?v=20260615-css" in service_worker_response.text
+    assert "css/components/forms.css?v=20260615-css" in service_worker_response.text
+    assert "css/components/buttons.css?v=20260615-css" in service_worker_response.text
+    assert "css/components/status.css?v=20260615-css" in service_worker_response.text
+    assert "css/components/lists.css?v=20260615-css" in service_worker_response.text
+    assert "css/components/tables.css?v=20260615-css" in service_worker_response.text
+    assert "css/pages/login.css?v=20260615-css" in service_worker_response.text
+    assert "css/pages/planning.css?v=20260615-css" in service_worker_response.text
+    assert "css/print.css?v=20260615-css" in service_worker_response.text
+    assert "css/responsive.css?v=20260615-css" in service_worker_response.text
 
 
 def test_bootstrap_can_load_shop_orders_from_ifs(client, monkeypatch):
@@ -935,7 +1155,10 @@ def test_bootstrap_can_load_shop_orders_from_ifs(client, monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("app.routers.bootstrap.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.modules.bootstrap.service.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
 
     response = client.get("/api/bootstrap")
 
@@ -1139,3 +1362,273 @@ def test_entry_submit_remains_pending_until_retry(monkeypatch, tmp_path):
         assert entry.excel_row_number == 2
         assert entry.last_error is None
         assert entry.synced_at is not None
+
+
+def test_retry_pending_entries_uses_batch_workbook_write(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    context_id = _tour_context(client)
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        for index in range(25):
+            session.add(
+                Entry(
+                    tour_context_id=context_id,
+                    sync_status=SYNC_STATUS_PENDING_EXCEL,
+                    col_a="08.06.2026",
+                    col_b="24,5",
+                    col_c="Engineer",
+                    col_d="Selman",
+                    col_e="08.00-16.00",
+                    col_f=f"M-{index + 1:02d}",
+                    col_h=f"WO-{index + 1:02d}",
+                )
+            )
+        commit_session(session)
+
+    load_count = 0
+    save_count = 0
+    backup_count = 0
+    real_load_workbook = load_workbook
+    real_save = OpenpyxlWorkbook.save
+    real_copyfile = shutil.copyfile
+
+    def counted_load_workbook(*args, **kwargs):
+        nonlocal load_count
+        load_count += 1
+        return real_load_workbook(*args, **kwargs)
+
+    def counted_save(self, filename):
+        nonlocal save_count
+        save_count += 1
+        return real_save(self, filename)
+
+    def counted_copyfile(source, destination):
+        nonlocal backup_count
+        backup_count += 1
+        return real_copyfile(source, destination)
+
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.load_workbook",
+        counted_load_workbook,
+    )
+    monkeypatch.setattr(OpenpyxlWorkbook, "save", counted_save)
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.shutil.copyfile",
+        counted_copyfile,
+    )
+
+    response = client.post("/api/sync/retry")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["attempted"] == 25
+    assert payload["synced"] == 25
+    assert payload["failed"] == 0
+    assert payload["remaining"] == 0
+    assert payload["stopped_on_error"] is False
+    assert load_count == 1
+    assert save_count == 1
+    assert backup_count == 1
+
+    workbook = load_workbook(tmp_path / "process.xlsx")
+    worksheet = workbook["PROSES 2026"]
+    assert [worksheet.cell(row=row, column=6).value for row in range(2, 27)] == [
+        f"M-{index + 1:02d}" for index in range(25)
+    ]
+    workbook.close()
+
+    with create_session(settings) as session:
+        rows = session.query(Entry).order_by(Entry.id.asc()).all()
+        assert [row.excel_row_number for row in rows] == list(range(2, 27))
+        assert {row.sync_status for row in rows} == {"synced"}
+
+
+def test_bulk_offline_sync_saves_entries_with_one_excel_write(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    tour_client_id = "bulk-tour-1"
+    records = [
+        {
+            "type": "tour_context",
+            "client_request_id": tour_client_id,
+            "client_recorded_at": "2026-06-08T09:20:00+03:00",
+            "body": {
+                "client_request_id": tour_client_id,
+                "client_recorded_at": "2026-06-08T09:20:00+03:00",
+                "ambient_temp": "24,5",
+                "production_engineer": "Engineer",
+                "shift_chief": "Selman",
+            },
+        }
+    ]
+    for index in range(25):
+        entry_client_id = f"bulk-entry-{index + 1:02d}"
+        records.append(
+            {
+                "type": "entry",
+                "client_request_id": entry_client_id,
+                "depends_on_client_request_id": tour_client_id,
+                "client_recorded_at": "2026-06-08T09:25:00+03:00",
+                "body": {
+                    "client_request_id": entry_client_id,
+                    "client_recorded_at": "2026-06-08T09:25:00+03:00",
+                    "payload_schema_version": 2,
+                    "payload": {
+                        "col_f": f"M-{index + 1:02d}",
+                        "col_h": f"WO-{index + 1:02d}",
+                    },
+                },
+            }
+        )
+
+    load_count = 0
+    save_count = 0
+    backup_count = 0
+    real_load_workbook = load_workbook
+    real_save = OpenpyxlWorkbook.save
+    real_copyfile = shutil.copyfile
+
+    def counted_load_workbook(*args, **kwargs):
+        nonlocal load_count
+        load_count += 1
+        return real_load_workbook(*args, **kwargs)
+
+    def counted_save(self, filename):
+        nonlocal save_count
+        save_count += 1
+        return real_save(self, filename)
+
+    def counted_copyfile(source, destination):
+        nonlocal backup_count
+        backup_count += 1
+        return real_copyfile(source, destination)
+
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.load_workbook",
+        counted_load_workbook,
+    )
+    monkeypatch.setattr(OpenpyxlWorkbook, "save", counted_save)
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.shutil.copyfile",
+        counted_copyfile,
+    )
+
+    first_response = client.post(
+        "/api/offline/bulk-sync",
+        json={"records": records, "sync_excel": True},
+    )
+    replay_response = client.post(
+        "/api/offline/bulk-sync",
+        json={"records": records, "sync_excel": True},
+    )
+
+    assert first_response.status_code == 200
+    assert replay_response.status_code == 200
+    first_payload = first_response.json()
+    replay_payload = replay_response.json()
+    assert first_payload["saved_count"] == 26
+    assert first_payload["synced_count"] == 25
+    assert first_payload["failed_count"] == 0
+    assert first_payload["excel_pending"] is False
+    assert load_count == 1
+    assert save_count == 1
+    assert backup_count == 1
+    assert all(record["idempotent_replay"] for record in replay_payload["records"])
+
+    workbook = load_workbook(tmp_path / "process.xlsx")
+    worksheet = workbook["PROSES 2026"]
+    assert [worksheet.cell(row=row, column=6).value for row in range(2, 27)] == [
+        f"M-{index + 1:02d}" for index in range(25)
+    ]
+    assert worksheet.cell(row=27, column=6).value is None
+    workbook.close()
+
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        assert session.query(Entry).count() == 25
+        assert session.query(Entry).filter(Entry.sync_status == "synced").count() == 25
+        assert {entry.tour_context_id for entry in session.query(Entry).all()} == {
+            first_payload["records"][0]["server_id"]
+        }
+
+
+def test_bulk_offline_sync_excel_unavailable_keeps_sqlite_records(
+    monkeypatch,
+    tmp_path,
+):
+    workbook_path = tmp_path / "missing.xlsx"
+    _freeze_request_time(monkeypatch)
+    monkeypatch.setenv("EXCEL_PATH", str(workbook_path))
+    monkeypatch.setenv("APP_PIN", "1234")
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "process_entries.sqlite3"))
+    monkeypatch.setenv("BACKUP_DIR", str(tmp_path / "backups"))
+
+    records = [
+        {
+            "type": "tour_context",
+            "client_request_id": "bulk-missing-tour",
+            "body": {
+                "client_request_id": "bulk-missing-tour",
+                "ambient_temp": "24,5",
+                "production_engineer": "Engineer",
+                "shift_chief": "Selman",
+            },
+        },
+        {
+            "type": "entry",
+            "client_request_id": "bulk-missing-entry",
+            "depends_on_client_request_id": "bulk-missing-tour",
+                "body": {
+                    "client_request_id": "bulk-missing-entry",
+                    "payload_schema_version": 2,
+                    "payload": {
+                        "col_f": "M-01",
+                        "col_h": "WO-1",
+                },
+            },
+        },
+    ]
+
+    with TestClient(create_app()) as test_client:
+        login_response = test_client.post("/api/login", json={"pin": "1234"})
+        assert login_response.status_code == 200
+        response = test_client.post(
+            "/api/offline/bulk-sync",
+            json={"records": records, "sync_excel": True},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["saved_count"] == 2
+    assert payload["synced_count"] == 0
+    assert payload["failed_count"] == 1
+    assert payload["excel_pending"] is True
+    assert "bulunamad" in payload["excel_error"]
+
+    settings = Settings(
+        excel_path=str(workbook_path),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        entry = session.query(Entry).one()
+        assert entry.sync_status == "pending_excel"
+        assert entry.excel_row_number is None
+        assert entry.last_error == payload["excel_error"]

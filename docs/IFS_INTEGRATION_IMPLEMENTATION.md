@@ -547,7 +547,7 @@ access tokens or client secrets.
 Add a dedicated IFS client module:
 
 ```text
-app/ifs_client.py
+app/modules/ifs/
 ```
 
 Suggested responsibilities:

@@ -1,4 +1,4 @@
-from app.services.shop_order_source import (
+from app.modules.shop_orders.source import (
     ifs_shop_order_source_payload,
     shop_order_options_from_ifs_operations,
 )

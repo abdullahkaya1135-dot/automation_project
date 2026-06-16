@@ -3,10 +3,10 @@ import os
 import pytest
 from openpyxl import Workbook
 
-from app.services.production_planning import (
-    ProductionPlanningError,
+from app.modules.production_planning.errors import ProductionPlanningError
+from app.modules.production_planning.reader import read_visible_planning_orders
+from app.modules.production_planning.resolver import (
     latest_planning_workbook,
-    read_visible_planning_orders,
     resolve_planning_workbook,
 )
 

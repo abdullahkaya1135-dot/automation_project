@@ -1,4 +1,3 @@
-import re
 from typing import Any
 
 from ..models import TourContext
@@ -10,45 +9,18 @@ from .entry_fields import (
     blank_excluded_section_fields,
     canonicalize_legacy_entry_payload,
 )
+from .entry_temperature import (
+    MULTI_VALUE_REPEAT_FIELDS as MULTI_VALUE_REPEAT_FIELDS,
+)
+from .entry_temperature import (
+    expand_temperature_shorthand_fields,
+)
 from .request_values import optional_text, validation_error
 
-MULTI_VALUE_REPEAT_FIELDS = frozenset({"col_r", "col_s", "col_x", "col_y"})
 ENTRY_PAYLOAD_SCHEMA_VERSION_KEYS = (
     "payload_schema_version",
     "entry_payload_schema_version",
 )
-TEMPERATURE_REPEAT_TOKEN_PATTERN = re.compile(
-    r"^([+-]?\d+(?:\.\d+)?)\s*[xX]\s*([1-9]\d*)$"
-)
-TEMPERATURE_SINGLE_TOKEN_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
-TEMPERATURE_REPEAT_MAX_COUNT = 200
-
-
-def _expand_temperature_shorthand(value: str | None) -> str | None:
-    if value is None or ("x" not in value and "X" not in value):
-        return value
-
-    tokens = [token.strip() for token in value.split(",") if token.strip()]
-    if not tokens:
-        return value
-
-    expanded: list[str] = []
-    for token in tokens:
-        repeat_match = TEMPERATURE_REPEAT_TOKEN_PATTERN.fullmatch(token)
-        if repeat_match:
-            repeat_count = int(repeat_match.group(2))
-            if repeat_count > TEMPERATURE_REPEAT_MAX_COUNT:
-                return value
-            expanded.extend([repeat_match.group(1)] * repeat_count)
-            continue
-
-        if TEMPERATURE_SINGLE_TOKEN_PATTERN.fullmatch(token):
-            expanded.append(token)
-            continue
-
-        return value
-
-    return "-".join(expanded)
 
 
 def _is_v2_entry_payload(body: dict[str, Any], raw_payload: dict[str, Any]) -> bool:
@@ -104,9 +76,7 @@ def _entry_payload_from_body(body: dict[str, Any]) -> dict[str, str | None]:
             for field_name in ENTRY_FIELD_NAMES
         }
 
-    for field_name in MULTI_VALUE_REPEAT_FIELDS:
-        payload[field_name] = _expand_temperature_shorthand(payload[field_name])
-    return blank_excluded_section_fields(payload)
+    return blank_excluded_section_fields(expand_temperature_shorthand_fields(payload))
 
 
 def combined_entry_payload(

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
@@ -12,8 +12,10 @@ from .routers.bootstrap import router as bootstrap_router
 from .routers.entries import router as entries_router
 from .routers.health import router as health_router
 from .routers.ifs import router as ifs_router
+from .routers.offline import router as offline_router
 from .routers.pages import router as pages_router
 from .routers.reports import router as reports_router
+from .web.cache_headers import apply_cache_headers
 
 
 @asynccontextmanager
@@ -37,20 +39,14 @@ def create_app() -> FastAPI:
     fastapi_app.include_router(auth_router)
     fastapi_app.include_router(bootstrap_router)
     fastapi_app.include_router(entries_router)
+    fastapi_app.include_router(offline_router)
     fastapi_app.include_router(auxiliary_router)
     fastapi_app.include_router(reports_router)
     fastapi_app.include_router(ifs_router)
     fastapi_app.include_router(health_router)
     fastapi_app.include_router(pages_router)
 
-    @fastapi_app.middleware("http")
-    async def no_cache_ui_assets(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path in {"/", "/login"}:
-            response.headers["Cache-Control"] = "no-store, max-age=0"
-        elif request.url.path.startswith("/static/"):
-            response.headers["Cache-Control"] = "public, max-age=3600"
-        return response
+    fastapi_app.middleware("http")(apply_cache_headers)
 
     return fastapi_app
 

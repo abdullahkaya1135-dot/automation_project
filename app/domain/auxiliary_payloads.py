@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from ..config import Settings
-from ..services.auxiliary_systems_service import (
+from ..modules.auxiliary_systems.fields import (
     AUXILIARY_CHECK_FIELD_NAMES,
     AUXILIARY_FIELD_NAMES,
 )

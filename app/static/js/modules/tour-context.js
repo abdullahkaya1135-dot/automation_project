@@ -1,10 +1,11 @@
-import { ACTIVE_CONTEXT_KEY } from "./constants.js?v=20260612-refactor";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
 } from "./dates.js?v=20260612-refactor";
 import { setInputValue } from "./utils.js?v=20260612-refactor";
+
+const ACTIVE_CONTEXT_KEY = "process.activeTourContext";
 
 export function updateContextStatus(context) {
   const status = document.querySelector("#context-status");

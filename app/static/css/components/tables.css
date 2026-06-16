@@ -1,0 +1,36 @@
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  background: var(--surface);
+  font-size: 0.88rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 9px 10px;
+  border-top: 1px solid #e3e8ec;
+  text-align: left;
+  vertical-align: top;
+}
+
+.data-table th {
+  color: #26323b;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.data-table td {
+  color: #172026;
+}
+
+.mono-cell {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}

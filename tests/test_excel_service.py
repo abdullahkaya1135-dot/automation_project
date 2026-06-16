@@ -1,3 +1,4 @@
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -13,18 +14,22 @@ from app.models import (
     SYNC_STATUS_PENDING_EXCEL,
     Entry,
 )
-from app.services.excel_service import (
+from app.modules.process_entry.excel_mapper import ProcessEntryData, build_excel_row
+from app.modules.process_entry.workbook_io import (
     WorkbookLockedError,
     WorkbookMissingError,
     WorkbookPermissionError,
     WorkbookStructureError,
-    append_entry_to_workbook,
     check_excel_reachable,
     detect_last_value_row,
-    normalize_excel_value,
     validate_headers,
 )
-from app.services.sync_service import attempt_excel_append
+from app.modules.process_entry.workbook_service import (
+    append_entries_to_workbook,
+    append_entry_to_workbook,
+    normalize_excel_value,
+)
+from app.modules.sync.process_entry_sync import attempt_excel_append
 
 HEADERS = [
     "Date",
@@ -161,6 +166,21 @@ def test_normalize_excel_value_handles_decimal_and_range_text():
     assert normalize_excel_value("  ", "Y") is None
 
 
+def test_process_entry_excel_mapper_exposes_domain_names():
+    payload = _payload()
+
+    entry_data = ProcessEntryData.from_payload(payload)
+    row = build_excel_row(payload)
+
+    assert entry_data.machine == "101"
+    assert entry_data.work_order == "001234"
+    assert entry_data.total_cavity_count == "16"
+    assert entry_data.as_payload()["col_h"] == "001234"
+    assert row[5] == "101"
+    assert row[7] == "001234"
+    assert row[9] == 16
+
+
 def test_append_entry_to_workbook_writes_next_real_row_and_creates_backup(tmp_path):
     workbook_path = tmp_path / "process.xlsx"
     _create_workbook(workbook_path)
@@ -215,6 +235,94 @@ def test_append_entry_to_workbook_writes_next_real_row_and_creates_backup(tmp_pa
     backup_worksheet = backup["PROSES 2026"]
     assert backup_worksheet.cell(row=1726, column=1).value is None
     backup.close()
+
+
+def test_append_entries_to_workbook_uses_one_open_save_and_backup(
+    monkeypatch,
+    tmp_path,
+):
+    workbook_path = tmp_path / "process.xlsx"
+    _create_workbook(workbook_path)
+    settings = _settings(workbook_path, tmp_path)
+    payloads = []
+    for index in range(25):
+        payload = _payload()
+        payload["col_f"] = f"M-{index + 1:02d}"
+        payload["col_h"] = f"WO-{index + 1:02d}"
+        payloads.append(payload)
+
+    load_count = 0
+    save_count = 0
+    backup_count = 0
+    real_load_workbook = load_workbook
+    real_save = OpenpyxlWorkbook.save
+    real_copyfile = shutil.copyfile
+
+    def counted_load_workbook(*args, **kwargs):
+        nonlocal load_count
+        load_count += 1
+        return real_load_workbook(*args, **kwargs)
+
+    def counted_save(self, filename):
+        nonlocal save_count
+        save_count += 1
+        return real_save(self, filename)
+
+    def counted_copyfile(source, destination):
+        nonlocal backup_count
+        backup_count += 1
+        return real_copyfile(source, destination)
+
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.load_workbook",
+        counted_load_workbook,
+    )
+    monkeypatch.setattr(OpenpyxlWorkbook, "save", counted_save)
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.shutil.copyfile",
+        counted_copyfile,
+    )
+
+    results = append_entries_to_workbook(settings, payloads)
+
+    assert [result.row_number for result in results] == list(range(1726, 1751))
+    assert load_count == 1
+    assert save_count == 1
+    assert backup_count == 1
+    assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
+
+    workbook = load_workbook(workbook_path)
+    worksheet = workbook["PROSES 2026"]
+    assert worksheet.cell(row=1726, column=6).value == "M-01"
+    assert worksheet.cell(row=1750, column=6).value == "M-25"
+    workbook.close()
+
+
+def test_append_entries_to_workbook_reuses_existing_rows_before_appending(
+    tmp_path,
+):
+    workbook_path = tmp_path / "process.xlsx"
+    _create_workbook(workbook_path)
+    settings = _settings(workbook_path, tmp_path)
+    existing_payload = _payload() | {"id": 1, "col_f": "M-01", "col_h": "WO-01"}
+    new_payload = _payload() | {"id": 2, "col_f": "M-02", "col_h": "WO-02"}
+
+    assert append_entry_to_workbook(settings, existing_payload) == 1726
+
+    results = append_entries_to_workbook(
+        settings,
+        [existing_payload, new_payload],
+        reuse_existing_matches=True,
+    )
+
+    assert [result.row_number for result in results] == [1726, 1727]
+
+    workbook = load_workbook(workbook_path)
+    worksheet = workbook["PROSES 2026"]
+    assert worksheet.cell(row=1726, column=6).value == "M-01"
+    assert worksheet.cell(row=1727, column=6).value == "M-02"
+    assert worksheet.cell(row=1728, column=6).value is None
+    workbook.close()
 
 
 def test_append_entry_to_workbook_prunes_old_backups(tmp_path):
@@ -370,7 +478,10 @@ def test_append_entry_to_workbook_raises_typed_error_for_open_permission_denied(
     def raise_permission_error(*_args, **_kwargs):
         raise PermissionError("denied")
 
-    monkeypatch.setattr("app.services.excel_service.load_workbook", raise_permission_error)
+    monkeypatch.setattr(
+        "app.modules.process_entry.workbook_io.load_workbook",
+        raise_permission_error,
+    )
 
     with pytest.raises(WorkbookPermissionError):
         append_entry_to_workbook(settings, _payload())

@@ -1,0 +1,65 @@
+.app-shell {
+  width: min(100% - 24px, 860px);
+  margin: 0 auto;
+  padding: 18px 0 32px;
+}
+
+.auth-shell {
+  max-width: 420px;
+  padding-top: 56px;
+}
+
+.page-header {
+  margin-bottom: 18px;
+}
+
+.app-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.work-section {
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+
+.section-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.row-heading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sync-panel {
+  padding-top: 14px;
+}
+
+.sync-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.span-two {
+  grid-column: 1 / -1;
+}
+
+.print-only {
+  display: none;
+}

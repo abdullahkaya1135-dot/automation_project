@@ -1,4 +1,9 @@
-import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260612-refactor";
+const TEMPERATURE_SHORTHAND_SELECTORS = [
+  "#injection-pressures",
+  "#injection-speeds",
+  "#oven-temps",
+  "#mold-temps",
+];
 
 export function initializeTemperatureShorthandInputs() {
   for (const selector of TEMPERATURE_SHORTHAND_SELECTORS) {

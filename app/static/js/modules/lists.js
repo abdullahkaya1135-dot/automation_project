@@ -1,9 +1,7 @@
 import { apiJson } from "../api.js?v=20260612-refactor";
-import {
-  renderAuxiliarySubmissionList,
-  renderEntryList,
-  renderListError,
-} from "./render.js?v=20260612-refactor";
+import { renderAuxiliarySubmissionList } from "./render/auxiliary-submissions.js?v=20260615-render";
+import { renderEntryList } from "./render/process-entries.js?v=20260615-render";
+import { renderListError } from "./render/shared.js?v=20260615-render";
 import { entryTime } from "./utils.js?v=20260612-refactor";
 
 export async function loadEntryLists() {

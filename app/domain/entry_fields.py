@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from typing import Any
 
 ENTRY_FIELD_NAMES = tuple(f"col_{letter}" for letter in "abcdefghijklmnopqrstuvwxy")
+ENTRY_FORM_FIELD_NAMES = ENTRY_FIELD_NAMES[5:]
 LEGACY_ENTRY_FIELD_NAMES = tuple(f"col_{letter}" for letter in "abcdefghijklmnopq")
 ENTRY_PAYLOAD_SCHEMA_VERSION = 2
 

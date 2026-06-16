@@ -5,7 +5,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 
 from app.config import Settings
-from app.services.cycle_report_service import (
+from app.modules.reports.cycle_report_service import (
     NoTodayRowsError,
     create_cycle_report,
     normalize_machine_group,
@@ -161,7 +161,7 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
         return _ifs_operations()
 
     monkeypatch.setattr(
-        "app.services.cycle_report_service.fetch_pet_ongoing_operations",
+        "app.modules.reports.cycle_report_service.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     _create_process_workbook(

@@ -32,7 +32,8 @@ export function initLogin() {
       });
 
       if (response.ok) {
-        window.location.assign("/");
+        const payload = await response.json();
+        window.location.assign(payload.default_path || "/");
         return;
       }
 

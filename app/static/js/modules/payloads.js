@@ -1,12 +1,12 @@
 import {
-  AUXILIARY_CHECK_FIELDS,
-  AUXILIARY_PAYLOAD_FIELDS,
-  ENTRY_PAYLOAD_FIELDS,
-  ENTRY_PAYLOAD_SCHEMA_VERSION,
-  TEMPERATURE_REPEAT_PAYLOAD_FIELDS,
-} from "./constants.js?v=20260612-refactor";
+  auxiliaryCheckFields,
+  auxiliaryPayloadFields,
+  entryPayloadSchemaVersion,
+  processEntryPayloadFields,
+  temperatureRepeatPayloadFields,
+} from "./field-definitions.js?v=20260615-fields";
 import { localIsoDate } from "./dates.js?v=20260612-refactor";
-import { selectedShopOrderOption } from "./shop-orders.js?v=20260612-refactor";
+import { selectedShopOrderOption } from "./shop-orders/dropdowns.js?v=20260615-shop-orders";
 import { expandTemperatureShorthand } from "./temperature.js?v=20260612-refactor";
 import {
   cleanOptional,
@@ -17,9 +17,10 @@ import {
 export function entryRequestBody(form, contextId) {
   const formData = new FormData(form);
   const selectedOption = selectedShopOrderOption();
+  const repeatFields = temperatureRepeatPayloadFields();
   const payload = {};
-  for (const fieldName of ENTRY_PAYLOAD_FIELDS) {
-    const value = TEMPERATURE_REPEAT_PAYLOAD_FIELDS.has(fieldName)
+  for (const fieldName of processEntryPayloadFields()) {
+    const value = repeatFields.has(fieldName)
       ? expandTemperatureShorthand(formData.get(fieldName))
       : formData.get(fieldName);
     payload[fieldName] = cleanOptional(value);
@@ -29,7 +30,7 @@ export function entryRequestBody(form, contextId) {
   }
 
   return {
-    payload_schema_version: ENTRY_PAYLOAD_SCHEMA_VERSION,
+    payload_schema_version: entryPayloadSchemaVersion(),
     tour_context_id: numericContextId(contextId),
     payload,
     status: cleanOptional(formData.get("status")),
@@ -40,9 +41,10 @@ export function entryRequestBody(form, contextId) {
 
 export function auxiliaryRequestBody(form, recordedAt = new Date()) {
   const formData = new FormData(form);
+  const checkFields = auxiliaryCheckFields();
   const payload = {};
-  for (const fieldName of AUXILIARY_PAYLOAD_FIELDS) {
-    if (AUXILIARY_CHECK_FIELDS.includes(fieldName)) {
+  for (const fieldName of auxiliaryPayloadFields()) {
+    if (checkFields.includes(fieldName)) {
       payload[fieldName] = formData.get(fieldName) === "on";
     } else {
       payload[fieldName] = cleanOptional(formData.get(fieldName));
@@ -56,8 +58,9 @@ export function auxiliaryRequestBody(form, recordedAt = new Date()) {
 }
 
 export function hasAuxiliaryMeasurement(payload) {
-  return AUXILIARY_PAYLOAD_FIELDS.some((fieldName) => (
-    !AUXILIARY_CHECK_FIELDS.includes(fieldName)
+  const checkFields = auxiliaryCheckFields();
+  return auxiliaryPayloadFields().some((fieldName) => (
+    !checkFields.includes(fieldName)
     && Boolean(cleanOptional(payload[fieldName]))
   ));
 }
