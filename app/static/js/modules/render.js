@@ -1,4 +1,5 @@
 import { SYNC_LABELS } from "./constants.js?v=20260612-refactor";
+import { dateForDisplay } from "./dates.js?v=20260617-amount-control";
 import {
   displayValue,
   entryTime,
@@ -41,6 +42,26 @@ export function renderAuxiliarySubmissionList(container, submissions, emptyText)
   const fragment = document.createDocumentFragment();
   for (const submission of submissions) {
     fragment.appendChild(renderAuxiliarySubmissionRow(submission));
+  }
+  container.replaceChildren(fragment);
+}
+
+export function renderAmountControlShiftList(container, shifts, emptyText) {
+  if (!container) {
+    return;
+  }
+
+  if (!shifts.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = emptyText;
+    container.replaceChildren(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const amountShift of shifts) {
+    fragment.appendChild(renderAmountControlShiftRow(amountShift));
   }
   container.replaceChildren(fragment);
 }
@@ -164,12 +185,21 @@ function renderIfsSummary(payload) {
   const items = [
     ["U1 stok", payload?.stock_count],
     ["Aktif operasyon", payload?.operation_count],
-    ["Aktif HM-02", payload?.active_used_hm02_part_count],
+    [
+      "Aktif HM-02/03/04",
+      payload?.active_used_part_count ?? payload?.active_used_hm02_part_count,
+    ],
     ["Çizelge iş emri", payload?.planning_order_count],
     ["Çizelge operasyon", payload?.planning_operation_count],
-    ["Çizelge HM-02", payload?.planning_used_hm02_part_count],
+    [
+      "Çizelge HM-02/03/04",
+      payload?.planning_used_part_count ?? payload?.planning_used_hm02_part_count,
+    ],
     ["Toplam malzeme", payload?.used_material_count],
-    ["Toplam HM-02", payload?.used_hm02_part_count],
+    [
+      "Toplam HM-02/03/04",
+      payload?.used_part_count ?? payload?.used_hm02_part_count,
+    ],
     ["İade adayı", payload?.return_candidate_count],
   ];
 
@@ -282,6 +312,29 @@ function renderAuxiliarySubmissionRow(submission) {
   return row;
 }
 
+function renderAmountControlShiftRow(amountShift) {
+  const row = document.createElement("article");
+  row.className = "entry-row";
+
+  const details = document.createElement("div");
+  const title = document.createElement("p");
+  title.className = "entry-title";
+  title.textContent = amountControlShiftTitle(amountShift);
+
+  const meta = document.createElement("p");
+  meta.className = "entry-meta";
+  meta.textContent = amountControlShiftMeta(amountShift);
+
+  details.append(title, meta);
+
+  const status = document.createElement("span");
+  status.className = "status-pill status-success";
+  status.textContent = `${displayValue(amountShift.produced_quantity)} adet`;
+
+  row.append(details, status);
+  return row;
+}
+
 function entryTitle(entry) {
   const payload = entry.payload || {};
   const machine = payload.col_f || "Makine";
@@ -310,6 +363,27 @@ function auxiliarySubmissionMeta(submission) {
       ? `Excel ${submission.excel_start_row}-${submission.excel_end_row}`
       : "",
     formatTimestamp(submission.submitted_at || submission.created_at),
+  ].filter(Boolean);
+  return pieces.join(" / ");
+}
+
+function amountControlShiftTitle(amountShift) {
+  return [
+    dateForDisplay(amountShift.record_date),
+    amountShift.machine_code,
+    amountShift.job_order,
+    amountShift.shift,
+  ].filter(Boolean).join(" / ");
+}
+
+function amountControlShiftMeta(amountShift) {
+  const breakdownCount = Array.isArray(amountShift.breakdowns)
+    ? amountShift.breakdowns.length
+    : 0;
+  const pieces = [
+    amountShift.worker_names ? `Calisanlar: ${amountShift.worker_names}` : "",
+    breakdownCount ? `${breakdownCount} ariza` : "",
+    formatTimestamp(amountShift.created_at),
   ].filter(Boolean);
   return pieces.join(" / ");
 }

@@ -1,22 +1,34 @@
-const CACHE_NAME = "process-offline-shell-v4";
+const CACHE_NAME = "process-offline-shell-v6";
+const APP_ROUTE_URLS = [
+  "/",
+  "/process",
+  "/auxiliary",
+  "/amount-control",
+  "/reports",
+  "/login",
+];
 const APP_SHELL_URLS = [
   "/manifest.webmanifest",
-  "/static/css/app.css?v=20260612-structured",
+  "/static/css/app.css?v=20260617-amount-control",
   "/static/js/api.js?v=20260612-refactor",
-  "/static/js/app.js?v=20260612-refactor",
+  "/static/js/app.js?v=20260617-amount-control",
+  "/static/js/modules/amount-control.js?v=20260617-amount-control",
   "/static/js/modules/constants.js?v=20260612-refactor",
+  "/static/js/modules/constants.js?v=20260617-amount-control",
   "/static/js/modules/dates.js?v=20260612-refactor",
+  "/static/js/modules/dates.js?v=20260617-amount-control",
   "/static/js/modules/ifs-return.js?v=20260612-refactor",
-  "/static/js/modules/lists.js?v=20260612-refactor",
+  "/static/js/modules/lists.js?v=20260617-amount-control",
   "/static/js/modules/login.js?v=20260612-refactor",
-  "/static/js/modules/main-page.js?v=20260612-refactor",
-  "/static/js/modules/offline.js?v=20260612-refactor",
+  "/static/js/modules/main-page.js?v=20260617-amount-control",
+  "/static/js/modules/offline.js?v=20260617-amount-control",
   "/static/js/modules/payloads.js?v=20260612-refactor",
-  "/static/js/modules/render.js?v=20260612-refactor",
+  "/static/js/modules/render.js?v=20260617-amount-control",
   "/static/js/modules/shop-orders.js?v=20260612-refactor",
   "/static/js/modules/temperature.js?v=20260612-refactor",
   "/static/js/modules/tour-context.js?v=20260612-refactor",
   "/static/js/modules/utils.js?v=20260612-refactor",
+  "/static/js/modules/utils.js?v=20260617-amount-control",
 ];
 
 self.addEventListener("install", (event) => {
@@ -51,7 +63,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request, "/"));
+    event.respondWith(networkFirstNavigation(request, routeCacheKey(url.pathname)));
     return;
   }
 
@@ -68,6 +80,27 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirst(request));
   }
 });
+
+function routeCacheKey(pathname) {
+  return APP_ROUTE_URLS.includes(pathname) ? pathname : "/";
+}
+
+async function networkFirstNavigation(request, cacheKey) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const response = await fetch(request);
+    if (response.ok && !response.redirected) {
+      await cache.put(cacheKey, response.clone());
+    }
+    return response;
+  } catch (_error) {
+    const cached = await cache.match(cacheKey) || await cache.match("/");
+    if (cached) {
+      return cached;
+    }
+    throw _error;
+  }
+}
 
 async function networkFirst(request, cacheKey) {
   const cache = await caches.open(CACHE_NAME);

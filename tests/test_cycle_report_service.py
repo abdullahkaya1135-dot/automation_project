@@ -5,12 +5,14 @@ import pytest
 from openpyxl import Workbook, load_workbook
 
 from app.config import Settings
+from app.database import init_db
 from app.services.cycle_report_service import (
     NoTodayRowsError,
     create_cycle_report,
     normalize_machine_group,
     parse_part_description,
 )
+from app.services.process_excel_import import import_process_excel_to_database
 
 HEADERS = [
     "Date",
@@ -136,6 +138,11 @@ def _settings(tmp_path: Path) -> Settings:
     )
 
 
+def _seed_process_database(settings: Settings) -> None:
+    init_db(settings)
+    import_process_excel_to_database(settings)
+
+
 def test_parse_part_description_extracts_neck_and_gram_values():
     assert parse_part_description(
         "ENJ0057-01 KAPAK SEFFAF SARI 44MM CAKMA 6GR"
@@ -172,8 +179,10 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
         ],
     )
     _create_cycle_table(tmp_path / "cycle.xlsx")
+    settings = _settings(tmp_path)
+    _seed_process_database(settings)
 
-    result = create_cycle_report(_settings(tmp_path), date(2026, 6, 9))
+    result = create_cycle_report(settings, date(2026, 6, 9))
 
     assert result.row_count == 2
     assert result.matched_count == 2
@@ -184,17 +193,6 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
     worksheet = workbook["Çevrim Kontrol"]
     assert [cell.value for cell in worksheet[1]] == REPORT_HEADERS
     assert [cell.value for cell in worksheet[2]] == [
-        "70DPH",
-        "175",
-        28,
-        35,
-        3,
-        2,
-        213,
-        14,
-        "Kontrol Edilecek",
-    ]
-    assert [cell.value for cell in worksheet[3]] == [
         "PF-6",
         "162",
         28,
@@ -205,6 +203,17 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
         21,
         "Uygun",
     ]
+    assert [cell.value for cell in worksheet[3]] == [
+        "70DPH",
+        "175",
+        28,
+        35,
+        3,
+        2,
+        213,
+        14,
+        "Kontrol Edilecek",
+    ]
     workbook.close()
 
 
@@ -214,8 +223,10 @@ def test_create_cycle_report_rejects_no_today_rows_without_output(tmp_path):
         [_process_row("08.06.2026", 175, 2668, 3, 2, 213)],
     )
     _create_cycle_table(tmp_path / "cycle.xlsx")
+    settings = _settings(tmp_path)
+    _seed_process_database(settings)
 
     with pytest.raises(NoTodayRowsError):
-        create_cycle_report(_settings(tmp_path), date(2026, 6, 9))
+        create_cycle_report(settings, date(2026, 6, 9))
 
     assert not (tmp_path / "reports").exists()

@@ -1,13 +1,20 @@
 import { apiJson } from "../api.js?v=20260612-refactor";
+import {
+  amountControlRequestBodies,
+  initializeAmountControlControls,
+  resetAmountControlForm,
+  updateAmountControlBootstrap,
+} from "./amount-control.js?v=20260617-amount-control";
 import { automaticTourTimingForRequest } from "./dates.js?v=20260612-refactor";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
 } from "./ifs-return.js?v=20260612-refactor";
 import {
+  loadAmountControlShifts,
   loadAuxiliarySubmissions,
   loadEntryLists,
-} from "./lists.js?v=20260612-refactor";
+} from "./lists.js?v=20260617-amount-control";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -20,13 +27,13 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260612-refactor";
+} from "./offline.js?v=20260617-amount-control";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
 } from "./payloads.js?v=20260612-refactor";
-import { renderLoading } from "./render.js?v=20260612-refactor";
+import { renderLoading } from "./render.js?v=20260617-amount-control";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
@@ -55,39 +62,43 @@ import {
 } from "./utils.js?v=20260612-refactor";
 
 export function initMainPage() {
-  const entryForm = document.querySelector("#entry-form");
-  const tourForm = document.querySelector("#tour-context-form");
-  const auxiliaryForm = document.querySelector("#auxiliary-form");
-  if (!entryForm || !tourForm) {
+  const page = document.body?.dataset?.page;
+  if (!page || page === "login") {
     return;
   }
 
-  initializeAutomaticTourTiming();
-  tourForm.addEventListener("submit", handleTourContextSubmit);
-  entryForm.addEventListener("submit", handleEntrySubmit);
-  if (auxiliaryForm) {
-    auxiliaryForm.addEventListener("submit", handleAuxiliarySubmit);
-  }
-  initializeShopOrderDropdowns();
-  initializeTemperatureShorthandInputs();
+  initializeSharedShell(page);
+  initializePage(page);
+  void initializeApplication(page);
+}
 
-  const refreshButton = document.querySelector("#refresh-entries");
-  if (refreshButton) {
-    refreshButton.addEventListener("click", async () => {
-      setButtonBusy(refreshButton, true, "Yenileniyor");
-      try {
-        await loadEntryLists();
-      } finally {
-        setButtonBusy(refreshButton, false);
-      }
-    });
-  }
+function initializeSharedShell(page) {
+  bindPhoneSyncPanel();
+  configureOfflineRefresh(async () => {
+    await refreshCurrentPage(page);
+  });
+  initializeOfflineFeatures();
+}
 
-  const retryButton = document.querySelector("#retry-sync");
-  if (retryButton) {
-    retryButton.addEventListener("click", handleRetrySync);
+function initializePage(page) {
+  if (page === "process") {
+    initializeProcessPage();
+    return;
   }
+  if (page === "auxiliary") {
+    initializeAuxiliaryPage();
+    return;
+  }
+  if (page === "amount-control") {
+    initializeAmountControlPage();
+    return;
+  }
+  if (page === "reports") {
+    initializeReportsPage();
+  }
+}
 
+function bindPhoneSyncPanel() {
   const phoneSyncButton = document.querySelector("#sync-phone-outbox");
   if (phoneSyncButton) {
     phoneSyncButton.addEventListener("click", handlePhoneOutboxSync);
@@ -106,6 +117,29 @@ export function initMainPage() {
       void exportOfflineOutbox("csv");
     });
   }
+}
+
+function initializeProcessPage() {
+  const entryForm = document.querySelector("#entry-form");
+  const tourForm = document.querySelector("#tour-context-form");
+
+  if (tourForm) {
+    initializeAutomaticTourTiming();
+    tourForm.addEventListener("submit", handleTourContextSubmit);
+  }
+  if (entryForm) {
+    entryForm.addEventListener("submit", handleEntrySubmit);
+  }
+
+  initializeShopOrderDropdowns();
+  initializeTemperatureShorthandInputs();
+}
+
+function initializeAuxiliaryPage() {
+  const auxiliaryForm = document.querySelector("#auxiliary-form");
+  if (auxiliaryForm) {
+    auxiliaryForm.addEventListener("submit", handleAuxiliarySubmit);
+  }
 
   const auxiliaryRetryButton = document.querySelector("#retry-auxiliary-sync");
   if (auxiliaryRetryButton) {
@@ -123,6 +157,45 @@ export function initMainPage() {
       }
     });
   }
+}
+
+function initializeAmountControlPage() {
+  const amountControlForm = document.querySelector("#amount-control-form");
+  initializeAmountControlControls();
+  if (amountControlForm) {
+    amountControlForm.addEventListener("submit", handleAmountControlSubmit);
+  }
+
+  const amountControlRefreshButton = document.querySelector("#refresh-amount-control");
+  if (amountControlRefreshButton) {
+    amountControlRefreshButton.addEventListener("click", async () => {
+      setButtonBusy(amountControlRefreshButton, true, "Yenileniyor");
+      try {
+        await loadAmountControlShifts();
+      } finally {
+        setButtonBusy(amountControlRefreshButton, false);
+      }
+    });
+  }
+}
+
+function initializeReportsPage() {
+  const refreshButton = document.querySelector("#refresh-entries");
+  if (refreshButton) {
+    refreshButton.addEventListener("click", async () => {
+      setButtonBusy(refreshButton, true, "Yenileniyor");
+      try {
+        await loadEntryLists();
+      } finally {
+        setButtonBusy(refreshButton, false);
+      }
+    });
+  }
+
+  const retryButton = document.querySelector("#retry-sync");
+  if (retryButton) {
+    retryButton.addEventListener("click", handleRetrySync);
+  }
 
   const cycleReportButton = document.querySelector("#create-cycle-report");
   if (cycleReportButton) {
@@ -139,37 +212,90 @@ export function initMainPage() {
     ifsReturnPrintButton.disabled = true;
     ifsReturnPrintButton.addEventListener("click", handlePrintIfsReturnCandidates);
   }
-
-  configureOfflineRefresh(async () => {
-    await Promise.all([
-      loadEntryLists(),
-      loadAuxiliarySubmissions(),
-      loadExcelPendingCount(),
-      loadBootstrap(),
-    ]);
-  });
-  initializeOfflineFeatures();
-  void initializeApplication();
 }
 
-async function initializeApplication() {
-  renderLoading(document.querySelector("#recent-entries"), "Kayıtlar yükleniyor...");
-  renderLoading(document.querySelector("#pending-entries"), "Bekleyen kayıtlar yükleniyor...");
-  renderLoading(document.querySelector("#auxiliary-submissions"), "Gönderimler yükleniyor...");
+async function initializeApplication(page) {
+  renderInitialLoading(page);
   await updatePhoneSyncStatus();
 
   try {
     await loadBootstrap();
   } catch (error) {
     setMessage(
-      document.querySelector("#entry-message"),
-      `Başlatma başarısız: ${error.message}`,
+      pageMessageTarget(page),
+      `Baslatma basarisiz: ${error.message}`,
       "error",
     );
   }
 
-  await Promise.all([loadEntryLists(), loadAuxiliarySubmissions(), loadExcelPendingCount()]);
+  await loadPageData(page);
   scheduleOutboxSync();
+}
+
+function renderInitialLoading(page) {
+  if (page === "reports") {
+    renderLoading(document.querySelector("#recent-entries"), "Kayitlar yukleniyor...");
+    renderLoading(document.querySelector("#pending-entries"), "Bekleyen kayitlar yukleniyor...");
+    return;
+  }
+  if (page === "auxiliary") {
+    renderLoading(document.querySelector("#auxiliary-submissions"), "Gonderimler yukleniyor...");
+    return;
+  }
+  if (page === "amount-control") {
+    renderLoading(
+      document.querySelector("#amount-control-submissions"),
+      "Miktar kontrolleri yukleniyor...",
+    );
+  }
+}
+
+async function refreshCurrentPage(page) {
+  await loadBootstrap();
+  await Promise.all([
+    updatePhoneSyncStatus(),
+    loadExcelPendingCount(),
+    ...pageDataLoaders(page),
+  ]);
+}
+
+async function loadPageData(page) {
+  await Promise.all([
+    loadExcelPendingCount(),
+    ...pageDataLoaders(page),
+  ]);
+}
+
+function pageDataLoaders(page) {
+  if (page === "reports") {
+    return [loadEntryLists()];
+  }
+  if (page === "auxiliary") {
+    return [loadAuxiliarySubmissions()];
+  }
+  if (page === "amount-control") {
+    return [loadAmountControlShifts()];
+  }
+  return [];
+}
+
+function pageMessageTarget(page) {
+  if (page === "process") {
+    return document.querySelector("#entry-message")
+      || document.querySelector("#tour-context-message");
+  }
+  if (page === "auxiliary") {
+    return document.querySelector("#auxiliary-message");
+  }
+  if (page === "amount-control") {
+    return document.querySelector("#amount-control-message");
+  }
+  if (page === "reports") {
+    return document.querySelector("#sync-message")
+      || document.querySelector("#cycle-report-message")
+      || document.querySelector("#ifs-return-message");
+  }
+  return document.querySelector("#phone-sync-message");
 }
 
 async function loadBootstrap() {
@@ -192,7 +318,7 @@ async function loadBootstrap() {
     }
     setMessage(
       document.querySelector("#phone-sync-message"),
-      `Çevrimdışı mod: son liste kullanılıyor (${formatTimestamp(cachedBootstrap.updated_at)}).`,
+      `Cevrimdisi mod: son liste kullaniliyor (${formatTimestamp(cachedBootstrap.updated_at)}).`,
       "warning",
     );
   }
@@ -200,6 +326,8 @@ async function loadBootstrap() {
   updateAuxiliarySystemsStatus(payload.auxiliary_systems);
   applyAuxiliaryDate(payload.current_auxiliary_date);
   updateShopOrderOptions(payload.shop_order_source);
+  updateAmountControlBootstrap(payload.machines || [], payload.shop_order_source);
+  updateProductionEngineerOptions(payload.production_engineers || []);
 
   const automaticTiming = payload.current_tour_timing || null;
   const storedContext = readStoredTourContext();
@@ -229,16 +357,53 @@ function updateExcelStatus(excel) {
     "status-warning",
     "status-error",
   );
+  if (excel?.database_backed) {
+    status.textContent = "Veritabani hazir";
+    status.title = "";
+    status.classList.add("status-success");
+    return;
+  }
   if (excel && excel.available) {
-    status.textContent = "Excel hazır";
+    status.textContent = "Excel hazir";
     status.title = "";
     status.classList.add("status-success");
     return;
   }
 
-  status.textContent = "Excel kullanılamıyor";
+  status.textContent = "Excel kullanilamiyor";
   status.title = excel?.last_error || "";
   status.classList.add("status-warning");
+}
+
+function updateProductionEngineerOptions(engineers) {
+  const select = document.querySelector("#production-engineer");
+  if (!select) {
+    return;
+  }
+
+  const currentValue = select.value;
+  const placeholder = select.querySelector("option[value='']");
+  select.replaceChildren();
+  if (placeholder) {
+    select.appendChild(placeholder);
+  } else {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Uretim muhendisi secin";
+    select.appendChild(option);
+  }
+
+  for (const engineer of engineers) {
+    const option = document.createElement("option");
+    option.value = engineer.full_name;
+    option.textContent = engineer.full_name;
+    option.dataset.engineerId = String(engineer.id);
+    select.appendChild(option);
+  }
+
+  if (currentValue) {
+    select.value = currentValue;
+  }
 }
 
 function updateAuxiliarySystemsStatus(auxiliarySystems) {
@@ -254,20 +419,20 @@ function updateAuxiliarySystemsStatus(auxiliarySystems) {
     "status-error",
   );
   if (auxiliarySystems?.target_available && auxiliarySystems?.form_available) {
-    status.textContent = "Yardımcı hazır";
+    status.textContent = "Yardimci hazir";
     status.title = "";
     status.classList.add("status-success");
     return;
   }
 
   if (auxiliarySystems?.target_available) {
-    status.textContent = "Form dosyası yok";
+    status.textContent = "Form dosyasi yok";
     status.title = auxiliarySystems?.form_error || "";
     status.classList.add("status-warning");
     return;
   }
 
-  status.textContent = "Yardımcı Excel yok";
+  status.textContent = "Yardimci Excel yok";
   status.title = auxiliarySystems?.target_error || auxiliarySystems?.form_error || "";
   status.classList.add("status-warning");
 }
@@ -325,7 +490,7 @@ async function handleTourContextSubmit(event) {
     storeTourContext(context);
     setMessage(
       message,
-      "Tur bilgileri telefona kaydedildi. Bağlantı gelince senkronize edilecek.",
+      "Tur bilgileri telefona kaydedildi. Baglanti gelince senkronize edilecek.",
       "warning",
     );
     await syncOutbox({ reason: "tour_context_submit" });
@@ -346,7 +511,7 @@ async function handleEntrySubmit(event) {
   const activeContext = readStoredTourContext();
 
   if (!contextId) {
-    setMessage(message, "Kayıt göndermeden önce tur bilgilerini kaydedin.", "error");
+    setMessage(message, "Kayit gondermeden once tur bilgilerini kaydedin.", "error");
     document.querySelector("#tour-context-heading")?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -369,8 +534,8 @@ async function handleEntrySubmit(event) {
     ? activeContext.client_request_id
     : null;
 
-  setMessage(message, "Kayıt telefona kaydediliyor...", "");
-  setButtonBusy(button, true, "Gönderiliyor");
+  setMessage(message, "Kayit telefona kaydediliyor...", "");
+  setButtonBusy(button, true, "Gonderiliyor");
 
   try {
     await queueOfflineRecord("entry", body, dependsOnClientRequestId);
@@ -378,12 +543,12 @@ async function handleEntrySubmit(event) {
     resetShopOrderDropdowns();
     setMessage(
       message,
-      "Kayıt telefona kaydedildi. Bağlantı gelince senkronize edilecek.",
+      "Kayit telefona kaydedildi. Baglanti gelince senkronize edilecek.",
       "warning",
     );
     await syncOutbox({ reason: "entry_submit" });
   } catch (error) {
-    setMessage(message, `Kayıt telefona kaydedilemedi: ${error.message}`, "error");
+    setMessage(message, `Kayit telefona kaydedilemedi: ${error.message}`, "error");
   } finally {
     setButtonBusy(button, false);
   }
@@ -403,29 +568,79 @@ async function handleAuxiliarySubmit(event) {
   const recordedAt = new Date();
   const body = auxiliaryRequestBody(form, recordedAt);
   if (!hasAuxiliaryMeasurement(body.payload)) {
-    setMessage(message, "En az bir yardımcı sistem ölçümü girin.", "error");
+    setMessage(message, "En az bir yardimci sistem olcumu girin.", "error");
     return;
   }
 
   body.client_request_id = createClientRequestId();
   body.client_recorded_at = recordedAt.toISOString();
 
-  setMessage(message, "Yardımcı sistemler telefona kaydediliyor...", "");
-  setButtonBusy(button, true, "Gönderiliyor");
+  setMessage(message, "Yardimci sistemler telefona kaydediliyor...", "");
+  setButtonBusy(button, true, "Gonderiliyor");
 
   try {
     await queueOfflineRecord("auxiliary_submission", body);
     form.reset();
     setMessage(
       message,
-      "Yardımcı sistemler telefona kaydedildi. Bağlantı gelince senkronize edilecek.",
+      "Yardimci sistemler telefona kaydedildi. Baglanti gelince senkronize edilecek.",
       "warning",
     );
     await syncOutbox({ reason: "auxiliary_submit" });
   } catch (error) {
     setMessage(
       message,
-      `Yardımcı sistemler telefona kaydedilemedi: ${error.message}`,
+      `Yardimci sistemler telefona kaydedilemedi: ${error.message}`,
+      "error",
+    );
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function handleAmountControlSubmit(event) {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const message = document.querySelector("#amount-control-message");
+  const button = form.querySelector("button[type='submit']");
+
+  if (!form.reportValidity()) {
+    return;
+  }
+
+  let bodies;
+  try {
+    bodies = amountControlRequestBodies(form);
+  } catch (error) {
+    setMessage(message, error.message, "error");
+    return;
+  }
+
+  const recordedAt = new Date();
+  for (const body of bodies) {
+    body.client_request_id = createClientRequestId();
+    body.client_recorded_at = recordedAt.toISOString();
+  }
+
+  setMessage(message, "Miktar kontrolu telefona kaydediliyor...", "");
+  setButtonBusy(button, true, "Gonderiliyor");
+
+  try {
+    for (const body of bodies) {
+      await queueOfflineRecord("amount_control_shift", body);
+    }
+    resetAmountControlForm(form);
+    setMessage(
+      message,
+      "Miktar kontrolu telefona kaydedildi. Baglanti gelince senkronize edilecek.",
+      "warning",
+    );
+    await syncOutbox({ reason: "amount_control_submit" });
+  } catch (error) {
+    setMessage(
+      message,
+      `Miktar kontrolu telefona kaydedilemedi: ${error.message}`,
       "error",
     );
   } finally {
@@ -448,20 +663,20 @@ async function handleRetrySync(event) {
     if (payload.failed) {
       setMessage(
         message,
-        `Tekrar deneme ${payload.synced} senkronizasyon ve ${payload.failed} hata sonrası durdu. ${payload.remaining} kayıt bekliyor.`,
+        `Tekrar deneme ${payload.synced} senkronizasyon ve ${payload.failed} hata sonrasi durdu. ${payload.remaining} kayit bekliyor.`,
         "warning",
       );
     } else {
       setMessage(
         message,
-        `Tekrar deneme tamamlandı. ${payload.synced} kayıt senkronize edildi, ${payload.remaining} kayıt bekliyor.`,
+        `Tekrar deneme tamamlandi. ${payload.synced} kayit senkronize edildi, ${payload.remaining} kayit bekliyor.`,
         "success",
       );
     }
 
-    await Promise.all([loadEntryLists(), loadBootstrap()]);
+    await Promise.all([loadEntryLists(), loadBootstrap(), loadExcelPendingCount()]);
   } catch (error) {
-    setMessage(message, `Tekrar deneme başarısız: ${error.message}`, "error");
+    setMessage(message, `Tekrar deneme basarisiz: ${error.message}`, "error");
   } finally {
     setButtonBusy(button, false);
   }
@@ -471,7 +686,7 @@ async function handleRetryAuxiliarySync(event) {
   const button = event.currentTarget;
   const message = document.querySelector("#auxiliary-message");
 
-  setMessage(message, "Yardımcı sistemler Excel senkronizasyonu tekrar deneniyor...", "");
+  setMessage(message, "Yardimci sistemler Excel senkronizasyonu tekrar deneniyor...", "");
   setButtonBusy(button, true, "Deneniyor");
 
   try {
@@ -482,20 +697,20 @@ async function handleRetryAuxiliarySync(event) {
     if (payload.failed) {
       setMessage(
         message,
-        `Tekrar deneme ${payload.synced} senkronizasyon ve ${payload.failed} hata sonrası durdu. ${payload.remaining} gönderim bekliyor.`,
+        `Tekrar deneme ${payload.synced} senkronizasyon ve ${payload.failed} hata sonrasi durdu. ${payload.remaining} gonderim bekliyor.`,
         "warning",
       );
     } else {
       setMessage(
         message,
-        `Tekrar deneme tamamlandı. ${payload.synced} gönderim senkronize edildi, ${payload.remaining} gönderim bekliyor.`,
+        `Tekrar deneme tamamlandi. ${payload.synced} gonderim senkronize edildi, ${payload.remaining} gonderim bekliyor.`,
         "success",
       );
     }
 
-    await Promise.all([loadAuxiliarySubmissions(), loadBootstrap()]);
+    await Promise.all([loadAuxiliarySubmissions(), loadBootstrap(), loadExcelPendingCount()]);
   } catch (error) {
-    setMessage(message, `Tekrar deneme başarısız: ${error.message}`, "error");
+    setMessage(message, `Tekrar deneme basarisiz: ${error.message}`, "error");
   } finally {
     setButtonBusy(button, false);
   }
@@ -505,23 +720,23 @@ async function handleCreateCycleReport(event) {
   const button = event.currentTarget;
   const message = document.querySelector("#cycle-report-message");
 
-  setMessage(message, "Çevrim kontrol raporu oluşturuluyor...", "");
-  setButtonBusy(button, true, "Oluşturuluyor");
+  setMessage(message, "Cevrim kontrol raporu olusturuluyor...", "");
+  setButtonBusy(button, true, "Olusturuluyor");
 
   try {
     const payload = await apiJson("/api/cycle-report/today", {
       method: "POST",
     });
     const warningText = payload.warning_count
-      ? ` ${payload.warning_count} uyarı var.`
+      ? ` ${payload.warning_count} uyari var.`
       : "";
     setMessage(
       message,
-      `Rapor oluşturuldu: ${payload.output_path}. ${payload.row_count} kayıt işlendi.${warningText}`,
+      `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} kayit islendi.${warningText}`,
       payload.warning_count ? "warning" : "success",
     );
   } catch (error) {
-    setMessage(message, `Rapor oluşturulamadı: ${error.message}`, "error");
+    setMessage(message, `Rapor olusturulamadi: ${error.message}`, "error");
   } finally {
     setButtonBusy(button, false);
   }

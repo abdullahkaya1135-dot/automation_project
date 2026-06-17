@@ -9,7 +9,7 @@ manual Excel export process for:
 Goal:
 
 ```text
-Find HM-02 material stock that is physically/logically in U1, has available stock,
+Find HM-02, HM-03, and HM-04 material stock that is physically/logically in U1, has available stock,
 but is not currently used by any active machine/order in the PET dispatch list.
 ```
 
@@ -72,7 +72,7 @@ DaComponentArray
 ShopMaterialAllocGuideArray
 ```
 
-They are not needed for the current HM-02 material comparison.
+They are not needed for the current configured raw-material prefix comparison.
 
 Assign the permission set to the user used by the integration. For production, use a
 dedicated integration/service user instead of a personal user account.
@@ -108,6 +108,7 @@ IFS_PASSWORD=<store only in .env or a secret store; do not commit>
 IFS_CONTRACT=S01
 IFS_COMPANY_ID=C01
 IFS_DISPATCH_FILTER_ID=PET
+IFS_PART_PREFIXES=HM-02,HM-03,HM-04
 IFS_PART_PREFIX=HM-02
 IFS_U1_LOCATION=U1
 ```
@@ -137,7 +138,7 @@ client_secret_basic and client_secret_post are supported
 
 Use `httpx` for HTTP calls. It already exists in `requirements.txt`.
 
-## Data Source 1: U1 HM-02 Stock
+## Data Source 1: U1 HM-02/HM-03/HM-04 Stock
 
 Projection:
 
@@ -154,13 +155,13 @@ InventoryPartInStockSet
 Purpose:
 
 ```text
-Read all HM-02 parts in U1 where AvailableQty > 0.
+Read all configured raw-material prefixes in U1 where AvailableQty > 0.
 ```
 
 Confirmed working URL:
 
 ```text
-https://ifs.simsekplastik.com/main/ifsapplications/projection/v1/InventoryPartInStockHandling.svc/InventoryPartInStockSet?$filter=Contract%20eq%20%27S01%27%20and%20startswith(PartNo,%27HM-02%27)%20and%20LocationNo%20eq%20%27U1%27%20and%20AvailableQty%20gt%200&$select=Contract,PartNo,LocationNo,AvailableQty,QtyOnhand,UoM,LotBatchNo,ObjId&$top=5
+https://ifs.simsekplastik.com/main/ifsapplications/projection/v1/InventoryPartInStockHandling.svc/InventoryPartInStockSet?$filter=Contract eq 'S01' and (startswith(PartNo,'HM-02') or startswith(PartNo,'HM-03') or startswith(PartNo,'HM-04')) and LocationNo eq 'U1' and AvailableQty gt 0&$select=Contract,PartNo,LocationNo,AvailableQty,QtyOnhand,UoM,LotBatchNo,ObjId&$top=5
 ```
 
 Recommended query:
@@ -172,7 +173,7 @@ GET /main/ifsapplications/projection/v1/InventoryPartInStockHandling.svc/Invento
 Query parameters:
 
 ```text
-$filter=Contract eq 'S01' and startswith(PartNo,'HM-02') and LocationNo eq 'U1' and AvailableQty gt 0
+$filter=Contract eq 'S01' and (startswith(PartNo,'HM-02') or startswith(PartNo,'HM-03') or startswith(PartNo,'HM-04')) and LocationNo eq 'U1' and AvailableQty gt 0
 $select=Contract,PartNo,LocationNo,AvailableQty,QtyOnhand,UoM,LotBatchNo,ObjId,ConfigurationId,SerialNo,EngChgLevel,WaivDevRejNo,ActivitySeq,HandlingUnitId
 $top=1000
 ```
@@ -293,10 +294,10 @@ PartNoDesc       = produced product description
 RemainingQty     = remaining operation quantity
 ```
 
-The `GetOperations` response does not directly contain HM-02 material/component
+The `GetOperations` response does not directly contain raw-material/component
 codes. Use each operation's keys to call `OperationMaterialArray`.
 
-## Data Source 3: HM-02 Materials Used By Operations
+## Data Source 3: HM-02/HM-03/HM-04 Materials Used By Operations
 
 Projection:
 
@@ -313,7 +314,7 @@ DispatchListOperationSet(...)/OperationMaterialArray
 Purpose:
 
 ```text
-For each active operation, read HM-02 material/component lines.
+For each active operation, read configured raw-material/component lines.
 ```
 
 Confirmed sample operation:
@@ -328,7 +329,7 @@ OperationNo: 10
 Confirmed working URL:
 
 ```text
-https://ifs.simsekplastik.com/main/ifsapplications/projection/v1/ShopFloorWorkbenchHandling.svc/DispatchListOperationSet(OrderNo='2615',ReleaseNo='%2A',SequenceNo='%2A',OperationNo=10)/OperationMaterialArray?$filter=startswith(PartNo,'HM-02')&$select=OrderNo,ReleaseNo,SequenceNo,LineItemNo,OperationNo,PartNo,IssueToLoc,QtyRequired,QtyAssigned,QtyIssued,QtyRemainingToReserve,QtyAvailable,PrintUnit,SoPartNo,Cf_Tercihedilenkaynak&$top=20
+https://ifs.simsekplastik.com/main/ifsapplications/projection/v1/ShopFloorWorkbenchHandling.svc/DispatchListOperationSet(OrderNo='2615',ReleaseNo='%2A',SequenceNo='%2A',OperationNo=10)/OperationMaterialArray?$filter=(startswith(PartNo,'HM-02') or startswith(PartNo,'HM-03') or startswith(PartNo,'HM-04'))&$select=OrderNo,ReleaseNo,SequenceNo,LineItemNo,OperationNo,PartNo,IssueToLoc,QtyRequired,QtyAssigned,QtyIssued,QtyRemainingToReserve,QtyAvailable,PrintUnit,SoPartNo,Cf_Tercihedilenkaynak&$top=20
 ```
 
 Important URL encoding detail:
@@ -347,7 +348,7 @@ GET /main/ifsapplications/projection/v1/ShopFloorWorkbenchHandling.svc/DispatchL
 Query parameters:
 
 ```text
-$filter=startswith(PartNo,'HM-02')
+$filter=(startswith(PartNo,'HM-02') or startswith(PartNo,'HM-03') or startswith(PartNo,'HM-04'))
 $select=OrderNo,ReleaseNo,SequenceNo,LineItemNo,OperationNo,PartNo,IssueToLoc,QtyRequired,QtyAssigned,QtyIssued,QtyRemainingToReserve,QtyAvailable,PrintUnit,SoPartNo,Cf_Tercihedilenkaynak
 $top=1000
 ```
@@ -375,7 +376,7 @@ Cf_Tercihedilenkaynak: 135
 Important fields:
 
 ```text
-PartNo                 = HM-02 material/component code
+PartNo                 = configured raw-material/component code
 IssueToLoc             = issue/source location, U1 in the confirmed sample
 QtyRequired            = required material quantity
 QtyRemainingToReserve  = remaining quantity to reserve
@@ -388,7 +389,7 @@ OperationNo
 LineItemNo
 ```
 
-Use `PartNo` from `OperationMaterialArray` as the set of HM-02 materials currently
+Use `PartNo` from `OperationMaterialArray` as the set of configured raw materials currently
 used by active machine operations.
 
 ## Comparison Logic
@@ -396,10 +397,10 @@ used by active machine operations.
 High-level algorithm:
 
 ```text
-1. Fetch all U1 HM-02 stock rows with AvailableQty > 0.
+1. Fetch all U1 HM-02/HM-03/HM-04 stock rows with AvailableQty > 0.
 2. Fetch all ongoing PET operations.
-3. For each operation, fetch OperationMaterialArray filtered to HM-02.
-4. Build a set of used HM-02 PartNo values from material lines.
+3. For each operation, fetch OperationMaterialArray filtered to the configured prefixes.
+4. Build a set of used PartNo values from material lines.
 5. Return every U1 stock row whose PartNo is not in the used set.
 ```
 
@@ -667,10 +668,10 @@ Before merging the integration:
 
 ```text
 [ ] OAuth token can be obtained without browser cookies.
-[ ] Stock query returns U1 HM-02 rows.
+[ ] Stock query returns U1 HM-02/HM-03/HM-04 rows.
 [ ] Reference_DispatchListFilter returns PET / Salon 4.
 [ ] GetOperations returns ongoing PET operations.
-[ ] OperationMaterialArray returns HM-02 material rows for at least one operation.
+[ ] OperationMaterialArray returns configured raw-material rows for at least one operation.
 [ ] Pagination is handled for stock, operations, and materials.
 [ ] Return-candidate comparison keeps lot/batch-level stock rows.
 [ ] 401/403/400 errors produce clear messages.
@@ -687,13 +688,17 @@ Test comparison logic without calling IFS:
 def test_return_candidates_exclude_used_parts():
     stock_rows = [
         {"PartNo": "HM-02-A", "LotBatchNo": "L1"},
-        {"PartNo": "HM-02-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-03-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-04-C", "LotBatchNo": "L3"},
     ]
     used_parts = {"HM-02-A"}
 
     candidates = [row for row in stock_rows if row["PartNo"] not in used_parts]
 
-    assert candidates == [{"PartNo": "HM-02-B", "LotBatchNo": "L2"}]
+    assert candidates == [
+        {"PartNo": "HM-03-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-04-C", "LotBatchNo": "L3"},
+    ]
 ```
 
 Test duplicate stock lots are retained:
@@ -701,8 +706,8 @@ Test duplicate stock lots are retained:
 ```python
 def test_unused_part_keeps_all_lots():
     stock_rows = [
-        {"PartNo": "HM-02-B", "LotBatchNo": "L1"},
-        {"PartNo": "HM-02-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-03-B", "LotBatchNo": "L1"},
+        {"PartNo": "HM-03-B", "LotBatchNo": "L2"},
     ]
     used_parts = set()
 

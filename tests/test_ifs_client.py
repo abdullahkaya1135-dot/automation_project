@@ -5,6 +5,7 @@ import httpx
 import pytest
 from openpyxl import Workbook
 
+from app import config
 from app.config import Settings
 from app.integrations.ifs_client import (
     IFSClientError,
@@ -24,6 +25,12 @@ from app.integrations.ifs_client import (
 )
 
 
+MULTI_PREFIX_FILTER = (
+    "(startswith(PartNo,'HM-02') or startswith(PartNo,'HM-03') "
+    "or startswith(PartNo,'HM-04'))"
+)
+
+
 def _create_planning_workbook(path, values: list[object]) -> None:
     workbook = Workbook()
     worksheet = workbook.active
@@ -31,6 +38,35 @@ def _create_planning_workbook(path, values: list[object]) -> None:
         worksheet.cell(row=row_index, column=1, value=value)
     workbook.save(path)
     workbook.close()
+
+
+def test_get_settings_expands_default_hm02_prefix_to_configured_prefixes(monkeypatch):
+    monkeypatch.setattr(config, "load_dotenv", lambda **_: None)
+    monkeypatch.delenv("IFS_PART_PREFIXES", raising=False)
+    monkeypatch.setenv("IFS_PART_PREFIX", "HM-02")
+
+    settings = config.get_settings(validate=False)
+
+    assert settings.ifs_part_prefix == "HM-02"
+    assert settings.ifs_part_prefixes == ("HM-02", "HM-03", "HM-04")
+
+
+def test_get_settings_accepts_new_prefix_list_and_custom_legacy_prefix(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "load_dotenv", lambda **_: None)
+    monkeypatch.setenv("IFS_PART_PREFIXES", "HM-03, HM-04, HM-03")
+    monkeypatch.setenv("IFS_PART_PREFIX", "HM-99")
+
+    settings = config.get_settings(validate=False)
+
+    assert settings.ifs_part_prefix == "HM-99"
+    assert settings.ifs_part_prefixes == ("HM-03", "HM-04")
+
+    monkeypatch.delenv("IFS_PART_PREFIXES", raising=False)
+    settings = config.get_settings(validate=False)
+
+    assert settings.ifs_part_prefixes == ("HM-99",)
 
 
 def test_fetch_u1_hm02_stock_uses_filter_and_follows_next_link():
@@ -50,7 +86,7 @@ def test_fetch_u1_hm02_stock_uses_filter_and_follows_next_link():
             )
         return httpx.Response(
             200,
-            json={"value": [{"PartNo": "HM-02-B", "LotBatchNo": "L2"}]},
+            json={"value": [{"PartNo": "HM-03-B", "LotBatchNo": "L2"}]},
         )
 
     async def run() -> list[dict]:
@@ -65,14 +101,14 @@ def test_fetch_u1_hm02_stock_uses_filter_and_follows_next_link():
 
     assert rows == [
         {"PartNo": "HM-02-A", "LotBatchNo": "L1"},
-        {"PartNo": "HM-02-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-03-B", "LotBatchNo": "L2"},
     ]
     assert len(requests) == 2
     assert requests[0].url.path.endswith(
         "/InventoryPartInStockHandling.svc/InventoryPartInStockSet"
     )
     assert requests[0].url.params["$filter"] == (
-        "Contract eq 'S01' and startswith(PartNo,'HM-02') "
+        f"Contract eq 'S01' and {MULTI_PREFIX_FILTER} "
         "and LocationNo eq 'U1' and AvailableQty gt 0"
     )
     assert "Contract%20eq%20" in requests[0].url.query.decode()
@@ -352,7 +388,7 @@ def test_fetch_operation_hm02_materials_encodes_operation_key_and_paginates():
                         "SequenceNo": "*",
                         "LineItemNo": 3,
                         "OperationNo": 10,
-                        "PartNo": "HM-02-01-01-526",
+                        "PartNo": "HM-04-01-01-526",
                     }
                 ]
             },
@@ -384,7 +420,7 @@ def test_fetch_operation_hm02_materials_encodes_operation_key_and_paginates():
             "SequenceNo": "*",
             "LineItemNo": 3,
             "OperationNo": 10,
-            "PartNo": "HM-02-01-01-526",
+            "PartNo": "HM-04-01-01-526",
         },
     ]
     assert len(requests) == 2
@@ -396,7 +432,7 @@ def test_fetch_operation_hm02_materials_encodes_operation_key_and_paginates():
     assert "OperationNo=10" in first_raw_path
     assert "%252A" not in first_raw_path
     assert first_raw_path.endswith(")/OperationMaterialArray")
-    assert requests[0].url.params["$filter"] == "startswith(PartNo,'HM-02')"
+    assert requests[0].url.params["$filter"] == MULTI_PREFIX_FILTER
     assert requests[0].url.params["$select"] == (
         "OrderNo,ReleaseNo,SequenceNo,LineItemNo,OperationNo,PartNo,IssueToLoc,"
         "QtyRequired,QtyAssigned,QtyIssued,QtyRemainingToReserve,QtyAvailable,"
@@ -456,27 +492,28 @@ def test_used_hm02_part_numbers_deduplicates_and_ignores_blank_values():
         [
             {"PartNo": "HM-02-A"},
             {"PartNo": "HM-02-A"},
-            {"PartNo": " HM-02-B "},
+            {"PartNo": " HM-03-B "},
+            {"PartNo": "HM-04-C"},
             {"PartNo": ""},
             {},
         ]
     )
 
-    assert used_parts == {"HM-02-A", "HM-02-B"}
+    assert used_parts == {"HM-02-A", "HM-03-B", "HM-04-C"}
 
 
-def test_return_candidate_stock_rows_excludes_used_parts_and_keeps_lots():
+def test_return_candidate_stock_rows_excludes_used_parts_and_sorts_by_part_no():
     stock_rows = [
         {"PartNo": "HM-02-A", "LotBatchNo": "USED"},
-        {"PartNo": "HM-02-B", "LotBatchNo": "L1"},
-        {"PartNo": "HM-02-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-04-C", "LotBatchNo": "L2"},
+        {"PartNo": "HM-03-B", "LotBatchNo": "L1"},
     ]
 
     candidates = return_candidate_stock_rows(stock_rows, {"HM-02-A"})
 
     assert candidates == [
-        {"PartNo": "HM-02-B", "LotBatchNo": "L1"},
-        {"PartNo": "HM-02-B", "LotBatchNo": "L2"},
+        {"PartNo": "HM-03-B", "LotBatchNo": "L1"},
+        {"PartNo": "HM-04-C", "LotBatchNo": "L2"},
     ]
 
 
@@ -533,7 +570,13 @@ def test_fetch_used_hm02_materials_collects_materials_for_all_operations():
                         {
                             "OrderNo": "2616",
                             "OperationNo": 20,
-                            "PartNo": "HM-02-B",
+                            "PartNo": "HM-03-B",
+                        },
+                        {
+                            "OrderNo": "2616",
+                            "OperationNo": 20,
+                            "LineItemNo": 2,
+                            "PartNo": "HM-04-C",
                         },
                         {
                             "OrderNo": "2616",
@@ -557,12 +600,15 @@ def test_fetch_used_hm02_materials_collects_materials_for_all_operations():
 
     assert len(requests) == 3
     assert summary["operation_count"] == 2
-    assert summary["used_material_count"] == 2
-    assert summary["used_hm02_part_count"] == 2
-    assert summary["used_hm02_parts"] == ["HM-02-A", "HM-02-B"]
+    assert summary["used_material_count"] == 3
+    assert summary["used_part_count"] == 3
+    assert summary["used_parts"] == ["HM-02-A", "HM-03-B", "HM-04-C"]
+    assert summary["used_hm02_part_count"] == 3
+    assert summary["used_hm02_parts"] == ["HM-02-A", "HM-03-B", "HM-04-C"]
     assert [row["PartNo"] for row in summary["used_materials"]] == [
         "HM-02-A",
-        "HM-02-B",
+        "HM-03-B",
+        "HM-04-C",
     ]
 
 
@@ -612,7 +658,7 @@ def test_fetch_planning_used_hm02_materials_collects_visible_order_materials():
                             "SequenceNo": "*",
                             "OperationNo": 10,
                             "LineItemNo": 2,
-                            "PartNo": "HM-02-S",
+                            "PartNo": "HM-03-S",
                         },
                         {
                             "OrderNo": "2579",
@@ -620,7 +666,7 @@ def test_fetch_planning_used_hm02_materials_collects_visible_order_materials():
                             "SequenceNo": "*",
                             "OperationNo": 10,
                             "LineItemNo": 2,
-                            "PartNo": "HM-02-S",
+                            "PartNo": "HM-03-S",
                         },
                     ]
                 },
@@ -636,7 +682,7 @@ def test_fetch_planning_used_hm02_materials_collects_visible_order_materials():
                             "SequenceNo": "*",
                             "OperationNo": 1,
                             "LineItemNo": 3,
-                            "PartNo": "HM-02-P",
+                            "PartNo": "HM-04-P",
                         },
                         {
                             "OrderNo": "2579",
@@ -666,11 +712,13 @@ def test_fetch_planning_used_hm02_materials_collects_visible_order_materials():
     assert summary["planning_order_count"] == 2
     assert summary["planning_operation_count"] == 2
     assert summary["planning_used_material_count"] == 2
+    assert summary["planning_used_part_count"] == 2
+    assert summary["planning_used_parts"] == ["HM-03-S", "HM-04-P"]
     assert summary["planning_used_hm02_part_count"] == 2
-    assert summary["planning_used_hm02_parts"] == ["HM-02-P", "HM-02-S"]
+    assert summary["planning_used_hm02_parts"] == ["HM-03-S", "HM-04-P"]
     assert [row["PartNo"] for row in summary["planning_used_materials"]] == [
-        "HM-02-S",
-        "HM-02-P",
+        "HM-03-S",
+        "HM-04-P",
     ]
     assert len(requests) == 4
 
@@ -694,8 +742,8 @@ def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_pat
                 json={
                     "value": [
                         {"PartNo": "HM-02-A", "LotBatchNo": "USED"},
-                        {"PartNo": "HM-02-B", "LotBatchNo": "PLANNED"},
-                        {"PartNo": "HM-02-C", "LotBatchNo": "L1"},
+                        {"PartNo": "HM-03-B", "LotBatchNo": "PLANNED"},
+                        {"PartNo": "HM-04-C", "LotBatchNo": "L1"},
                     ]
                 },
             )
@@ -748,7 +796,7 @@ def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_pat
                         {
                             "OrderNo": "2579",
                             "OperationNo": 20,
-                            "PartNo": "HM-02-B",
+                            "PartNo": "HM-03-B",
                         }
                     ]
                 },
@@ -770,21 +818,25 @@ def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_pat
     assert summary["stock_count"] == 3
     assert summary["operation_count"] == 1
     assert summary["active_used_material_count"] == 1
+    assert summary["active_used_part_count"] == 1
     assert summary["active_used_hm02_part_count"] == 1
     assert summary["planning_order_count"] == 1
     assert summary["planning_operation_count"] == 1
     assert summary["planning_used_material_count"] == 1
+    assert summary["planning_used_part_count"] == 1
     assert summary["planning_used_hm02_part_count"] == 1
     assert summary["used_material_count"] == 2
+    assert summary["used_part_count"] == 2
     assert summary["used_hm02_part_count"] == 2
     assert summary["return_candidate_count"] == 1
-    assert summary["used_hm02_parts"] == ["HM-02-A", "HM-02-B"]
+    assert summary["used_parts"] == ["HM-02-A", "HM-03-B"]
+    assert summary["used_hm02_parts"] == ["HM-02-A", "HM-03-B"]
     assert summary["return_candidates"] == [
-        {"PartNo": "HM-02-C", "LotBatchNo": "L1"},
+        {"PartNo": "HM-04-C", "LotBatchNo": "L1"},
     ]
     assert summary["used_materials"] == [
         {"OrderNo": "2615", "OperationNo": 10, "PartNo": "HM-02-A"},
-        {"OrderNo": "2579", "OperationNo": 20, "PartNo": "HM-02-B"},
+        {"OrderNo": "2579", "OperationNo": 20, "PartNo": "HM-03-B"},
     ]
 
 

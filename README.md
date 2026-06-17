@@ -74,6 +74,7 @@ IFS_TOKEN_URL=https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-con
 IFS_CLIENT_ID=your-ifs-client-id
 IFS_USERNAME=your-ifs-user
 IFS_PASSWORD=your-ifs-password
+IFS_PART_PREFIXES=HM-02,HM-03,HM-04
 PRODUCTION_PLANNING_DIR=\\fileserver\GENEL\URETIM GUNLUK TAKIP
 PRODUCTION_PLANNING_PATH=\\fileserver\GENEL\URETIM GUNLUK TAKIP\10.06.2026 ÇİZELGE 2.xlsx
 ```
@@ -208,8 +209,12 @@ are selected by the newest date at the start of the filename, such as
 Temporary Excel files starting with `~$` are ignored. If
 `PRODUCTION_PLANNING_DIR` is blank, the app falls back to the configured
 `PRODUCTION_PLANNING_PATH` workbook. Hidden sheets, hidden rows, and hidden
-column `A` are ignored before the app checks scheduled orders for HM-02 usage in
-IFS.
+column `A` are ignored before the app checks scheduled orders for
+HM-02/HM-03/HM-04 usage in IFS. Set `IFS_PART_PREFIXES` to a comma-separated
+list such as
+`HM-02,HM-03,HM-04` to control which raw-material prefixes are included; the
+legacy `IFS_PART_PREFIX` setting is still accepted for custom single-prefix
+overrides when the list is not set.
 
 IFS authentication uses the password grant to obtain a bearer token. Keep
 `IFS_USERNAME`, `IFS_PASSWORD`, `IFS_CLIENT_ID`, and optional `IFS_CLIENT_SECRET`

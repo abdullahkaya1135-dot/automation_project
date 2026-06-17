@@ -157,6 +157,34 @@ def _odata_string(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _part_no_prefixes(settings: Settings) -> tuple[str, ...]:
+    prefixes = tuple(
+        dict.fromkeys(
+            prefix
+            for value in getattr(settings, "ifs_part_prefixes", ())
+            if (prefix := str(value or "").strip())
+        )
+    )
+    if prefixes:
+        return prefixes
+
+    legacy_prefix = str(getattr(settings, "ifs_part_prefix", "") or "").strip()
+    if legacy_prefix:
+        return (legacy_prefix,)
+
+    raise IFSConfigurationError("Missing IFS configuration: IFS_PART_PREFIXES")
+
+
+def _part_no_prefix_filter(settings: Settings) -> str:
+    clauses = [
+        f"startswith(PartNo,{_odata_string(prefix)})"
+        for prefix in _part_no_prefixes(settings)
+    ]
+    if len(clauses) == 1:
+        return clauses[0]
+    return "(" + " or ".join(clauses) + ")"
+
+
 def _odata_key_string(value: str) -> str:
     escaped = value.replace("'", "''")
     return f"'{quote(escaped, safe='')}'"
@@ -447,14 +475,13 @@ async def fetch_u1_hm02_stock(
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch available HM-02 stock rows in the configured U1 location."""
+    """Fetch available configured material-prefix stock rows in U1."""
 
     _require_settings(
         settings,
         (
             ("ifs_base_url", "IFS_BASE_URL"),
             ("ifs_contract", "IFS_CONTRACT"),
-            ("ifs_part_prefix", "IFS_PART_PREFIX"),
             ("ifs_u1_location", "IFS_U1_LOCATION"),
         ),
     )
@@ -471,7 +498,7 @@ async def fetch_u1_hm02_stock(
         params = {
             "$filter": (
                 f"Contract eq {_odata_string(settings.ifs_contract)} "
-                f"and startswith(PartNo,{_odata_string(settings.ifs_part_prefix)}) "
+                f"and {_part_no_prefix_filter(settings)} "
                 f"and LocationNo eq {_odata_string(settings.ifs_u1_location)} "
                 "and AvailableQty gt 0"
             ),
@@ -538,13 +565,12 @@ async def fetch_operation_hm02_materials(
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch HM-02 material lines for one dispatch-list operation."""
+    """Fetch configured material-prefix lines for one dispatch-list operation."""
 
     _require_settings(
         settings,
         (
             ("ifs_base_url", "IFS_BASE_URL"),
-            ("ifs_part_prefix", "IFS_PART_PREFIX"),
         ),
     )
 
@@ -555,7 +581,7 @@ async def fetch_operation_hm02_materials(
         headers = {"Authorization": f"Bearer {token}"}
         url = _projection_url(settings, _operation_materials_path(operation))
         params = {
-            "$filter": f"startswith(PartNo,{_odata_string(settings.ifs_part_prefix)})",
+            "$filter": _part_no_prefix_filter(settings),
             "$select": ",".join(MATERIAL_SELECT_FIELDS),
             "$top": "1000",
         }
@@ -583,11 +609,12 @@ def return_candidate_stock_rows(
     stock_rows: Sequence[Mapping[str, Any]],
     used_parts: set[str],
 ) -> list[Mapping[str, Any]]:
-    return [
+    candidates = [
         row
         for row in stock_rows
         if str(row.get("PartNo") or "").strip() not in used_parts
     ]
+    return sorted(candidates, key=lambda row: str(row.get("PartNo") or "").strip())
 
 
 def _identity_value(value: Any) -> str:
@@ -680,7 +707,7 @@ async def fetch_used_hm02_materials(
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
 ) -> dict[str, Any]:
-    """Fetch all active PET operation materials and build the used HM-02 part set."""
+    """Fetch all active PET operation materials and build the used part set."""
 
     close_client = client is None
     http_client = client or httpx.AsyncClient(timeout=30.0)
@@ -703,6 +730,8 @@ async def fetch_used_hm02_materials(
         return {
             "operation_count": len(operations),
             "used_material_count": len(used_materials),
+            "used_part_count": len(used_parts),
+            "used_parts": used_parts,
             "used_hm02_part_count": len(used_parts),
             "used_hm02_parts": used_parts,
             "used_materials": used_materials,
@@ -764,7 +793,7 @@ async def fetch_planning_used_hm02_materials(
     access_token: str | None = None,
     concurrency: int = PLANNING_IFS_CONCURRENCY,
 ) -> dict[str, Any]:
-    """Fetch HM-02 material usage for visible production-planning shop orders."""
+    """Fetch configured material-prefix usage for visible planning shop orders."""
 
     cleaned_order_numbers = list(
         dict.fromkeys(
@@ -811,6 +840,8 @@ async def fetch_planning_used_hm02_materials(
             "planning_order_count": len(cleaned_order_numbers),
             "planning_operation_count": len(operations),
             "planning_used_material_count": len(used_materials),
+            "planning_used_part_count": len(used_parts),
+            "planning_used_parts": used_parts,
             "planning_used_hm02_part_count": len(used_parts),
             "planning_used_hm02_parts": used_parts,
             "planning_used_materials": used_materials,
@@ -826,7 +857,7 @@ async def find_u1_return_candidates(
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
 ) -> dict[str, Any]:
-    """Find U1 HM-02 stock rows not used by active or planned operations."""
+    """Find U1 configured-prefix stock rows not used by active or planned operations."""
 
     planning_path = resolve_planning_workbook(
         settings.production_planning_dir,
@@ -865,6 +896,14 @@ async def find_u1_return_candidates(
         used_hm02_parts = sorted(used_hm02_part_numbers(used_materials))
         used_parts = set(used_hm02_parts)
         candidates = list(return_candidate_stock_rows(stock_rows, used_parts))
+        active_used_part_count = active_summary.get(
+            "used_part_count",
+            active_summary["used_hm02_part_count"],
+        )
+        planning_used_part_count = planning_summary.get(
+            "planning_used_part_count",
+            planning_summary["planning_used_hm02_part_count"],
+        )
         return {
             "generated_at": _generated_at(settings),
             "planning_source_path": str(planning_path),
@@ -872,19 +911,23 @@ async def find_u1_return_candidates(
             "stock_count": len(stock_rows),
             "operation_count": active_summary["operation_count"],
             "active_used_material_count": active_summary["used_material_count"],
+            "active_used_part_count": active_used_part_count,
             "active_used_hm02_part_count": active_summary["used_hm02_part_count"],
             "planning_order_count": planning_summary["planning_order_count"],
             "planning_operation_count": planning_summary["planning_operation_count"],
             "planning_used_material_count": planning_summary[
                 "planning_used_material_count"
             ],
+            "planning_used_part_count": planning_used_part_count,
             "planning_used_hm02_part_count": planning_summary[
                 "planning_used_hm02_part_count"
             ],
             "used_material_count": len(used_materials),
+            "used_part_count": len(used_hm02_parts),
             "used_hm02_part_count": len(used_hm02_parts),
             "return_candidate_count": len(candidates),
             "return_candidates": candidates,
+            "used_parts": used_hm02_parts,
             "used_hm02_parts": used_hm02_parts,
             "used_materials": used_materials,
         }

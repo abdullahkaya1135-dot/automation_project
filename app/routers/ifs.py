@@ -106,6 +106,11 @@ async def ifs_used_hm02_materials(request: Request) -> dict[str, Any]:
     return {
         "operation_count": summary["operation_count"],
         "used_material_count": summary["used_material_count"],
+        "used_part_count": summary.get(
+            "used_part_count",
+            summary["used_hm02_part_count"],
+        ),
+        "used_parts": summary.get("used_parts", summary["used_hm02_parts"]),
         "used_hm02_part_count": summary["used_hm02_part_count"],
         "used_hm02_parts": summary["used_hm02_parts"],
         "used_materials": [
@@ -129,18 +134,31 @@ async def ifs_u1_return_candidates(request: Request) -> dict[str, Any]:
         "stock_count": summary["stock_count"],
         "operation_count": summary["operation_count"],
         "active_used_material_count": summary["active_used_material_count"],
+        "active_used_part_count": summary.get(
+            "active_used_part_count",
+            summary["active_used_hm02_part_count"],
+        ),
         "active_used_hm02_part_count": summary["active_used_hm02_part_count"],
         "planning_order_count": summary["planning_order_count"],
         "planning_operation_count": summary["planning_operation_count"],
         "planning_used_material_count": summary["planning_used_material_count"],
+        "planning_used_part_count": summary.get(
+            "planning_used_part_count",
+            summary["planning_used_hm02_part_count"],
+        ),
         "planning_used_hm02_part_count": summary["planning_used_hm02_part_count"],
         "used_material_count": summary["used_material_count"],
+        "used_part_count": summary.get(
+            "used_part_count",
+            summary["used_hm02_part_count"],
+        ),
         "used_hm02_part_count": summary["used_hm02_part_count"],
         "return_candidate_count": summary["return_candidate_count"],
         "return_candidates": [
             _serialize_return_candidate_row(row)
             for row in summary["return_candidates"]
         ],
+        "used_parts": summary.get("used_parts", summary["used_hm02_parts"]),
         "used_hm02_parts": summary["used_hm02_parts"],
         "used_materials": [
             serialize_material_row(row) for row in summary["used_materials"]

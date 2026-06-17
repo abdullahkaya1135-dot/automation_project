@@ -47,6 +47,9 @@ export function initializeShopOrderDropdowns() {
 }
 
 export function updateShopOrderOptions(source) {
+  shopOrderPairs = normalizeShopOrderPairs(source?.options);
+  updateShopOrderSourceStatus(source, shopOrderPairs.length);
+
   const machineSelect = document.querySelector("#machine-select");
   const workOrderSelect = document.querySelector("#work-order");
   if (!machineSelect || !workOrderSelect) {
@@ -55,8 +58,6 @@ export function updateShopOrderOptions(source) {
 
   const previousMachine = machineSelect.value;
   const previousWorkOrder = workOrderSelect.value;
-  shopOrderPairs = normalizeShopOrderPairs(source?.options);
-  updateShopOrderSourceStatus(source, shopOrderPairs.length);
 
   if (!shopOrderPairs.length) {
     setSelectOptions(machineSelect, [], "Makine listesi bulunamadı", "");
@@ -160,7 +161,7 @@ function updateShopOrderSourceStatus(source, pairCount) {
       || uniqueSorted(shopOrderPairs.map((pair) => pair.orderNo)).length;
     const machineCount = source?.resource_count
       || uniqueSorted(shopOrderPairs.map((pair) => pair.resourceId)).length;
-    const sourceLabel = source?.source === "ifs" ? "IFS" : "Dosya";
+    const sourceLabel = String(source?.source || "").startsWith("ifs") ? "IFS" : "Dosya";
     if (source?.offline_cached_at) {
       status.textContent = `${orderCount} iş emri (offline)`;
       status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eşleşme / ${formatTimestamp(source.offline_cached_at)}`;

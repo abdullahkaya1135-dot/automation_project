@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .database import init_db
 from .paths import STATIC_DIR
+from .routers.amount_control import router as amount_control_router
 from .routers.auth import router as auth_router
 from .routers.auxiliary import router as auxiliary_router
 from .routers.bootstrap import router as bootstrap_router
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     fastapi_app.include_router(auth_router)
     fastapi_app.include_router(bootstrap_router)
     fastapi_app.include_router(entries_router)
+    fastapi_app.include_router(amount_control_router)
     fastapi_app.include_router(auxiliary_router)
     fastapi_app.include_router(reports_router)
     fastapi_app.include_router(ifs_router)
@@ -46,7 +48,14 @@ def create_app() -> FastAPI:
     @fastapi_app.middleware("http")
     async def no_cache_ui_assets(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path in {"/", "/login"}:
+        if request.url.path in {
+            "/",
+            "/process",
+            "/auxiliary",
+            "/amount-control",
+            "/reports",
+            "/login",
+        }:
             response.headers["Cache-Control"] = "no-store, max-age=0"
         elif request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "public, max-age=3600"

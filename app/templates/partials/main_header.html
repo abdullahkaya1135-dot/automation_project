@@ -1,12 +1,21 @@
       <header class="page-header app-header">
-        <div>
-          <p class="eyebrow">Mobil proses</p>
-          <h1>Proses Girişi</h1>
+        <div class="header-main">
+          <div>
+            <p class="eyebrow">Mobil proses</p>
+            <h1>{{ page_title | default("Proses") }}</h1>
+          </div>
+          <nav class="app-nav" aria-label="Ana ekranlar">
+            <a href="/" {% if active_page == "dashboard" %}aria-current="page"{% endif %}>Ana Sayfa</a>
+            <a href="/process" {% if active_page == "process" %}aria-current="page"{% endif %}>Proses</a>
+            <a href="/auxiliary" {% if active_page == "auxiliary" %}aria-current="page"{% endif %}>Yardimci</a>
+            <a href="/amount-control" {% if active_page == "amount-control" %}aria-current="page"{% endif %}>Miktar</a>
+            <a href="/reports" {% if active_page == "reports" %}aria-current="page"{% endif %}>Raporlar</a>
+          </nav>
         </div>
         <div class="status-stack" aria-live="polite">
           <span id="excel-status" class="status-pill status-muted">Excel durumu</span>
-          <span id="auxiliary-systems-status" class="status-pill status-muted">Yardımcı sistemler</span>
-          <span id="shop-order-source-status" class="status-pill status-muted">İş emri listesi</span>
+          <span id="auxiliary-systems-status" class="status-pill status-muted">Yardimci sistemler</span>
+          <span id="shop-order-source-status" class="status-pill status-muted">Is emri listesi</span>
           <span id="context-status" class="status-pill status-muted">Aktif tur yok</span>
         </div>
       </header>

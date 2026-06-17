@@ -1,0 +1,97 @@
+      <section class="work-section" aria-labelledby="amount-control-heading">
+        <div class="section-heading row-heading">
+          <div>
+            <h2 id="amount-control-heading">Miktar Kontrol</h2>
+            <p id="amount-control-message" class="form-message" aria-live="polite"></p>
+          </div>
+          <button id="refresh-amount-control" type="button" class="secondary-action">Yenile</button>
+        </div>
+
+        <form id="amount-control-form" class="stacked-form">
+          <div class="field-grid">
+            <div class="field">
+              <label for="amount-control-date">Tarih</label>
+              <input id="amount-control-date" name="record_date" type="date" required>
+            </div>
+
+            <div class="field">
+              <label for="amount-control-machine">Makine</label>
+              <select id="amount-control-machine" name="machine_code" required disabled>
+                <option value="">Makine listesi yukleniyor</option>
+              </select>
+            </div>
+
+            <div class="field span-two">
+              <label for="amount-control-job-order">Is emri</label>
+              <input id="amount-control-job-order" name="job_order" type="text" list="amount-control-job-order-options" autocomplete="off" required>
+              <datalist id="amount-control-job-order-options"></datalist>
+            </div>
+          </div>
+
+          <fieldset class="field-group amount-control-shift" data-shift="24.00-08.00">
+            <legend>24.00-08.00</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label>Calisanlar</label>
+                <input name="worker_names" type="text" autocomplete="off" required>
+              </div>
+              <div class="field">
+                <label>Uretilen adet</label>
+                <input name="produced_quantity" type="number" inputmode="numeric" min="0" step="1" required>
+              </div>
+            </div>
+            <div class="section-heading row-heading subsection-heading">
+              <h3>Makine arizalari</h3>
+              <button type="button" class="secondary-action" data-add-breakdown>Ariza ekle</button>
+            </div>
+            <div class="amount-control-breakdowns" data-breakdowns></div>
+          </fieldset>
+
+          <fieldset class="field-group amount-control-shift" data-shift="08.00-16.00">
+            <legend>08.00-16.00</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label>Calisanlar</label>
+                <input name="worker_names" type="text" autocomplete="off" required>
+              </div>
+              <div class="field">
+                <label>Uretilen adet</label>
+                <input name="produced_quantity" type="number" inputmode="numeric" min="0" step="1" required>
+              </div>
+            </div>
+            <div class="section-heading row-heading subsection-heading">
+              <h3>Makine arizalari</h3>
+              <button type="button" class="secondary-action" data-add-breakdown>Ariza ekle</button>
+            </div>
+            <div class="amount-control-breakdowns" data-breakdowns></div>
+          </fieldset>
+
+          <fieldset class="field-group amount-control-shift" data-shift="16.00-24.00">
+            <legend>16.00-24.00</legend>
+            <div class="field-grid">
+              <div class="field">
+                <label>Calisanlar</label>
+                <input name="worker_names" type="text" autocomplete="off" required>
+              </div>
+              <div class="field">
+                <label>Uretilen adet</label>
+                <input name="produced_quantity" type="number" inputmode="numeric" min="0" step="1" required>
+              </div>
+            </div>
+            <div class="section-heading row-heading subsection-heading">
+              <h3>Makine arizalari</h3>
+              <button type="button" class="secondary-action" data-add-breakdown>Ariza ekle</button>
+            </div>
+            <div class="amount-control-breakdowns" data-breakdowns></div>
+          </fieldset>
+
+          <button type="submit" class="primary-action">Miktar kontrolu gonder</button>
+        </form>
+
+        <div class="section-heading row-heading subsection-heading">
+          <h3 id="amount-control-submissions-heading">Son miktar kontrolleri</h3>
+        </div>
+        <div id="amount-control-submissions" class="entry-list" aria-live="polite">
+          <p class="empty-state">Son miktar kontrolu yok.</p>
+        </div>
+      </section>

@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, select
 from sqlalchemy.orm import selectinload
 
 from ..auth import require_api_auth
@@ -19,16 +19,19 @@ from ..domain.request_values import (
     tour_context_id_from_body,
 )
 from ..models import (
-    SYNC_STATUS_PENDING_EXCEL,
     SYNC_STATUS_SYNCED,
     Entry,
+    ProductionEngineer,
     TourContext,
     utc_now,
 )
 from ..schemas import TourContextCreate
+from ..services.process_records import (
+    apply_entry_process_metadata,
+    resolve_production_engineer,
+    resolve_production_engineer_by_id,
+)
 from ..services.sync_service import (
-    attempt_excel_append,
-    retry_unsynced_entries,
     serialize_entry,
     serialize_tour_context,
 )
@@ -67,6 +70,7 @@ def create_tour_context(
 
         request_time = client_recorded_at or shifts.request_datetime(settings)
         automatic_timing = shifts.tour_timing_for_datetime(settings, request_time)
+        production_engineer = _tour_context_production_engineer(session, payload)
         context = TourContext(
             client_request_id=request_client_id,
             client_recorded_at=stored_client_recorded_at(client_recorded_at),
@@ -80,6 +84,7 @@ def create_tour_context(
             shift_chief=shift_chief(payload.shift_chief),
             shift=automatic_timing["shift"],
         )
+        context.production_engineer = production_engineer.full_name
         session.add(context)
         commit_session(session)
         return {"id": context.id, "tour_context": serialize_tour_context(context)}
@@ -130,22 +135,20 @@ def create_entry(
             status=optional_text(payload.get("status"), "durum", 64),
             notes=optional_text(payload.get("notes"), "notlar"),
             mold_info=optional_text(payload.get("mold_info"), "kalıp bilgisi"),
-            sync_status=SYNC_STATUS_PENDING_EXCEL,
+            sync_status=SYNC_STATUS_SYNCED,
             submitted_at=stored_recorded_at or utc_now(),
             **entry_payload,
         )
+        apply_entry_process_metadata(session, entry)
+        entry.last_error = None
+        entry.synced_at = utc_now()
         session.add(entry)
         commit_session(session)
 
-        sync_result = attempt_excel_append(
-            settings,
-            session,
-            entry,
-            failure_status=SYNC_STATUS_PENDING_EXCEL,
-        )
         return {
             "saved_locally": True,
-            "synced_to_excel": sync_result["success"],
+            "saved_to_database": True,
+            "synced_to_excel": False,
             "entry": serialize_entry(entry),
         }
 
@@ -162,7 +165,12 @@ def list_entries(
     query = (
         select(Entry)
         .options(selectinload(Entry.tour_context))
-        .order_by(Entry.created_at.desc(), Entry.id.desc())
+        .order_by(
+            Entry.process_date.asc(),
+            cast(Entry.machine_code, Integer).asc(),
+            Entry.production_engineer_id.asc(),
+            Entry.id.asc(),
+        )
         .limit(limit)
     )
     if sync_status is not None:
@@ -174,5 +182,34 @@ def list_entries(
 
 
 @router.post("/sync/retry")
-def retry_sync(request: Request) -> dict[str, Any]:
-    return retry_unsynced_entries(settings_from_request(request))
+def retry_sync() -> dict[str, Any]:
+    return {
+        "attempted": 0,
+        "synced": 0,
+        "failed": 0,
+        "remaining": 0,
+        "stopped_on_error": False,
+        "results": [],
+        "database_backed": True,
+    }
+
+
+def _tour_context_production_engineer(
+    session,
+    payload: TourContextCreate,
+) -> ProductionEngineer:
+    engineer = resolve_production_engineer_by_id(
+        session,
+        payload.production_engineer_id,
+    )
+    if engineer is None:
+        engineer = resolve_production_engineer(
+            session,
+            required_text(payload.production_engineer, "üretim mühendisi", 255),
+        )
+    if engineer is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Üretim mühendisi veritabanında bulunamadı.",
+        )
+    return engineer

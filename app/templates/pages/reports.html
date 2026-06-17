@@ -1,0 +1,15 @@
+{% extends "layouts/app_shell.html" %}
+
+{% block content %}
+      {% include "partials/phone_sync_panel.html" %}
+
+      {% include "partials/entry_lists_sections.html" %}
+
+      {% include "partials/cycle_report_section.html" %}
+
+      {% include "partials/ifs_return_section.html" %}
+{% endblock %}
+
+{% block after_main %}
+    <div id="ifs-return-print-area" class="print-only" aria-hidden="true"></div>
+{% endblock %}

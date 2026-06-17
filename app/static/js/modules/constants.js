@@ -50,6 +50,12 @@ export const TEMPERATURE_SHORTHAND_SELECTORS = [
   "#mold-temps",
 ];
 
+export const AMOUNT_CONTROL_SHIFTS = [
+  "24.00-08.00",
+  "08.00-16.00",
+  "16.00-24.00",
+];
+
 export const AUXILIARY_PAYLOAD_FIELDS = [
   "tower_frequency",
   "tower_set_pressure",

@@ -9,6 +9,14 @@ from ..paths import STATIC_DIR, TEMPLATES_DIR
 router = APIRouter()
 TEMPLATES = Jinja2Templates(directory=TEMPLATES_DIR)
 
+PROTECTED_PAGES = {
+    "/": ("pages/index.html", "Ana Sayfa", "dashboard"),
+    "/process": ("pages/process.html", "Proses Girisi", "process"),
+    "/auxiliary": ("pages/auxiliary.html", "Yardimci Sistemler", "auxiliary"),
+    "/amount-control": ("pages/amount_control.html", "Miktar Kontrol", "amount-control"),
+    "/reports": ("pages/reports.html", "Senkron & Raporlar", "reports"),
+}
+
 
 @router.get("/manifest.webmanifest", include_in_schema=False)
 def manifest() -> FileResponse:
@@ -30,12 +38,44 @@ def service_worker() -> FileResponse:
     )
 
 
-@router.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def protected_page(request: Request, path: str):
     settings = settings_from_request(request)
     if not is_request_authenticated(request, settings):
         return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-    return TEMPLATES.TemplateResponse(request, "pages/index.html")
+    template_name, page_title, active_page = PROTECTED_PAGES[path]
+    return TEMPLATES.TemplateResponse(
+        request,
+        template_name,
+        {
+            "page_title": page_title,
+            "active_page": active_page,
+        },
+    )
+
+
+@router.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    return protected_page(request, "/")
+
+
+@router.get("/process", response_class=HTMLResponse)
+def process(request: Request):
+    return protected_page(request, "/process")
+
+
+@router.get("/auxiliary", response_class=HTMLResponse)
+def auxiliary(request: Request):
+    return protected_page(request, "/auxiliary")
+
+
+@router.get("/amount-control", response_class=HTMLResponse)
+def amount_control(request: Request):
+    return protected_page(request, "/amount-control")
+
+
+@router.get("/reports", response_class=HTMLResponse)
+def reports(request: Request):
+    return protected_page(request, "/reports")
 
 
 @router.get("/login", response_class=HTMLResponse)

@@ -11,10 +11,12 @@ from typing import Any
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
+from sqlalchemy import Integer, cast, select
 
 from ..config import Settings
+from ..database import create_session
 from ..integrations.ifs_client import fetch_pet_ongoing_operations
-from .excel_service import detect_last_value_row, open_workbook_sheet, validate_headers
+from ..models import Entry
 from .shop_order_source import ShopOrderOption, shop_order_options_from_ifs_operations
 
 REPORT_HEADERS = (
@@ -186,42 +188,28 @@ def normalize_machine_group(value: Any) -> str:
 
 
 def _read_process_rows(settings: Settings, report_date: Date) -> list[ProcessCycleRow]:
-    workbook: Workbook | None = None
-    try:
-        workbook, worksheet = open_workbook_sheet(
-            settings,
-            read_only=False,
-            data_only=True,
-        )
-        validate_headers(worksheet)
-        last_row = detect_last_value_row(worksheet)
-        rows: list[ProcessCycleRow] = []
-        for row_number, values in enumerate(
-            worksheet.iter_rows(
-                min_row=2,
-                max_row=last_row,
-                max_col=SOURCE_COLUMN_COUNT,
-                values_only=True,
-            ),
-            start=2,
-        ):
-            if _parse_date(values[0]) != report_date:
-                continue
-
-            rows.append(
-                ProcessCycleRow(
-                    row_number=row_number,
-                    machine_no=_identifier(values[5]),
-                    work_order=_identifier(values[7]),
-                    total_cavity_count=values[9],
-                    active_cavity_count=values[10],
-                    actual_cycle_time=_number(values[11]),
-                )
+    with create_session(settings) as session:
+        entries = session.scalars(
+            select(Entry)
+            .where(Entry.process_date == report_date.isoformat())
+            .order_by(
+                cast(Entry.machine_code, Integer).asc(),
+                Entry.production_engineer_id.asc(),
+                Entry.id.asc(),
             )
-        return rows
-    finally:
-        if workbook is not None:
-            workbook.close()
+        ).all()
+
+    return [
+        ProcessCycleRow(
+            row_number=entry.id,
+            machine_no=_identifier(entry.col_f),
+            work_order=_identifier(entry.col_h),
+            total_cavity_count=_number(entry.col_j),
+            active_cavity_count=_number(entry.col_k),
+            actual_cycle_time=_number(entry.col_l),
+        )
+        for entry in entries
+    ]
 
 
 def _indexed_shop_orders(

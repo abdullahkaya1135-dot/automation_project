@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title | default("Proses") }}</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0b67b2">
+    {% include "partials/app_styles.html" %}
+  </head>
+  <body data-page="{{ active_page | default('dashboard') }}">
+    <main class="app-shell">
+      {% include "partials/main_header.html" %}
+      {% block content %}{% endblock %}
+    </main>
+    {% block after_main %}{% endblock %}
+    {% include "partials/app_script.html" %}
+  </body>
+</html>

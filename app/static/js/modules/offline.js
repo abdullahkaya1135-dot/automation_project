@@ -374,6 +374,9 @@ function offlineEndpointForType(type) {
   if (type === "auxiliary_submission") {
     return "/api/auxiliary-systems/submissions";
   }
+  if (type === "amount_control_shift") {
+    return "/api/amount-control/shifts";
+  }
   throw new Error(`Bilinmeyen telefon kayıt tipi: ${type}`);
 }
 
@@ -386,6 +389,9 @@ function serverIdFromSyncPayload(type, payload) {
   }
   if (type === "auxiliary_submission") {
     return payload?.submission?.id || null;
+  }
+  if (type === "amount_control_shift") {
+    return payload?.shift?.id || payload?.id || null;
   }
   return null;
 }

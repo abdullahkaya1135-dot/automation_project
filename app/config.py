@@ -22,6 +22,8 @@ DEFAULT_IFS_BASE_URL = "https://ifs.simsekplastik.com"
 DEFAULT_IFS_TOKEN_URL = (
     "https://ifs.simsekplastik.com/auth/realms/prod/protocol/openid-connect/token"
 )
+DEFAULT_IFS_PART_PREFIX = "HM-02"
+DEFAULT_IFS_PART_PREFIXES = ("HM-02", "HM-03", "HM-04")
 DEFAULT_PRODUCTION_PLANNING_DIR = "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP"
 DEFAULT_PRODUCTION_PLANNING_PATH = (
     "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP\\10.06.2026 "
@@ -55,7 +57,8 @@ class Settings:
     ifs_contract: str = "S01"
     ifs_company_id: str = "C01"
     ifs_dispatch_filter_id: str = "PET"
-    ifs_part_prefix: str = "HM-02"
+    ifs_part_prefix: str = DEFAULT_IFS_PART_PREFIX
+    ifs_part_prefixes: tuple[str, ...] = DEFAULT_IFS_PART_PREFIXES
     ifs_u1_location: str = "U1"
     production_planning_dir: str = ""
     production_planning_path: str = DEFAULT_PRODUCTION_PLANNING_PATH
@@ -107,8 +110,34 @@ def _string_setting(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def _csv_setting(value: str) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            item
+            for raw_item in value.split(",")
+            if (item := raw_item.strip())
+        )
+    )
+
+
+def _ifs_part_prefixes_setting(legacy_prefix: str) -> tuple[str, ...]:
+    raw_value = os.getenv("IFS_PART_PREFIXES")
+    if raw_value is not None:
+        return _csv_setting(raw_value) or DEFAULT_IFS_PART_PREFIXES
+    legacy_prefixes = _csv_setting(legacy_prefix)
+    if legacy_prefixes and legacy_prefixes != (DEFAULT_IFS_PART_PREFIX,):
+        return legacy_prefixes
+    return DEFAULT_IFS_PART_PREFIXES
+
+
 def get_settings(*, validate: bool = True) -> Settings:
     load_dotenv(encoding="utf-8-sig")
+
+    ifs_part_prefix = (
+        _string_setting("IFS_PART_PREFIX", DEFAULT_IFS_PART_PREFIX)
+        or DEFAULT_IFS_PART_PREFIX
+    )
+    ifs_part_prefixes = _ifs_part_prefixes_setting(ifs_part_prefix)
 
     settings = Settings(
         excel_path=_string_setting("EXCEL_PATH"),
@@ -166,7 +195,8 @@ def get_settings(*, validate: bool = True) -> Settings:
         ifs_company_id=_string_setting("IFS_COMPANY_ID", "C01") or "C01",
         ifs_dispatch_filter_id=_string_setting("IFS_DISPATCH_FILTER_ID", "PET")
         or "PET",
-        ifs_part_prefix=_string_setting("IFS_PART_PREFIX", "HM-02") or "HM-02",
+        ifs_part_prefix=ifs_part_prefix,
+        ifs_part_prefixes=ifs_part_prefixes,
         ifs_u1_location=_string_setting("IFS_U1_LOCATION", "U1") or "U1",
         production_planning_dir=_string_setting(
             "PRODUCTION_PLANNING_DIR",

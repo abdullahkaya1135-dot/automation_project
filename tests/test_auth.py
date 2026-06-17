@@ -11,6 +11,15 @@ from app.auth import (
 from app.config import Settings
 from app.main import create_app
 
+PROTECTED_PAGE_ROUTES = ("/", "/process", "/auxiliary", "/amount-control", "/reports")
+PROTECTED_PAGE_MARKERS = {
+    "/": 'id="dashboard-heading"',
+    "/process": 'id="entry-form"',
+    "/auxiliary": 'id="auxiliary-form"',
+    "/amount-control": 'id="amount-control-form"',
+    "/reports": 'id="run-ifs-return-candidates"',
+}
+
 
 @pytest.fixture
 def client(monkeypatch, tmp_path) -> Generator[TestClient]:
@@ -31,8 +40,9 @@ def test_unauthenticated_api_requests_return_401(client):
     assert response.json()["detail"] == "Oturum açmanız gerekiyor."
 
 
-def test_unauthenticated_page_requests_redirect_to_login(client):
-    response = client.get("/", follow_redirects=False)
+@pytest.mark.parametrize("path", PROTECTED_PAGE_ROUTES)
+def test_unauthenticated_page_requests_redirect_to_login(client, path):
+    response = client.get(path, follow_redirects=False)
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
@@ -42,6 +52,7 @@ def test_login_page_renders(client):
     response = client.get("/login")
 
     assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store, max-age=0"
     assert 'id="login-form"' in response.text
     assert "Proses Girişi" in response.text
 
@@ -58,14 +69,20 @@ def test_login_sets_cookie_and_allows_protected_routes(client):
     bootstrap_response = client.get("/api/bootstrap")
     assert bootstrap_response.status_code == 200
     bootstrap_payload = bootstrap_response.json()
-    assert "machines" not in bootstrap_payload
+    assert len(bootstrap_payload["machines"]) == 47
     assert "machine_count" not in bootstrap_payload["excel"]
 
-    index_response = client.get("/")
-    assert index_response.status_code == 200
-    assert 'id="entry-form"' in index_response.text
-    assert 'id="run-ifs-return-candidates"' in index_response.text
-    assert 'id="print-ifs-return-candidates"' in index_response.text
+    for path, marker in PROTECTED_PAGE_MARKERS.items():
+        page_response = client.get(path)
+        assert page_response.status_code == 200
+        assert page_response.headers["Cache-Control"] == "no-store, max-age=0"
+        assert marker in page_response.text
+
+    process_response = client.get("/process")
+    assert 'id="tour-context-form"' in process_response.text
+
+    reports_response = client.get("/reports")
+    assert 'id="print-ifs-return-candidates"' in reports_response.text
 
     login_page_response = client.get("/login", follow_redirects=False)
     assert login_page_response.status_code == 303

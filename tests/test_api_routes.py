@@ -9,7 +9,13 @@ from openpyxl import Workbook, load_workbook
 from app.config import Settings
 from app.database import create_session
 from app.main import create_app
-from app.models import AuxiliarySystemsSubmission, Entry
+from app.models import (
+    AmountControlShift,
+    AuxiliarySystemsSubmission,
+    Entry,
+    MachineBreakdown,
+    ProductionEngineer,
+)
 
 HEADERS = [
     "Date",
@@ -51,6 +57,98 @@ AUXILIARY_HEADERS = [
 ]
 ISTANBUL_TIMEZONE = timezone(timedelta(hours=3), "Europe/Istanbul")
 DEFAULT_REQUEST_TIME = datetime(2026, 6, 8, 9, 15, tzinfo=ISTANBUL_TIMEZONE)
+PROTECTED_PAGE_ROUTES = ("/", "/process", "/auxiliary", "/amount-control", "/reports")
+SHARED_PAGE_ASSET_MARKERS = (
+    'href="/static/css/app.css?v=',
+    'type="module" src="/static/js/app.js?v=',
+)
+PAGE_SECTION_EXPECTATIONS = {
+    "/": (
+        'data-page="dashboard"',
+        'id="dashboard-heading"',
+        'class="dashboard-grid"',
+        'class="dashboard-card',
+        'href="/process"',
+        'href="/auxiliary"',
+        'href="/amount-control"',
+        'href="/reports"',
+    ),
+    "/process": (
+        'data-page="process"',
+        'id="tour-context-form"',
+        'id="entry-form"',
+    ),
+    "/auxiliary": (
+        'data-page="auxiliary"',
+        'id="auxiliary-form"',
+    ),
+    "/amount-control": (
+        'data-page="amount-control"',
+        'id="amount-control-form"',
+    ),
+    "/reports": (
+        'data-page="reports"',
+        'id="phone-sync-heading"',
+        'id="pending-entries"',
+        'id="create-cycle-report"',
+        'id="run-ifs-return-candidates"',
+        'id="print-ifs-return-candidates"',
+        'id="ifs-return-print-area"',
+    ),
+}
+PAGE_SECTION_EXCLUSIONS = {
+    "/": (
+        'id="tour-context-form"',
+        'id="entry-form"',
+        'id="auxiliary-form"',
+        'id="amount-control-form"',
+        'id="pending-entries"',
+        'id="create-cycle-report"',
+        'id="run-ifs-return-candidates"',
+    ),
+    "/process": (
+        'id="dashboard-heading"',
+        'id="auxiliary-form"',
+        'id="amount-control-form"',
+        'id="pending-entries"',
+        'id="create-cycle-report"',
+        'id="run-ifs-return-candidates"',
+    ),
+    "/auxiliary": (
+        'id="dashboard-heading"',
+        'id="tour-context-form"',
+        'id="entry-form"',
+        'id="amount-control-form"',
+        'id="pending-entries"',
+        'id="create-cycle-report"',
+        'id="run-ifs-return-candidates"',
+    ),
+    "/amount-control": (
+        'id="dashboard-heading"',
+        'id="tour-context-form"',
+        'id="entry-form"',
+        'id="auxiliary-form"',
+        'id="pending-entries"',
+        'id="create-cycle-report"',
+        'id="run-ifs-return-candidates"',
+    ),
+    "/reports": (
+        'id="dashboard-heading"',
+        'id="tour-context-form"',
+        'id="entry-form"',
+        'id="auxiliary-form"',
+        'id="amount-control-form"',
+    ),
+}
+SERVICE_WORKER_ASSET_MARKERS = (
+    "/manifest.webmanifest",
+    "/static/css/app.css?v=",
+    "/static/js/api.js?v=",
+    "/static/js/app.js?v=",
+    "/static/js/modules/amount-control.js?v=",
+    "/static/js/modules/main-page.js?v=",
+    "/static/js/modules/offline.js?v=",
+)
 
 
 def _create_workbook(path: Path) -> None:
@@ -173,13 +271,40 @@ def _tour_context(client: TestClient) -> int:
         "/api/tour-context",
         json={
             "ambient_temp": "24,5",
-            "production_engineer": "Engineer",
+            "production_engineer": "Barış Çetik",
             "shift_chief": "Selman",
         },
     )
 
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _amount_control_body(**overrides):
+    body = {
+        "record_date": "2026-06-08",
+        "machine_code": "101",
+        "job_order": "WO-1",
+        "shift": "08.00-16.00",
+        "worker_names": "Operator One, Operator Two",
+        "produced_quantity": 1200,
+        "breakdowns": [
+            {
+                "produced_product": "Product 101",
+                "stop_reason": "Hydraulic pressure fault",
+                "duration_minutes": 45,
+                "stopped_at": "2026-06-08T10:00:00+03:00",
+                "resumed_at": "2026-06-08T10:45:00+03:00",
+            },
+            {
+                "produced_product": "Product 101",
+                "stop_reason": "Mold change",
+                "duration_minutes": 30,
+            },
+        ],
+    }
+    body.update(overrides)
+    return body
 
 
 def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
@@ -211,10 +336,15 @@ def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
     assert response.status_code == 201
     payload = response.json()
     assert payload["saved_locally"] is True
-    assert payload["synced_to_excel"] is True
+    assert payload["saved_to_database"] is True
+    assert payload["synced_to_excel"] is False
     assert payload["entry"]["sync_status"] == "synced"
-    assert payload["entry"]["excel_row_number"] == 2
+    assert payload["entry"]["excel_row_number"] is None
+    assert payload["entry"]["process_date"] == "2026-06-08"
+    assert payload["entry"]["machine_code"] == "101"
+    assert payload["entry"]["production_engineer_id"] is not None
     assert payload["entry"]["payload"]["col_a"] == "08.06.2026"
+    assert payload["entry"]["payload"]["col_c"] == "Barış Çetik"
     assert payload["entry"]["payload"]["col_e"] == "08.00-16.00"
     assert payload["entry"]["payload"]["col_f"] == "101"
     assert payload["entry"]["payload"]["col_h"] == "WO-1"
@@ -224,19 +354,7 @@ def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
 
     workbook = load_workbook(tmp_path / "process.xlsx")
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=2, column=1).value == "08.06.2026"
-    assert worksheet.cell(row=2, column=2).value == 24.5
-    assert worksheet.cell(row=2, column=5).value == "08.00-16.00"
-    assert worksheet.cell(row=2, column=6).value == "101"
-    assert worksheet.cell(row=2, column=7).value == "Product 101"
-    assert worksheet.cell(row=2, column=8).value == "WO-1"
-    assert worksheet.cell(row=2, column=9).value == "HM-02-01"
-    assert worksheet.cell(row=2, column=10).value == 16
-    assert worksheet.cell(row=2, column=11).value == 12
-    assert worksheet.cell(row=2, column=12).value == 12.5
-    assert worksheet.cell(row=2, column=18).value is None
-    assert worksheet.cell(row=2, column=24).value == "270-270-270-276-276-275"
-    assert worksheet.cell(row=2, column=25).value == "30-30-40"
+    assert worksheet.max_row == 1
     workbook.close()
 
     entries_response = client.get("/api/entries")
@@ -252,9 +370,12 @@ def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
     with create_session(settings) as session:
         entry = session.query(Entry).one()
         assert entry.sync_status == "synced"
-        assert entry.excel_row_number == 2
+        assert entry.excel_row_number is None
         assert entry.last_error is None
         assert entry.synced_at is not None
+        assert entry.process_date == "2026-06-08"
+        assert entry.machine_code == "101"
+        assert entry.production_engineer_id is not None
 
 
 def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
@@ -283,8 +404,7 @@ def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
 
     workbook = load_workbook(tmp_path / "process.xlsx")
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=2, column=6).value == "M-01"
-    assert worksheet.cell(row=3, column=6).value is None
+    assert worksheet.max_row == 1
     workbook.close()
 
     settings = Settings(
@@ -297,7 +417,66 @@ def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
         assert session.query(Entry).count() == 1
 
 
-def test_second_section_entry_blanks_first_section_only_columns(client, tmp_path):
+def test_entries_list_orders_by_process_date_machine_and_engineer(client, tmp_path):
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        engineers = {
+            engineer.full_name: engineer.id
+            for engineer in session.query(ProductionEngineer).all()
+        }
+        session.add_all(
+            [
+                Entry(
+                    col_a="17.06.2026",
+                    col_c="Fevzi Kılınç",
+                    col_f="102",
+                    process_date="2026-06-17",
+                    machine_code="102",
+                    production_engineer_id=engineers["Fevzi Kılınç"],
+                    sync_status="synced",
+                ),
+                Entry(
+                    col_a="16.06.2026",
+                    col_c="Abdullah Kaya",
+                    col_f="101",
+                    process_date="2026-06-16",
+                    machine_code="101",
+                    production_engineer_id=engineers["Abdullah Kaya"],
+                    sync_status="synced",
+                ),
+                Entry(
+                    col_a="16.06.2026",
+                    col_c="Barış Çetik",
+                    col_f="102",
+                    process_date="2026-06-16",
+                    machine_code="102",
+                    production_engineer_id=engineers["Barış Çetik"],
+                    sync_status="synced",
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/api/entries")
+
+    assert response.status_code == 200
+    entries = response.json()["entries"]
+    assert [
+        (entry["process_date"], entry["machine_code"], entry["payload"]["col_c"])
+        for entry in entries
+    ] == [
+        ("2026-06-16", "101", "Abdullah Kaya"),
+        ("2026-06-16", "102", "Barış Çetik"),
+        ("2026-06-17", "102", "Fevzi Kılınç"),
+    ]
+
+
+def test_second_section_entry_blanks_first_section_only_columns(client):
     context_id = _tour_context(client)
 
     response = client.post(
@@ -332,22 +511,10 @@ def test_second_section_entry_blanks_first_section_only_columns(client, tmp_path
     assert entry_payload["col_q"] is None
     assert entry_payload["col_r"] == "70-70-69"
     assert entry_payload["col_s"] == "49-49"
-
-    workbook = load_workbook(tmp_path / "process.xlsx")
-    worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=2, column=6).value == "203"
-    assert worksheet.cell(row=2, column=15).value is None
-    assert worksheet.cell(row=2, column=16).value is None
-    assert worksheet.cell(row=2, column=17).value is None
-    assert worksheet.cell(row=2, column=18).value == "70-70-69"
-    assert worksheet.cell(row=2, column=19).value == "49-49"
-    assert worksheet.cell(row=2, column=20).value == 1.5
-    assert worksheet.cell(row=2, column=23).value == 125
-    assert worksheet.cell(row=2, column=24).value == "230-195"
-    workbook.close()
+    assert response.json()["entry"]["machine_code"] == "203"
 
 
-def test_legacy_entry_payload_is_canonicalized_before_excel_append(client, tmp_path):
+def test_legacy_entry_payload_is_canonicalized_before_database_save(client):
     context_id = _tour_context(client)
 
     response = client.post(
@@ -375,17 +542,8 @@ def test_legacy_entry_payload_is_canonicalized_before_excel_append(client, tmp_p
     assert entry_payload["col_l"] == "12,5"
     assert entry_payload["col_x"] == "270-270"
     assert entry_payload["col_y"] == "30-30"
-
-    workbook = load_workbook(tmp_path / "process.xlsx")
-    worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=2, column=7).value is None
-    assert worksheet.cell(row=2, column=8).value == "WO-LEGACY"
-    assert worksheet.cell(row=2, column=10).value == 16
-    assert worksheet.cell(row=2, column=11).value == 12
-    assert worksheet.cell(row=2, column=12).value == 12.5
-    assert worksheet.cell(row=2, column=24).value == "270-270"
-    assert worksheet.cell(row=2, column=25).value == "30-30"
-    workbook.close()
+    assert response.json()["entry"]["process_date"] == "2026-06-08"
+    assert response.json()["entry"]["machine_code"] == "101"
 
 
 def test_auxiliary_systems_submission_saves_locally_and_appends_block(
@@ -484,6 +642,172 @@ def test_auxiliary_submission_is_idempotent_for_client_request_id(client, tmp_pa
     )
     with create_session(settings) as session:
         assert session.query(AuxiliarySystemsSubmission).count() == 1
+
+
+def test_amount_control_shift_create_list_detail_and_breakdown_links(client, tmp_path):
+    response = client.post(
+        "/api/amount-control/shifts",
+        json=_amount_control_body(client_request_id="amount-client-request-1"),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["saved_locally"] is True
+    assert payload["idempotent_replay"] is False
+    amount_shift = payload["shift"]
+    assert amount_shift["client_request_id"] == "amount-client-request-1"
+    assert amount_shift["record_date"] == "2026-06-08"
+    assert amount_shift["machine_code"] == "101"
+    assert amount_shift["job_order"] == "WO-1"
+    assert amount_shift["shift"] == "08.00-16.00"
+    assert amount_shift["worker_names"] == "Operator One, Operator Two"
+    assert amount_shift["produced_quantity"] == 1200
+    assert len(amount_shift["breakdowns"]) == 2
+    assert amount_shift["breakdowns"][0]["entry_id"] is None
+    assert (
+        amount_shift["breakdowns"][0]["amount_control_shift_id"]
+        == amount_shift["id"]
+    )
+    assert amount_shift["breakdowns"][0]["machine_code"] == "101"
+
+    list_response = client.get(
+        "/api/amount-control/shifts",
+        params={
+            "record_date": "2026-06-08",
+            "machine_code": "101",
+            "job_order": "WO-1",
+        },
+    )
+    assert list_response.status_code == 200
+    listed_shifts = list_response.json()["shifts"]
+    assert len(listed_shifts) == 1
+    assert listed_shifts[0]["id"] == amount_shift["id"]
+
+    detail_response = client.get(f"/api/amount-control/shifts/{amount_shift['id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["breakdowns"][1]["stop_reason"] == "Mold change"
+
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        assert session.query(AmountControlShift).count() == 1
+        assert session.query(MachineBreakdown).count() == 2
+        breakdown = session.query(MachineBreakdown).first()
+        assert breakdown is not None
+        assert breakdown.entry_id is None
+        assert breakdown.amount_control_shift_id == amount_shift["id"]
+
+
+def test_amount_control_shift_is_idempotent_for_client_request_id(
+    client,
+    tmp_path,
+):
+    request_body = _amount_control_body(
+        client_request_id="amount-client-request-2",
+        breakdowns=[],
+    )
+
+    first_response = client.post("/api/amount-control/shifts", json=request_body)
+    replay_response = client.post("/api/amount-control/shifts", json=request_body)
+
+    assert first_response.status_code == 201
+    assert replay_response.status_code == 200
+    first_payload = first_response.json()
+    replay_payload = replay_response.json()
+    assert replay_payload["idempotent_replay"] is True
+    assert replay_payload["shift"]["id"] == first_payload["shift"]["id"]
+    assert (
+        replay_payload["shift"]["client_request_id"]
+        == "amount-client-request-2"
+    )
+
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        assert session.query(AmountControlShift).count() == 1
+
+
+def test_amount_control_shift_rejects_duplicate_business_key(client):
+    first_response = client.post(
+        "/api/amount-control/shifts",
+        json=_amount_control_body(client_request_id="amount-client-request-3"),
+    )
+    duplicate_response = client.post(
+        "/api/amount-control/shifts",
+        json=_amount_control_body(
+            client_request_id="amount-client-request-4",
+            worker_names="Operator Three",
+            produced_quantity=900,
+            breakdowns=[],
+        ),
+    )
+
+    assert first_response.status_code == 201
+    assert duplicate_response.status_code == 409
+    assert "zaten var" in duplicate_response.json()["detail"]
+
+
+def test_amount_control_shift_rejects_unknown_machine(client):
+    response = client.post(
+        "/api/amount-control/shifts",
+        json=_amount_control_body(machine_code="999", breakdowns=[]),
+    )
+
+    assert response.status_code == 422
+    assert "makine" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"record_date": "08.06.2026"},
+        {"shift": "00.00-08.00"},
+        {"job_order": " "},
+        {"worker_names": " "},
+        {"produced_quantity": -1},
+        {
+            "breakdowns": [
+                {
+                    "produced_product": "Product 101",
+                    "stop_reason": "Fault",
+                    "duration_minutes": 0,
+                }
+            ]
+        },
+        {
+            "breakdowns": [
+                {
+                    "produced_product": "Product 101",
+                    "stop_reason": "Fault",
+                    "duration_minutes": 1,
+                    "stopped_at": "2026-06-08T11:00:00+03:00",
+                    "resumed_at": "2026-06-08T10:00:00+03:00",
+                }
+            ]
+        },
+    ],
+)
+def test_amount_control_shift_validates_payload(client, overrides):
+    response = client.post(
+        "/api/amount-control/shifts",
+        json=_amount_control_body(**overrides),
+    )
+
+    assert response.status_code == 422
+
+
+def test_amount_control_shift_detail_returns_404_for_missing_id(client):
+    response = client.get("/api/amount-control/shifts/999999")
+
+    assert response.status_code == 404
 
 
 def test_cycle_report_endpoint_creates_today_report(client):
@@ -686,6 +1010,8 @@ def test_ifs_used_materials_endpoint_returns_used_hm02_set(client, monkeypatch):
         return {
             "operation_count": 2,
             "used_material_count": 2,
+            "used_part_count": 1,
+            "used_parts": ["HM-02-01-01-525"],
             "used_hm02_part_count": 1,
             "used_hm02_parts": ["HM-02-01-01-525"],
             "used_materials": [
@@ -734,6 +1060,8 @@ def test_ifs_used_materials_endpoint_returns_used_hm02_set(client, monkeypatch):
     payload = response.json()
     assert payload["operation_count"] == 2
     assert payload["used_material_count"] == 2
+    assert payload["used_part_count"] == 1
+    assert payload["used_parts"] == ["HM-02-01-01-525"]
     assert payload["used_hm02_part_count"] == 1
     assert payload["used_hm02_parts"] == ["HM-02-01-01-525"]
     assert [row["part_no"] for row in payload["used_materials"]] == [
@@ -751,18 +1079,21 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
             "stock_count": 3,
             "operation_count": 1,
             "active_used_material_count": 1,
+            "active_used_part_count": 1,
             "active_used_hm02_part_count": 1,
             "planning_order_count": 1,
             "planning_operation_count": 1,
             "planning_used_material_count": 1,
+            "planning_used_part_count": 1,
             "planning_used_hm02_part_count": 1,
             "used_material_count": 2,
+            "used_part_count": 2,
             "used_hm02_part_count": 2,
             "return_candidate_count": 1,
             "return_candidates": [
                 {
                     "Contract": "S01",
-                    "PartNo": "HM-02-C",
+                    "PartNo": "HM-04-C",
                     "PartNoRef": {"Description": "Candidate Material"},
                     "LocationNo": "U1",
                     "LotBatchNo": "L1",
@@ -772,7 +1103,8 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
                     "ObjId": "obj-1",
                 },
             ],
-            "used_hm02_parts": ["HM-02-A", "HM-02-B"],
+            "used_parts": ["HM-02-A", "HM-03-B"],
+            "used_hm02_parts": ["HM-02-A", "HM-03-B"],
             "used_materials": [
                 {
                     "OrderNo": "2615",
@@ -797,7 +1129,7 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
                     "SequenceNo": "*",
                     "LineItemNo": 3,
                     "OperationNo": 20,
-                    "PartNo": "HM-02-B",
+                    "PartNo": "HM-03-B",
                     "IssueToLoc": "U1",
                     "QtyRequired": 10,
                     "QtyAssigned": 0,
@@ -821,20 +1153,24 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
     assert payload["stock_count"] == 3
     assert payload["operation_count"] == 1
     assert payload["active_used_material_count"] == 1
+    assert payload["active_used_part_count"] == 1
     assert payload["active_used_hm02_part_count"] == 1
     assert payload["planning_order_count"] == 1
     assert payload["planning_operation_count"] == 1
     assert payload["planning_used_material_count"] == 1
+    assert payload["planning_used_part_count"] == 1
     assert payload["planning_used_hm02_part_count"] == 1
     assert payload["used_material_count"] == 2
+    assert payload["used_part_count"] == 2
     assert payload["used_hm02_part_count"] == 2
     assert payload["return_candidate_count"] == 1
-    assert payload["used_hm02_parts"] == ["HM-02-A", "HM-02-B"]
+    assert payload["used_parts"] == ["HM-02-A", "HM-03-B"]
+    assert payload["used_hm02_parts"] == ["HM-02-A", "HM-03-B"]
     assert [row["lot_batch_no"] for row in payload["return_candidates"]] == [
         "L1",
     ]
     assert [row["part_no"] for row in payload["return_candidates"]] == [
-        "HM-02-C",
+        "HM-04-C",
     ]
     assert [row["material_name"] for row in payload["return_candidates"]] == [
         "Candidate Material",
@@ -842,7 +1178,7 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
     assert all("obj_id" not in row for row in payload["return_candidates"])
     assert payload["used_materials"][0]["part_no"] == "HM-02-A"
     assert payload["used_materials"][0]["machine"] == "135"
-    assert payload["used_materials"][1]["part_no"] == "HM-02-B"
+    assert payload["used_materials"][1]["part_no"] == "HM-03-B"
 
 
 def test_bootstrap_and_health_endpoints_report_current_state(client):
@@ -850,6 +1186,14 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
     assert bootstrap_response.status_code == 200
     bootstrap_payload = bootstrap_response.json()
     assert bootstrap_payload["excel"]["available"] is True
+    assert bootstrap_payload["excel"]["database_backed"] is True
+    assert [engineer["full_name"] for engineer in bootstrap_payload["production_engineers"]] == [
+        "Barış Çetik",
+        "Abdullah Kaya",
+        "Fevzi Kılınç",
+    ]
+    assert len(bootstrap_payload["machines"]) == 47
+    assert bootstrap_payload["machines"][0]["machine_code"] == "101"
     assert bootstrap_payload["auxiliary_systems"]["form_available"] is True
     assert bootstrap_payload["auxiliary_systems"]["target_available"] is True
     assert bootstrap_payload["shop_order_source"]["available"] is True
@@ -893,29 +1237,54 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
     health_payload = health_response.json()
     assert health_payload["status"] == "ok"
     assert health_payload["sqlite"]["ok"] is True
-    assert health_payload["excel"]["ok"] is True
+    assert health_payload["process_data"]["ok"] is True
+    assert health_payload["process_data"]["database_backed"] is True
     assert health_payload["auxiliary_systems"]["form_ok"] is True
     assert health_payload["auxiliary_systems"]["target_ok"] is True
     assert health_payload["excel_write_lock"]["locked"] is False
     assert health_payload["excel_write_lock"]["waiting"] == 0
 
 
-def test_static_shell_references_current_shared_section_assets(client):
-    page_response = client.get("/")
-    service_worker_response = client.get("/service-worker.js")
+def test_page_routes_render_expected_split_sections_and_shared_assets(client):
+    for path, expected_markers in PAGE_SECTION_EXPECTATIONS.items():
+        response = client.get(path)
 
-    assert page_response.status_code == 200
-    assert service_worker_response.status_code == 200
-    assert 'type="module" src="/static/js/app.js?v=20260612-refactor"' in (
-        page_response.text
-    )
-    assert "/static/css/app.css?v=20260612-structured" in page_response.text
-    assert "process-offline-shell-v4" in service_worker_response.text
-    assert "api.js?v=20260612-refactor" in service_worker_response.text
-    assert "app.js?v=20260612-refactor" in service_worker_response.text
-    assert "modules/main-page.js?v=20260612-refactor" in service_worker_response.text
-    assert "modules/offline.js?v=20260612-refactor" in service_worker_response.text
-    assert "app.css?v=20260612-structured" in service_worker_response.text
+        assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "no-store, max-age=0"
+        for marker in (*SHARED_PAGE_ASSET_MARKERS, *expected_markers):
+            assert marker in response.text
+        for marker in PAGE_SECTION_EXCLUSIONS[path]:
+            assert marker not in response.text
+
+
+def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(
+    client,
+):
+    response = client.get("/service-worker.js")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-cache"
+    assert response.headers["Service-Worker-Allowed"] == "/"
+    source = response.text
+    assert "process-offline-shell-" in source
+    assert 'request.mode === "navigate"' in source
+    assert "url.pathname" in source
+    assert 'networkFirst(request, "/")' not in source
+    assert "cache.put(cacheKey, response.clone())" in source
+    assert "cache.match(cacheKey)" in source
+    for route in PROTECTED_PAGE_ROUTES:
+        assert f'"{route}"' in source
+    for marker in SERVICE_WORKER_ASSET_MARKERS:
+        assert marker in source
+
+
+def test_manifest_start_url_and_scope_stay_at_root(client):
+    response = client.get("/manifest.webmanifest")
+
+    assert response.status_code == 200
+    manifest = response.json()
+    assert manifest["start_url"] == "/"
+    assert manifest["scope"] == "/"
 
 
 def test_bootstrap_can_load_shop_orders_from_ifs(client, monkeypatch):
@@ -979,7 +1348,7 @@ def test_tour_context_uses_request_time_for_date_and_shift(client, monkeypatch):
         json={
             "date": "1999-01-01",
             "ambient_temp": "24,5",
-            "production_engineer": "Engineer",
+            "production_engineer": "Barış Çetik",
             "shift_chief": "Selman",
             "shift": "16.00-24.00",
         },
@@ -1006,7 +1375,7 @@ def test_tour_context_uses_client_recorded_at_for_offline_shift(
             "client_request_id": "tour-client-request-1",
             "client_recorded_at": "2026-06-08T15:55:00+03:00",
             "ambient_temp": "24,5",
-            "production_engineer": "Engineer",
+            "production_engineer": "Barış Çetik",
             "shift_chief": "Selman",
         },
     )
@@ -1023,7 +1392,7 @@ def test_tour_context_is_idempotent_for_client_request_id(client):
         "client_request_id": "tour-client-request-2",
         "client_recorded_at": "2026-06-08T09:30:00+03:00",
         "ambient_temp": "24,5",
-        "production_engineer": "Engineer",
+        "production_engineer": "Barış Çetik",
         "shift_chief": "Selman",
     }
 
@@ -1047,7 +1416,7 @@ def test_tour_context_rejects_unknown_shift_chief(client):
         "/api/tour-context",
         json={
             "ambient_temp": "24,5",
-            "production_engineer": "Engineer",
+            "production_engineer": "Barış Çetik",
             "shift_chief": "Chief",
         },
     )
@@ -1071,7 +1440,7 @@ def test_shift_boundaries(request_time, expected_shift):
     assert shift_for_request_time(request_time) == expected_shift
 
 
-def test_entry_submit_remains_pending_until_retry(monkeypatch, tmp_path):
+def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, tmp_path):
     workbook_path = tmp_path / "process.xlsx"
     _freeze_request_time(monkeypatch)
     monkeypatch.setenv("EXCEL_PATH", str(workbook_path))
@@ -1099,8 +1468,9 @@ def test_entry_submit_remains_pending_until_retry(monkeypatch, tmp_path):
         assert pending_response.status_code == 201
         pending_payload = pending_response.json()
         assert pending_payload["synced_to_excel"] is False
-        assert pending_payload["entry"]["sync_status"] == "pending_excel"
-        assert "Çalışma kitabı bulunamadı" in pending_payload["entry"]["last_error"]
+        assert pending_payload["saved_to_database"] is True
+        assert pending_payload["entry"]["sync_status"] == "synced"
+        assert pending_payload["entry"]["last_error"] is None
 
         pending_entries_response = client.get(
             "/api/entries",
@@ -1108,24 +1478,16 @@ def test_entry_submit_remains_pending_until_retry(monkeypatch, tmp_path):
         )
         assert pending_entries_response.status_code == 200
         pending_entries = pending_entries_response.json()["entries"]
-        assert len(pending_entries) == 1
-        assert pending_entries[0]["sync_status"] == "pending_excel"
-        assert pending_entries[0]["excel_row_number"] is None
+        assert pending_entries == []
 
-        _create_workbook(workbook_path)
         retry_response = client.post("/api/sync/retry")
 
     assert retry_response.status_code == 200
     retry_payload = retry_response.json()
-    assert retry_payload["attempted"] == 1
-    assert retry_payload["synced"] == 1
+    assert retry_payload["database_backed"] is True
+    assert retry_payload["attempted"] == 0
+    assert retry_payload["synced"] == 0
     assert retry_payload["remaining"] == 0
-
-    workbook = load_workbook(workbook_path)
-    worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=2, column=6).value == "M-01"
-    assert worksheet.cell(row=2, column=8).value == "WO-1"
-    workbook.close()
 
     settings = Settings(
         excel_path=str(workbook_path),
@@ -1136,6 +1498,6 @@ def test_entry_submit_remains_pending_until_retry(monkeypatch, tmp_path):
     with create_session(settings) as session:
         entry = session.query(Entry).one()
         assert entry.sync_status == "synced"
-        assert entry.excel_row_number == 2
+        assert entry.excel_row_number is None
         assert entry.last_error is None
         assert entry.synced_at is not None

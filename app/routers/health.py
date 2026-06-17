@@ -6,7 +6,6 @@ from ..database import create_session, sqlite_health
 from ..domain.request_settings import settings_from_request
 from ..services.auxiliary_systems_service import check_auxiliary_systems_reachable
 from ..services.auxiliary_systems_sync_service import latest_auxiliary_sync_error
-from ..services.excel_service import check_excel_reachable
 from ..services.excel_write_lock import excel_write_lock_status
 from ..services.sync_service import latest_sync_error
 
@@ -17,7 +16,6 @@ router = APIRouter()
 def health(request: Request) -> dict[str, Any]:
     settings = settings_from_request(request)
     sqlite = sqlite_health(settings)
-    excel = check_excel_reachable(settings)
     auxiliary_systems = check_auxiliary_systems_reachable(settings)
     last_error = None
     last_auxiliary_error = None
@@ -29,14 +27,14 @@ def health(request: Request) -> dict[str, Any]:
         "status": (
             "ok"
             if sqlite["ok"]
-            and excel.available
             and auxiliary_systems.target_available
             else "degraded"
         ),
         "sqlite": sqlite,
-        "excel": {
-            "ok": excel.available,
-            "error": excel.error or None,
+        "process_data": {
+            "ok": sqlite["ok"],
+            "database_backed": True,
+            "error": sqlite["error"] or None,
         },
         "auxiliary_systems": {
             "form_ok": auxiliary_systems.form_available,

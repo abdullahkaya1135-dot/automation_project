@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..config import Settings
 from ..database import commit_session, create_session
+from ..domain.entry_fields import ENTRY_FIELD_NAMES
 from ..models import (
     SYNC_STATUS_FAILED_EXCEL,
     SYNC_STATUS_PENDING_EXCEL,
@@ -14,7 +15,7 @@ from ..models import (
     TourContext,
     utc_now,
 )
-from .excel_service import ENTRY_FIELD_NAMES, append_entry_to_workbook
+from .excel_service import append_entry_to_workbook
 
 UNSYNCED_STATUSES = (SYNC_STATUS_PENDING_EXCEL, SYNC_STATUS_FAILED_EXCEL)
 
@@ -57,6 +58,9 @@ def serialize_entry(entry: Entry) -> dict[str, Any]:
         "tour_context_id": entry.tour_context_id,
         "tour_context": serialize_tour_context(entry.tour_context),
         "payload": entry_payload(entry),
+        "process_date": entry.process_date,
+        "machine_code": entry.machine_code,
+        "production_engineer_id": entry.production_engineer_id,
         "status": entry.status,
         "notes": entry.notes,
         "mold_info": entry.mold_info,

@@ -1,9 +1,10 @@
 import { apiJson } from "../api.js?v=20260612-refactor";
 import {
+  renderAmountControlShiftList,
   renderAuxiliarySubmissionList,
   renderEntryList,
   renderListError,
-} from "./render.js?v=20260612-refactor";
+} from "./render.js?v=20260617-amount-control";
 import { entryTime } from "./utils.js?v=20260612-refactor";
 
 export async function loadEntryLists() {
@@ -57,6 +58,23 @@ export async function loadAuxiliarySubmissions() {
     renderListError(
       container,
       `Yardımcı sistemler gönderimleri yüklenemedi: ${error.message}`,
+    );
+  }
+}
+
+export async function loadAmountControlShifts() {
+  const container = document.querySelector("#amount-control-submissions");
+  try {
+    const payload = await apiJson("/api/amount-control/shifts?limit=20");
+    renderAmountControlShiftList(
+      container,
+      Array.isArray(payload.shifts) ? payload.shifts : [],
+      "Son miktar kontrolu yok.",
+    );
+  } catch (error) {
+    renderListError(
+      container,
+      `Miktar kontrolleri yuklenemedi: ${error.message}`,
     );
   }
 }

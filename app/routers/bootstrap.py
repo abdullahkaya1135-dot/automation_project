@@ -7,9 +7,10 @@ from ..database import create_session
 from ..domain import shifts
 from ..domain.request_settings import settings_from_request
 from ..integrations.ifs_client import fetch_pet_ongoing_operations
+from ..services.amount_control_service import machine_options
 from ..services.auxiliary_systems_service import check_auxiliary_systems_reachable
 from ..services.auxiliary_systems_sync_service import latest_auxiliary_sync_error
-from ..services.excel_service import check_excel_reachable
+from ..services.process_records import production_engineer_options
 from ..services.shop_order_source import ifs_shop_order_source_payload
 from ..services.sync_service import (
     latest_sync_error,
@@ -41,12 +42,12 @@ async def _shop_order_payload(settings) -> dict[str, Any]:
 
 
 async def _bootstrap_payload(settings) -> dict[str, Any]:
-    excel = check_excel_reachable(settings)
     auxiliary_systems = check_auxiliary_systems_reachable(settings)
     return {
         "excel": {
-            "available": excel.available,
-            "last_error": excel.error or None,
+            "available": True,
+            "database_backed": True,
+            "last_error": None,
         },
         "auxiliary_systems": {
             "form_available": auxiliary_systems.form_available,
@@ -67,6 +68,8 @@ async def bootstrap(request: Request) -> dict[str, Any]:
         shifts.request_datetime(settings).date()
     )
     with create_session(settings) as session:
+        payload["machines"] = machine_options(session)
+        payload["production_engineers"] = production_engineer_options(session)
         payload["latest_tour_context"] = serialize_tour_context(
             latest_tour_context(session)
         )
