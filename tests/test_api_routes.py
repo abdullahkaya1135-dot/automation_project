@@ -8,11 +8,13 @@ from openpyxl import Workbook, load_workbook
 
 from app.config import Settings
 from app.database import create_session
+from app.integrations.ifs.client import IFSClientError
 from app.main import create_app
 from app.models import (
     AmountControlShift,
     AuxiliarySystemsSubmission,
     Entry,
+    Machine,
     MachineBreakdown,
     ProductionEngineer,
 )
@@ -91,6 +93,13 @@ PAGE_SECTION_EXPECTATIONS = {
         'id="phone-sync-heading"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="production-loss-form"',
+        'id="production-loss-results"',
+        'id="generate-whatsapp-status-message"',
+        'id="copy-whatsapp-status-message"',
+        'id="whatsapp-status-message-text"',
+        'id="run-missing-production-starts"',
+        'id="missing-production-results"',
         'id="run-ifs-return-candidates"',
         'id="print-ifs-return-candidates"',
         'id="ifs-return-print-area"',
@@ -104,6 +113,8 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="amount-control-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="generate-whatsapp-status-message"',
+        'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
     ),
     "/process": (
@@ -112,6 +123,8 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="amount-control-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="generate-whatsapp-status-message"',
+        'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
     ),
     "/auxiliary": (
@@ -121,6 +134,8 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="amount-control-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="generate-whatsapp-status-message"',
+        'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
     ),
     "/amount-control": (
@@ -130,6 +145,8 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="auxiliary-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="generate-whatsapp-status-message"',
+        'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
     ),
     "/reports": (
@@ -249,6 +266,10 @@ def client(monkeypatch, tmp_path) -> Generator[TestClient]:
         "app.services.cycle_report_service.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
+    monkeypatch.setattr(
+        "app.routers.ifs.fetch_pet_ongoing_operations",
+        fake_fetch_pet_ongoing_operations,
+    )
     monkeypatch.setenv("EXCEL_PATH", str(workbook_path))
     monkeypatch.setenv("APP_PIN", "1234")
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
@@ -307,7 +328,7 @@ def _amount_control_body(**overrides):
     return body
 
 
-def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
+def test_entry_submit_saves_locally_and_queues_excel_sync(client, tmp_path):
     context_id = _tour_context(client)
 
     response = client.post(
@@ -338,7 +359,7 @@ def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
     assert payload["saved_locally"] is True
     assert payload["saved_to_database"] is True
     assert payload["synced_to_excel"] is False
-    assert payload["entry"]["sync_status"] == "synced"
+    assert payload["entry"]["sync_status"] == "pending_excel"
     assert payload["entry"]["excel_row_number"] is None
     assert payload["entry"]["process_date"] == "2026-06-08"
     assert payload["entry"]["machine_code"] == "101"
@@ -369,13 +390,66 @@ def test_entry_submit_saves_locally_and_appends_to_excel(client, tmp_path):
     )
     with create_session(settings) as session:
         entry = session.query(Entry).one()
-        assert entry.sync_status == "synced"
+        assert entry.sync_status == "pending_excel"
         assert entry.excel_row_number is None
         assert entry.last_error is None
-        assert entry.synced_at is not None
+        assert entry.synced_at is None
         assert entry.process_date == "2026-06-08"
         assert entry.machine_code == "101"
         assert entry.production_engineer_id is not None
+
+
+def test_process_excel_sync_button_bulk_appends_selected_day(client, tmp_path):
+    context_id = _tour_context(client)
+    for machine_code in ("101", "102"):
+        response = client.post(
+            "/api/entries",
+            json={
+                "tour_context_id": context_id,
+                "payload_schema_version": 2,
+                "payload": {
+                    "col_f": machine_code,
+                    "col_g": f"Product {machine_code}",
+                    "col_h": f"WO-{machine_code}",
+                    "col_j": "16",
+                    "col_k": "12",
+                    "col_l": "12,5",
+                },
+            },
+        )
+        assert response.status_code == 201
+
+    response = client.post(
+        "/api/sync/retry",
+        params={"process_date": "2026-06-08"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database_backed"] is True
+    assert payload["process_date"] == "2026-06-08"
+    assert payload["attempted"] == 2
+    assert payload["synced"] == 2
+    assert payload["failed"] == 0
+    assert payload["remaining"] == 0
+    assert [result["excel_row_number"] for result in payload["results"]] == [2, 3]
+
+    workbook = load_workbook(tmp_path / "process.xlsx")
+    worksheet = workbook["PROSES 2026"]
+    assert worksheet.cell(row=2, column=6).value == "101"
+    assert worksheet.cell(row=3, column=6).value == "102"
+    workbook.close()
+
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        entries = session.query(Entry).order_by(Entry.machine_code).all()
+        assert [entry.sync_status for entry in entries] == ["synced", "synced"]
+        assert [entry.excel_row_number for entry in entries] == [2, 3]
 
 
 def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
@@ -474,6 +548,54 @@ def test_entries_list_orders_by_process_date_machine_and_engineer(client, tmp_pa
         ("2026-06-16", "102", "Barış Çetik"),
         ("2026-06-17", "102", "Fevzi Kılınç"),
     ]
+
+
+def test_entries_list_can_order_by_recent_submission(client, tmp_path):
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        session.add_all(
+            [
+                Entry(
+                    col_a="18.06.2026",
+                    col_c="Engineer A",
+                    col_f="101",
+                    process_date="2026-06-18",
+                    machine_code="101",
+                    sync_status="synced",
+                    submitted_at=datetime(2026, 6, 18, 6, 13),
+                ),
+                Entry(
+                    col_a="18.06.2026",
+                    col_c="Engineer B",
+                    col_f="171",
+                    process_date="2026-06-18",
+                    machine_code="171",
+                    sync_status="synced",
+                    submitted_at=datetime(2026, 6, 18, 6, 17),
+                ),
+                Entry(
+                    col_a="18.06.2026",
+                    col_c="Engineer C",
+                    col_f="103",
+                    process_date="2026-06-18",
+                    machine_code="103",
+                    sync_status="synced",
+                    submitted_at=datetime(2026, 6, 18, 6, 15),
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/api/entries", params={"sort": "recent", "limit": 2})
+
+    assert response.status_code == 200
+    entries = response.json()["entries"]
+    assert [entry["machine_code"] for entry in entries] == ["171", "103"]
 
 
 def test_second_section_entry_blanks_first_section_only_columns(client):
@@ -837,6 +959,7 @@ def test_cycle_report_endpoint_creates_today_report(client):
     assert payload["date"] == "2026-06-08"
 
     output_path = Path(payload["output_path"])
+    assert output_path.name == "08.06.2026 Cycle Report.xlsx"
     assert output_path.exists()
     workbook = load_workbook(output_path)
     worksheet = workbook["Çevrim Kontrol"]
@@ -852,6 +975,74 @@ def test_cycle_report_endpoint_creates_today_report(client):
         "Uygun",
     ]
     workbook.close()
+
+
+def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
+    settings = client.app.state.settings
+    with create_session(settings) as session:
+        machine = session.query(Machine).filter_by(machine_code="101").one()
+        session.add_all(
+            [
+                AmountControlShift(
+                    record_date="2026-06-08",
+                    machine=machine,
+                    job_order="WO-1",
+                    shift="08.00-16.00",
+                    worker_names="Operator One",
+                    produced_quantity=100,
+                ),
+                Entry(
+                    col_a="08.06.2026",
+                    col_f="101",
+                    col_g="Fallback Product",
+                    col_h="WO-1",
+                    col_k="1",
+                    process_date="2026-06-08",
+                    machine_code="101",
+                    sync_status="synced",
+                ),
+            ]
+        )
+        session.commit()
+
+    async def fake_fetch_actuals(_settings, order_numbers):
+        assert order_numbers == ["WO-1"]
+        return [
+            {
+                "OrderNo": "WO-1",
+                "PreferredResourceId": "101",
+                "WorkCenterNo": "SP25",
+                "PartNoDesc": "PET 28MM 6GR",
+                "ActualStartDate": "2026-06-08T08:00:00+03:00",
+                "ActualFinishDate": "2026-06-08T09:00:00+03:00",
+                "NetMachineMinutes": 60,
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.features.production_loss.service.fetch_shop_order_operation_actual_rows",
+        fake_fetch_actuals,
+    )
+
+    response = client.post(
+        "/api/production-loss-reports",
+        json={
+            "date_from": "2026-06-08",
+            "date_to": "2026-06-08",
+            "refresh_ifs": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["row_count"] == 1
+    assert payload["warning_count"] == 0
+    assert payload["rows"][0]["production_loss_net"] == "200"
+    assert Path(payload["output_path"]).exists()
+
+    list_response = client.get("/api/production-loss-reports")
+    assert list_response.status_code == 200
+    assert list_response.json()["reports"][0]["id"] == payload["id"]
 
 
 def test_ifs_stock_endpoint_returns_u1_hm02_stock(client, monkeypatch):
@@ -940,6 +1131,124 @@ def test_ifs_operations_endpoint_returns_pet_ongoing_operations(client, monkeypa
             }
         ],
     }
+
+
+def test_ifs_whatsapp_status_message_endpoint_returns_copy_ready_message(
+    client,
+    monkeypatch,
+):
+    async def fake_fetch(_settings):
+        return [
+            {"PreferredResourceId": "302"},
+            {"PreferredResourceId": "210"},
+        ]
+
+    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+
+    response = client.get("/api/ifs/whatsapp-status-message")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["hall_numbers"] == [3, 4]
+    assert payload["active_ifs_machine_count"] == 2
+    assert payload["machine_count"] == 20
+    assert payload["halls"][0]["hall_number"] == 3
+    assert payload["halls"][0]["machines"][0] == {
+        "machine_code": "302",
+        "hall_number": 3,
+        "hall_name": "Hole 3",
+        "is_active": True,
+        "status": "Üretim",
+    }
+    assert "Salon 3\n302 Üretim\n303 Kapalı" in payload["message"]
+    assert "Salon 4\n202 Kapalı" in payload["message"]
+    assert "210 Üretim" in payload["message"]
+    assert payload["message"].count("IFS kontrolleri yapılmıştır.") == 2
+
+
+def test_ifs_whatsapp_status_message_endpoint_returns_ifs_error(
+    client,
+    monkeypatch,
+):
+    async def fake_fetch(_settings):
+        raise IFSClientError("IFS unavailable")
+
+    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+
+    response = client.get("/api/ifs/whatsapp-status-message")
+
+    assert response.status_code == 502
+    assert "IFS unavailable" in response.json()["detail"]
+
+
+def test_ifs_missing_production_starts_endpoint_lists_working_hall_3_4_missing_from_ifs(
+    client,
+    monkeypatch,
+):
+    async def fake_fetch(_settings):
+        return [{"PreferredResourceId": "303"}]
+
+    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    context_id = _tour_context(client)
+    for machine_code in ("302", "303", "101"):
+        response = client.post(
+            "/api/entries",
+            json={
+                "tour_context_id": context_id,
+                "payload_schema_version": 2,
+                "payload": {
+                    "col_f": machine_code,
+                    "col_g": f"Product {machine_code}",
+                    "col_h": f"WO-{machine_code}",
+                    "col_l": "12,5",
+                },
+            },
+        )
+        assert response.status_code == 201
+
+    response = client.get(
+        "/api/ifs/missing-production-starts",
+        params={"process_date": "2026-06-08"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["process_date"] == "2026-06-08"
+    assert payload["hall_numbers"] == [3, 4]
+    assert payload["working_machine_count"] == 2
+    assert payload["active_ifs_machine_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["machines"] == [
+        {
+            "machine_code": "302",
+            "hall_number": 3,
+            "hall_name": "Hole 3",
+            "latest_work_order": "WO-302",
+            "latest_product": "Product 302",
+            "latest_cycle_time": "12,5",
+            "latest_submitted_at": payload["machines"][0]["latest_submitted_at"],
+            "entry_count": 1,
+        }
+    ]
+    assert payload["machines"][0]["latest_submitted_at"]
+
+
+def test_ifs_missing_production_starts_endpoint_returns_ifs_error(
+    client,
+    monkeypatch,
+):
+    async def fake_fetch(_settings):
+        raise IFSClientError("IFS unavailable")
+
+    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+
+    response = client.get(
+        "/api/ifs/missing-production-starts",
+        params={"process_date": "2026-06-08"},
+    )
+
+    assert response.status_code == 502
+    assert "IFS unavailable" in response.json()["detail"]
 
 
 def test_ifs_operation_materials_endpoint_returns_hm02_materials(client, monkeypatch):
@@ -1257,6 +1566,21 @@ def test_page_routes_render_expected_split_sections_and_shared_assets(client):
             assert marker not in response.text
 
 
+def test_reports_javascript_wires_missing_production_check():
+    source = Path("app/static/js/modules/main-page.js").read_text(encoding="utf-8")
+
+    assert "#generate-whatsapp-status-message" in source
+    assert "#copy-whatsapp-status-message" in source
+    assert "#whatsapp-status-message-text" in source
+    assert "#run-missing-production-starts" in source
+    assert "#production-loss-form" in source
+    assert "#sync-process-date" in source
+    assert "/api/ifs/whatsapp-status-message" in source
+    assert "/api/ifs/missing-production-starts?" in source
+    assert "/api/production-loss-reports" in source
+    assert "process_date" in source
+
+
 def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(
     client,
 ):
@@ -1469,7 +1793,7 @@ def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, t
         pending_payload = pending_response.json()
         assert pending_payload["synced_to_excel"] is False
         assert pending_payload["saved_to_database"] is True
-        assert pending_payload["entry"]["sync_status"] == "synced"
+        assert pending_payload["entry"]["sync_status"] == "pending_excel"
         assert pending_payload["entry"]["last_error"] is None
 
         pending_entries_response = client.get(
@@ -1478,16 +1802,21 @@ def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, t
         )
         assert pending_entries_response.status_code == 200
         pending_entries = pending_entries_response.json()["entries"]
-        assert pending_entries == []
+        assert len(pending_entries) == 1
 
-        retry_response = client.post("/api/sync/retry")
+        retry_response = client.post(
+            "/api/sync/retry",
+            params={"process_date": "2026-06-08"},
+        )
 
     assert retry_response.status_code == 200
     retry_payload = retry_response.json()
     assert retry_payload["database_backed"] is True
-    assert retry_payload["attempted"] == 0
+    assert retry_payload["process_date"] == "2026-06-08"
+    assert retry_payload["attempted"] == 1
     assert retry_payload["synced"] == 0
-    assert retry_payload["remaining"] == 0
+    assert retry_payload["failed"] == 1
+    assert retry_payload["remaining"] == 1
 
     settings = Settings(
         excel_path=str(workbook_path),
@@ -1497,7 +1826,7 @@ def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, t
     )
     with create_session(settings) as session:
         entry = session.query(Entry).one()
-        assert entry.sync_status == "synced"
+        assert entry.sync_status == "failed_excel"
         assert entry.excel_row_number is None
-        assert entry.last_error is None
-        assert entry.synced_at is not None
+        assert entry.last_error
+        assert entry.synced_at is None

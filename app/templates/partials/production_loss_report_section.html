@@ -1,0 +1,35 @@
+      <section class="work-section" aria-labelledby="production-loss-heading">
+        <div class="section-heading">
+          <div>
+            <h2 id="production-loss-heading">Production Loss Raporu</h2>
+            <p id="production-loss-message" class="form-message" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <form id="production-loss-form" class="stacked-form">
+          <div class="field-grid compact-grid">
+            <div class="field">
+              <label for="production-loss-date-from">Baslangic</label>
+              <input id="production-loss-date-from" name="date_from" type="date" required>
+            </div>
+            <div class="field">
+              <label for="production-loss-date-to">Bitis</label>
+              <input id="production-loss-date-to" name="date_to" type="date" required>
+            </div>
+            <label class="check-field">
+              <input id="production-loss-refresh-ifs" name="refresh_ifs" type="checkbox" checked>
+              IFS zamanlarini yenile
+            </label>
+          </div>
+          <div class="section-actions">
+            <button id="create-production-loss-report" type="submit" class="secondary-action">
+              Rapor olustur
+            </button>
+          </div>
+        </form>
+
+        <div id="production-loss-results" class="ifs-results" aria-live="polite">
+          <p class="empty-state">Rapor henuz olusturulmadi.</p>
+        </div>
+      </section>
+

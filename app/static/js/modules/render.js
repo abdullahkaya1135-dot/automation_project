@@ -115,6 +115,50 @@ export function renderIfsReturnPrintArea(payload) {
   container.replaceChildren(renderIfsReturnCandidateTable(candidates));
 }
 
+export function renderMissingProductionStarts(container, payload) {
+  if (!container) {
+    return;
+  }
+
+  const machines = Array.isArray(payload?.machines) ? payload.machines : [];
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(renderMissingProductionSummary(payload));
+
+  if (!machines.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Eksik yok.";
+    fragment.appendChild(empty);
+    container.replaceChildren(fragment);
+    return;
+  }
+
+  fragment.appendChild(renderMissingProductionTable(machines));
+  container.replaceChildren(fragment);
+}
+
+export function renderProductionLossReport(container, payload) {
+  if (!container) {
+    return;
+  }
+
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(renderProductionLossSummary(payload));
+
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Rapor satiri yok.";
+    fragment.appendChild(empty);
+    container.replaceChildren(fragment);
+    return;
+  }
+
+  fragment.appendChild(renderProductionLossTable(rows));
+  container.replaceChildren(fragment);
+}
+
 export function renderLoading(container, text) {
   if (!container) {
     return;
@@ -133,6 +177,112 @@ export function renderListError(container, text) {
   error.className = "empty-state error";
   error.textContent = text;
   container.replaceChildren(error);
+}
+
+function renderProductionLossTable(rows) {
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-scroll";
+
+  const table = document.createElement("table");
+  table.className = "data-table production-loss-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const label of [
+    "Tarih",
+    "Makine",
+    "Is emri",
+    "Urun",
+    "Gr",
+    "V1",
+    "V2",
+    "V3",
+    "Toplam",
+    "Aktif goz",
+    "Cycle",
+    "Net dk",
+    "Brut dk",
+    "Net kayip",
+    "Brut kayip",
+    "Mola/durus kaybi",
+    "Uyari",
+  ]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    appendTableCell(tr, row.record_date);
+    appendTableCell(tr, `${displayValue(row.machine_name)} / ${displayValue(row.machine_code)}`);
+    appendTableCell(tr, row.job_order, "mono-cell");
+    appendTableCell(tr, row.product_description);
+    appendTableCell(tr, row.gram);
+    appendTableCell(tr, row.shift_2400_0800_quantity);
+    appendTableCell(tr, row.shift_0800_1600_quantity);
+    appendTableCell(tr, row.shift_1600_2400_quantity);
+    appendTableCell(tr, row.daily_total_quantity);
+    appendTableCell(tr, row.active_cavities);
+    appendTableCell(tr, row.cycle_time_seconds);
+    appendTableCell(tr, row.net_machine_minutes);
+    appendTableCell(tr, row.gross_elapsed_minutes);
+    appendTableCell(tr, row.production_loss_net);
+    appendTableCell(tr, row.production_loss_gross);
+    appendTableCell(tr, row.break_loss_quantity);
+    appendTableCell(tr, row.warnings);
+    tbody.appendChild(tr);
+  }
+
+  table.append(thead, tbody);
+  tableWrap.appendChild(table);
+  return tableWrap;
+}
+
+function renderProductionLossSummary(payload) {
+  const summary = document.createElement("div");
+  summary.className = "ifs-summary";
+
+  const items = [
+    ["Baslangic", payload?.date_from],
+    ["Bitis", payload?.date_to],
+    ["Satir", payload?.row_count],
+    ["Uyari", payload?.warning_count],
+    ["IFS", payload?.source_summary?.ifs_refreshed ? "Yenilendi" : "Cache"],
+  ];
+
+  for (const [label, value] of items) {
+    const item = document.createElement("div");
+    item.className = "ifs-summary-item";
+
+    const itemLabel = document.createElement("span");
+    itemLabel.textContent = label;
+
+    const itemValue = document.createElement("strong");
+    itemValue.textContent = displayValue(value);
+
+    item.append(itemLabel, itemValue);
+    summary.appendChild(item);
+  }
+
+  if (payload?.output_path) {
+    const outputPath = document.createElement("p");
+    outputPath.className = "entry-meta ifs-generated-at";
+    outputPath.textContent = `Excel: ${payload.output_path}`;
+    summary.appendChild(outputPath);
+  }
+
+  if (payload?.source_summary?.ifs_error) {
+    const ifsError = document.createElement("p");
+    ifsError.className = "entry-meta error ifs-generated-at";
+    ifsError.textContent = `IFS: ${payload.source_summary.ifs_error}`;
+    summary.appendChild(ifsError);
+  }
+
+  return summary;
 }
 
 function renderIfsReturnCandidateTable(candidates) {
@@ -176,6 +326,77 @@ function renderIfsReturnCandidateTable(candidates) {
   table.append(thead, tbody);
   tableWrap.appendChild(table);
   return tableWrap;
+}
+
+function renderMissingProductionTable(machines) {
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-scroll";
+
+  const table = document.createElement("table");
+  table.className = "data-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const label of [
+    "Salon",
+    "Makine",
+    "İş emri",
+    "Ürün",
+    "Çevrim",
+    "Son kayıt",
+    "Kayıt",
+  ]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement("tbody");
+  for (const row of machines) {
+    const tr = document.createElement("tr");
+    appendTableCell(tr, row.hall_number ? `Salon ${row.hall_number}` : row.hall_name);
+    appendTableCell(tr, row.machine_code, "mono-cell");
+    appendTableCell(tr, row.latest_work_order, "mono-cell");
+    appendTableCell(tr, row.latest_product);
+    appendTableCell(tr, row.latest_cycle_time);
+    appendTableCell(tr, formatTimestamp(row.latest_submitted_at));
+    appendTableCell(tr, row.entry_count);
+    tbody.appendChild(tr);
+  }
+
+  table.append(thead, tbody);
+  tableWrap.appendChild(table);
+  return tableWrap;
+}
+
+function renderMissingProductionSummary(payload) {
+  const summary = document.createElement("div");
+  summary.className = "ifs-summary";
+
+  const items = [
+    ["Tarih", payload?.process_date],
+    ["Çevrim girilen", payload?.working_machine_count],
+    ["IFS aktif makine", payload?.active_ifs_machine_count],
+    ["Başlatma eksiği", payload?.missing_count],
+  ];
+
+  for (const [label, value] of items) {
+    const item = document.createElement("div");
+    item.className = "ifs-summary-item";
+
+    const itemLabel = document.createElement("span");
+    itemLabel.textContent = label;
+
+    const itemValue = document.createElement("strong");
+    itemValue.textContent = displayValue(value);
+
+    item.append(itemLabel, itemValue);
+    summary.appendChild(item);
+  }
+
+  return summary;
 }
 
 function renderIfsSummary(payload) {

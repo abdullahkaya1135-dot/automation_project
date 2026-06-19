@@ -14,7 +14,7 @@ export async function loadEntryLists() {
 export async function loadRecentEntries() {
   const container = document.querySelector("#recent-entries");
   try {
-    const payload = await apiJson("/api/entries?limit=10");
+    const payload = await apiJson("/api/entries?sort=recent&limit=10");
     renderEntryList(
       container,
       Array.isArray(payload.entries) ? payload.entries : [],

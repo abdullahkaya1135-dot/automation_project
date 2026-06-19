@@ -5,7 +5,11 @@ import {
   resetAmountControlForm,
   updateAmountControlBootstrap,
 } from "./amount-control.js?v=20260617-amount-control";
-import { automaticTourTimingForRequest } from "./dates.js?v=20260612-refactor";
+import {
+  automaticTourTimingForRequest,
+  dateForDisplay,
+  dateForRequest,
+} from "./dates.js?v=20260612-refactor";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
@@ -14,7 +18,7 @@ import {
   loadAmountControlShifts,
   loadAuxiliarySubmissions,
   loadEntryLists,
-} from "./lists.js?v=20260617-amount-control";
+} from "./lists.js?v=20260618-recent-entries";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -27,13 +31,18 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260617-amount-control";
+} from "./offline.js?v=20260618-excel-bulk";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
 } from "./payloads.js?v=20260612-refactor";
-import { renderLoading } from "./render.js?v=20260617-amount-control";
+import {
+  renderListError,
+  renderLoading,
+  renderMissingProductionStarts,
+  renderProductionLossReport,
+} from "./render.js?v=20260619-production-loss";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
@@ -202,6 +211,23 @@ function initializeReportsPage() {
     cycleReportButton.addEventListener("click", handleCreateCycleReport);
   }
 
+  initializeProductionLossForm();
+
+  const whatsappMessageButton = document.querySelector("#generate-whatsapp-status-message");
+  if (whatsappMessageButton) {
+    whatsappMessageButton.addEventListener("click", handleGenerateWhatsappStatusMessage);
+  }
+
+  const whatsappCopyButton = document.querySelector("#copy-whatsapp-status-message");
+  if (whatsappCopyButton) {
+    whatsappCopyButton.addEventListener("click", handleCopyWhatsappStatusMessage);
+  }
+
+  const missingProductionButton = document.querySelector("#run-missing-production-starts");
+  if (missingProductionButton) {
+    missingProductionButton.addEventListener("click", handleMissingProductionStarts);
+  }
+
   const ifsReturnButton = document.querySelector("#run-ifs-return-candidates");
   if (ifsReturnButton) {
     ifsReturnButton.addEventListener("click", handleIfsReturnCandidates);
@@ -293,6 +319,8 @@ function pageMessageTarget(page) {
   if (page === "reports") {
     return document.querySelector("#sync-message")
       || document.querySelector("#cycle-report-message")
+      || document.querySelector("#whatsapp-status-feedback")
+      || document.querySelector("#missing-production-message")
       || document.querySelector("#ifs-return-message");
   }
   return document.querySelector("#phone-sync-message");
@@ -323,6 +351,7 @@ async function loadBootstrap() {
     );
   }
   updateExcelStatus(payload.excel);
+  applyExcelSyncDate(payload.current_tour_timing?.date);
   updateAuxiliarySystemsStatus(payload.auxiliary_systems);
   applyAuxiliaryDate(payload.current_auxiliary_date);
   updateShopOrderOptions(payload.shop_order_source);
@@ -445,6 +474,22 @@ function applyAuxiliaryDate(value) {
   }
   if (dateLabel) {
     dateLabel.textContent = value ? `Tarih: ${value}` : "";
+  }
+}
+
+function applyExcelSyncDate(value) {
+  const dateInput = document.querySelector("#sync-process-date");
+  if (!dateInput || dateInput.value) {
+    return;
+  }
+  dateInput.value = dateForRequest(value);
+  const productionLossDateFrom = document.querySelector("#production-loss-date-from");
+  const productionLossDateTo = document.querySelector("#production-loss-date-to");
+  if (productionLossDateFrom && !productionLossDateFrom.value) {
+    productionLossDateFrom.value = dateInput.value;
+  }
+  if (productionLossDateTo && !productionLossDateTo.value) {
+    productionLossDateTo.value = dateInput.value;
   }
 }
 
@@ -651,32 +696,46 @@ async function handleAmountControlSubmit(event) {
 async function handleRetrySync(event) {
   const button = event.currentTarget;
   const message = document.querySelector("#sync-message");
+  const processDate = document.querySelector("#sync-process-date")?.value || "";
 
-  setMessage(message, "Bekleyen Excel senkronizasyonu tekrar deneniyor...", "");
-  setButtonBusy(button, true, "Deneniyor");
+  if (!processDate) {
+    setMessage(message, "Excel aktarimi icin tarih secin.", "error");
+    return;
+  }
+
+  const displayDate = dateForDisplay(processDate);
+  setMessage(message, `${displayDate} icin Excel aktarimi baslatiliyor...`, "");
+  setButtonBusy(button, true, "Aktariliyor");
 
   try {
-    const payload = await apiJson("/api/sync/retry", {
+    const query = new URLSearchParams({ process_date: processDate });
+    const payload = await apiJson(`/api/sync/retry?${query.toString()}`, {
       method: "POST",
     });
 
     if (payload.failed) {
       setMessage(
         message,
-        `Tekrar deneme ${payload.synced} senkronizasyon ve ${payload.failed} hata sonrasi durdu. ${payload.remaining} kayit bekliyor.`,
+        `${displayDate} aktarimi ${payload.synced} kayit ve ${payload.failed} hata ile durdu. ${payload.remaining} kayit bekliyor.`,
         "warning",
+      );
+    } else if (!payload.synced) {
+      setMessage(
+        message,
+        `${displayDate} icin Excel'e aktarilacak bekleyen kayit yok.`,
+        "success",
       );
     } else {
       setMessage(
         message,
-        `Tekrar deneme tamamlandi. ${payload.synced} kayit senkronize edildi, ${payload.remaining} kayit bekliyor.`,
+        `${displayDate} icin ${payload.synced} kayit Excel'e aktarildi. ${payload.remaining} kayit bekliyor.`,
         "success",
       );
     }
 
     await Promise.all([loadEntryLists(), loadBootstrap(), loadExcelPendingCount()]);
   } catch (error) {
-    setMessage(message, `Tekrar deneme basarisiz: ${error.message}`, "error");
+    setMessage(message, `Excel aktarimi basarisiz: ${error.message}`, "error");
   } finally {
     setButtonBusy(button, false);
   }
@@ -735,8 +794,165 @@ async function handleCreateCycleReport(event) {
       `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} kayit islendi.${warningText}`,
       payload.warning_count ? "warning" : "success",
     );
+    await loadMissingProductionStarts();
+    await loadWhatsappStatusMessage();
   } catch (error) {
     setMessage(message, `Rapor olusturulamadi: ${error.message}`, "error");
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+function initializeProductionLossForm() {
+  const form = document.querySelector("#production-loss-form");
+  if (!form) {
+    return;
+  }
+  form.addEventListener("submit", handleCreateProductionLossReport);
+}
+
+async function handleCreateProductionLossReport(event) {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const message = document.querySelector("#production-loss-message");
+  const container = document.querySelector("#production-loss-results");
+  const button = form.querySelector("button[type='submit']");
+
+  if (!form.reportValidity()) {
+    return;
+  }
+
+  const formData = new FormData(form);
+  const body = {
+    date_from: cleanRequired(formData.get("date_from")),
+    date_to: cleanRequired(formData.get("date_to")),
+    refresh_ifs: formData.get("refresh_ifs") === "on",
+  };
+
+  setMessage(message, "Production Loss raporu olusturuluyor...", "");
+  renderLoading(container, "Miktar, cevrim ve IFS zamanlari hesaplaniyor...");
+  setButtonBusy(button, true, "Olusturuluyor");
+
+  try {
+    const payload = await apiJson("/api/production-loss-reports", {
+      method: "POST",
+      body,
+    });
+    renderProductionLossReport(container, payload);
+    const warningText = payload.warning_count
+      ? ` ${payload.warning_count} uyari var.`
+      : "";
+    setMessage(
+      message,
+      `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} satir.${warningText}`,
+      payload.warning_count ? "warning" : "success",
+    );
+  } catch (error) {
+    setMessage(message, `Production Loss raporu olusturulamadi: ${error.message}`, "error");
+    renderListError(container, `Production Loss raporu olusturulamadi: ${error.message}`);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function handleGenerateWhatsappStatusMessage(event) {
+  const button = event.currentTarget;
+  await loadWhatsappStatusMessage(button);
+}
+
+async function loadWhatsappStatusMessage(button = null) {
+  const message = document.querySelector("#whatsapp-status-feedback");
+  const textarea = document.querySelector("#whatsapp-status-message-text");
+  const copyButton = document.querySelector("#copy-whatsapp-status-message");
+
+  setMessage(message, "WhatsApp mesaji olusturuluyor...", "");
+  if (textarea) {
+    textarea.value = "";
+  }
+  if (copyButton) {
+    copyButton.disabled = true;
+  }
+  setButtonBusy(button, true, "Olusturuluyor");
+
+  try {
+    const payload = await apiJson("/api/ifs/whatsapp-status-message");
+    if (textarea) {
+      textarea.value = payload.message || "";
+    }
+    if (copyButton) {
+      copyButton.disabled = !payload.message;
+    }
+    setMessage(
+      message,
+      `${payload.machine_count || 0} makine icin WhatsApp mesaji hazir.`,
+      "success",
+    );
+  } catch (error) {
+    setMessage(message, `WhatsApp mesaji olusturulamadi: ${error.message}`, "error");
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function handleCopyWhatsappStatusMessage() {
+  const message = document.querySelector("#whatsapp-status-feedback");
+  const textarea = document.querySelector("#whatsapp-status-message-text");
+  const text = textarea?.value || "";
+  if (!text) {
+    setMessage(message, "Kopyalanacak WhatsApp mesaji yok.", "error");
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      textarea.select();
+      document.execCommand("copy");
+    }
+    setMessage(message, "WhatsApp mesaji kopyalandi.", "success");
+  } catch (error) {
+    setMessage(message, `WhatsApp mesaji kopyalanamadi: ${error.message}`, "error");
+  }
+}
+
+async function handleMissingProductionStarts(event) {
+  const button = event.currentTarget;
+  await loadMissingProductionStarts(button);
+}
+
+async function loadMissingProductionStarts(button = null) {
+  const message = document.querySelector("#missing-production-message");
+  const container = document.querySelector("#missing-production-results");
+  const processDate = document.querySelector("#sync-process-date")?.value || "";
+
+  if (!processDate) {
+    setMessage(message, "IFS baslatma kontrolu icin tarih secin.", "error");
+    return;
+  }
+
+  const displayDate = dateForDisplay(processDate);
+  setMessage(message, `${displayDate} icin IFS baslatma kontrolu calisiyor...`, "");
+  renderLoading(container, "IFS operasyonlari ve girilen cevrimler karsilastiriliyor...");
+  setButtonBusy(button, true, "Kontrol ediliyor");
+
+  try {
+    const query = new URLSearchParams({ process_date: processDate });
+    const payload = await apiJson(`/api/ifs/missing-production-starts?${query.toString()}`);
+    renderMissingProductionStarts(container, payload);
+    if (payload.missing_count) {
+      setMessage(
+        message,
+        `${displayDate} icin ${payload.missing_count} makine IFS'te baslatilmamis gorunuyor.`,
+        "warning",
+      );
+    } else {
+      setMessage(message, `${displayDate} icin eksik yok.`, "success");
+    }
+  } catch (error) {
+    setMessage(message, `IFS baslatma kontrolu basarisiz: ${error.message}`, "error");
+    renderListError(container, `IFS baslatma kontrolu basarisiz: ${error.message}`);
   } finally {
     setButtonBusy(button, false);
   }

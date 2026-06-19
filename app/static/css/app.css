@@ -260,6 +260,22 @@ h3 {
   justify-content: flex-end;
 }
 
+.sync-action-controls {
+  align-items: flex-end;
+}
+
+.inline-field {
+  width: min(180px, 100%);
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.inline-field input {
+  margin-top: 4px;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
 .sync-panel {
   padding-top: 14px;
 }
@@ -386,6 +402,12 @@ select {
 textarea {
   min-height: 96px;
   resize: vertical;
+}
+
+.whatsapp-message-text {
+  min-height: 280px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  white-space: pre;
 }
 
 input:focus,

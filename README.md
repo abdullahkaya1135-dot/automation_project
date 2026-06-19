@@ -1,17 +1,21 @@
 ﻿# Mobile Process Data Entry MVP
 
 FastAPI app for phone-based process data entry on the office LAN. The app
-saves each submission to SQLite first, then appends the same data to the
-production Excel workbook when the workbook is reachable.
+saves each submission to SQLite first, then lets the operator append a selected
+day's pending process rows to the production Excel workbook in one manual bulk
+update.
 
 ## Project Structure
 
 ```text
 app/
-  domain/        Request parsing, shift/date rules, and field rules
+  core/          Configuration, database sessions, security, and filesystem paths
+  features/      Business features with their API, domain, schema, and service code
   integrations/  External system clients such as IFS
-  routers/       FastAPI route modules
-  services/      Excel, sync, report, and planning services
+  web/           Page routing; static assets and templates still live under app/static and app/templates
+  routers/       Compatibility exports for older route import paths
+  services/      Compatibility exports plus shared workbook/browser-facing helpers
+  domain/        Compatibility exports plus shared request/date helpers
   static/        Browser CSS, JavaScript modules, manifest, and service worker
   templates/     Page templates and shared partials
 docs/            Historical plans, implementation notes, and audit reports
@@ -164,18 +168,20 @@ but it will not provide the full offline app shell after a browser reload.
 
 ## Data Behavior
 
-Every entry is written to SQLite before Excel is touched. The default SQLite
-database path is:
+Every entry is written to SQLite before Excel is touched. Process entries stay
+queued for Excel until an operator uses the reports page bulk update button. The
+default SQLite database path is:
 
 ```text
 data/process_entries.sqlite3
 ```
 
-After the local save succeeds, the app attempts to append columns `A:Y` to the
-configured worksheet. Tour context values fill columns `A:E`; machine entry
-fields now use canonical Excel letters (`F:Y`) so product is `G`, work order is
-`H`, raw material is `I`, shared process values continue through `N`, and oven
-and mold temperatures are `X:Y`.
+When the operator selects a date on the reports page and clicks `Excel'e aktar`,
+the app appends that day's pending columns `A:Y` to the configured worksheet in
+one workbook open/save cycle. Tour context values fill columns `A:E`; machine
+entry fields now use canonical Excel letters (`F:Y`) so product is `G`, work
+order is `H`, raw material is `I`, shared process values continue through `N`,
+and oven and mold temperatures are `X:Y`.
 
 The machine code controls which section-only columns are written. Machines with
 `1xx` codes plus `271` write first-section fields `O:Q` and leave `R:W` blank.
@@ -191,11 +197,9 @@ Excel append behavior:
 - The app detects the real next data row instead of relying on `ws.max_row`.
 - The app validates the existing `A:Y` header shape before writing.
 
-If Excel is locked, missing, permission-denied, or otherwise unreachable, the
-entry remains saved in SQLite with `pending_excel` or `failed_excel` status.
-Use the in-app Retry sync button to append pending entries after workbook access
-is restored. Retry processes old unsynced entries first and stops on the first
-Excel error so the operator can fix the workbook state.
+If Excel is locked, missing, permission-denied, or otherwise unreachable during
+the bulk update, the selected entries remain saved in SQLite with `failed_excel`
+status. Restore workbook access, then use `Excel'e aktar` again for that date.
 
 Machine and work order values are loaded directly from IFS with an OAuth bearer
 token. The app fetches active PET operations during `/api/bootstrap` and maps
@@ -242,7 +246,7 @@ matching backup files.
 - The app appends rows only; it does not create new Excel columns.
 - QR scanning is not included in this MVP.
 - If the workbook is open or locked in a way that blocks saving, entries stay in
-  SQLite until Retry sync succeeds.
+  SQLite until the dated `Excel'e aktar` action succeeds.
 
 ## Manual Acceptance Test
 
@@ -268,8 +272,8 @@ http://<office-computer-ip>:8080
 ```
 
 Log in with the shared PIN, save one tour context, and submit one machine row.
-The UI should report either `Synced to Excel` or `Saved locally. Excel sync is
-pending.`
+The UI should save the row locally and show it in the pending Excel list on the
+reports page until `Excel'e aktar` is run for that date.
 
 After submitting the row, run the acceptance verifier from another terminal:
 
@@ -281,8 +285,8 @@ The verifier checks that the running app responds, authenticated bootstrap works
 the latest SQLite entry exists, the Excel row matches the latest SQLite entry,
 and a timestamped backup exists within the configured retention count.
 
-If Excel was unavailable during submission, restore workbook access, use the
-in-app Retry sync button, then run the verifier again. For a dry run against a
+If Excel was unavailable during export, restore workbook access, use the dated
+`Excel'e aktar` button, then run the verifier again. For a dry run against a
 safe workbook copy, omit `--expected-row` or pass the expected row for that copy.
 
 ## Tests

@@ -1,6 +1,6 @@
 import re
 import shutil
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -266,6 +266,29 @@ def _row_matches_expected(
     )
 
 
+def _existing_entry_row_lookup(
+    worksheet: Worksheet,
+    *,
+    last_value_row: int,
+) -> dict[tuple[Any, ...], int]:
+    if last_value_row <= HEADER_ROW:
+        return {}
+
+    lookup: dict[tuple[Any, ...], int] = {}
+    for row_number, values in enumerate(
+        worksheet.iter_rows(
+            min_row=HEADER_ROW + 1,
+            max_row=last_value_row,
+            max_col=EXCEL_COLUMN_COUNT,
+            values_only=True,
+        ),
+        start=HEADER_ROW + 1,
+    ):
+        key = tuple(_normalized_existing_excel_value(value) for value in values)
+        lookup.setdefault(key, row_number)
+    return lookup
+
+
 def _payload_value(payload: Mapping[str, Any] | object, field_name: str) -> Any:
     if isinstance(payload, Mapping):
         return payload.get(field_name)
@@ -332,6 +355,23 @@ def append_entry_to_workbook(
         return _append_entry_to_workbook_unlocked(settings, payload)
 
 
+def append_entries_to_workbook(
+    settings: Settings,
+    payloads: Sequence[Mapping[str, Any] | object],
+    *,
+    reuse_existing_matches: bool = False,
+) -> list[int]:
+    if not payloads:
+        return []
+
+    with serialized_excel_write("process_entry_bulk_append"):
+        return _append_entries_to_workbook_unlocked(
+            settings,
+            payloads,
+            reuse_existing_matches=reuse_existing_matches,
+        )
+
+
 def _find_matching_entry_row_unlocked(
     settings: Settings,
     payload: Mapping[str, Any] | object,
@@ -362,6 +402,28 @@ def _find_matching_entry_row_unlocked(
             workbook.close()
 
 
+def _write_row_values(
+    worksheet: Worksheet,
+    row_number: int,
+    row_values: list[Any],
+) -> None:
+    for column_index, value in enumerate(row_values, start=1):
+        worksheet.cell(row=row_number, column=column_index, value=value)
+
+
+def _save_workbook(settings: Settings, workbook: Workbook) -> None:
+    try:
+        workbook.save(settings.excel_path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            f"Calisma kitabi kilitli olabilecegi icin kaydedilemedi: {settings.excel_path}"
+        ) from exc
+    except OSError as exc:
+        raise WorkbookSaveError(
+            f"Calisma kitabi kaydedilemedi: {settings.excel_path} ({exc})"
+        ) from exc
+
+
 def _append_entry_to_workbook_unlocked(
     settings: Settings,
     payload: Mapping[str, Any] | object,
@@ -380,21 +442,58 @@ def _append_entry_to_workbook_unlocked(
         row_values = build_excel_row(payload)
 
         create_workbook_backup(settings)
-        for column_index, value in enumerate(row_values, start=1):
-            worksheet.cell(row=target_row, column=column_index, value=value)
-
-        try:
-            workbook.save(settings.excel_path)
-        except PermissionError as exc:
-            raise WorkbookLockedError(
-                f"Çalışma kitabı kilitli olabileceği için kaydedilemedi: {settings.excel_path}"
-            ) from exc
-        except OSError as exc:
-            raise WorkbookSaveError(
-                f"Çalışma kitabı kaydedilemedi: {settings.excel_path} ({exc})"
-            ) from exc
+        _write_row_values(worksheet, target_row, row_values)
+        _save_workbook(settings, workbook)
 
         return target_row
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+
+def _append_entries_to_workbook_unlocked(
+    settings: Settings,
+    payloads: Sequence[Mapping[str, Any] | object],
+    *,
+    reuse_existing_matches: bool,
+) -> list[int]:
+    workbook: Workbook | None = None
+    try:
+        workbook, worksheet = open_workbook_sheet(
+            settings,
+            read_only=False,
+            data_only=False,
+        )
+        validate_headers(worksheet)
+
+        last_value_row = detect_last_value_row(worksheet)
+        next_row = max(HEADER_ROW, last_value_row) + 1
+        existing_rows = (
+            _existing_entry_row_lookup(worksheet, last_value_row=last_value_row)
+            if reuse_existing_matches
+            else {}
+        )
+
+        row_numbers: list[int] = []
+        rows_to_write: list[tuple[int, list[Any]]] = []
+        for payload in payloads:
+            row_values = build_excel_row(payload)
+            existing_row = existing_rows.get(tuple(row_values))
+            if existing_row is not None:
+                row_numbers.append(existing_row)
+                continue
+
+            row_numbers.append(next_row)
+            rows_to_write.append((next_row, row_values))
+            next_row += 1
+
+        if rows_to_write:
+            create_workbook_backup(settings)
+            for row_number, row_values in rows_to_write:
+                _write_row_values(worksheet, row_number, row_values)
+            _save_workbook(settings, workbook)
+
+        return row_numbers
     finally:
         if workbook is not None:
             workbook.close()

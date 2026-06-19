@@ -11,7 +11,13 @@
       <section class="work-section" aria-labelledby="pending-sync-heading">
         <div class="section-heading row-heading">
           <h2 id="pending-sync-heading">Bekleyen Excel Senkronizasyonu</h2>
-          <button id="retry-sync" type="button" class="secondary-action">Tekrar dene</button>
+          <div class="section-actions sync-action-controls">
+            <label class="inline-field" for="sync-process-date">
+              Tarih
+              <input id="sync-process-date" type="date">
+            </label>
+            <button id="retry-sync" type="button" class="secondary-action">Excel'e aktar</button>
+          </div>
         </div>
         <p id="sync-message" class="form-message" aria-live="polite"></p>
         <div id="pending-entries" class="entry-list" aria-live="polite">

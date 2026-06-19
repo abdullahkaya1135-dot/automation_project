@@ -24,7 +24,6 @@ from app.integrations.ifs_client import (
     used_hm02_part_numbers,
 )
 
-
 MULTI_PREFIX_FILTER = (
     "(startswith(PartNo,'HM-02') or startswith(PartNo,'HM-03') "
     "or startswith(PartNo,'HM-04'))"

@@ -1,6 +1,7 @@
 import sqlite3
 
 import pytest
+from openpyxl import Workbook
 from sqlalchemy import inspect, text
 
 from app.config import Settings
@@ -11,11 +12,36 @@ from app.models import (
     Entry,
     Machine,
     MachineBreakdown,
+    MachineCycleTableRow,
     MachineGroup,
     MachineGroupMachine,
     ProductionEngineer,
     TourContext,
 )
+
+
+def _create_cycle_seed_workbook(path) -> None:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Sayfa1"
+    worksheet.append(
+        [
+            "Machine No",
+            "Machine Name",
+            "Neck",
+            "GR",
+            "Mold Code",
+            "Production Date",
+            "Estimated Cycle Time",
+        ]
+    )
+    worksheet.append([174, "DPH70", 28, 35, "MOLD-A", None, 14])
+    worksheet.append([None, None, None, 40, "MOLD-B", None, 16])
+    worksheet.merge_cells("A2:A3")
+    worksheet.merge_cells("B2:B3")
+    worksheet.merge_cells("C2:C3")
+    workbook.save(path)
+    workbook.close()
 
 
 def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
@@ -45,6 +71,10 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
             column["name"]
             for column in inspector.get_columns("production_engineers")
         }
+        cycle_table_columns = {
+            column["name"]
+            for column in inspector.get_columns("machine_cycle_table_rows")
+        }
         breakdown_columns = {
             column["name"]
             for column in inspector.get_columns("machine_breakdowns")
@@ -52,6 +82,18 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         amount_control_columns = {
             column["name"]
             for column in inspector.get_columns("amount_control_shifts")
+        }
+        production_loss_report_columns = {
+            column["name"]
+            for column in inspector.get_columns("production_loss_reports")
+        }
+        production_loss_row_columns = {
+            column["name"]
+            for column in inspector.get_columns("production_loss_report_rows")
+        }
+        production_loss_ifs_columns = {
+            column["name"]
+            for column in inspector.get_columns("production_loss_ifs_actuals")
         }
         amount_control_foreign_keys = inspector.get_foreign_keys(
             "amount_control_shifts"
@@ -67,6 +109,9 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
             for index in inspector.get_indexes("amount_control_shifts")
         }
         breakdown_foreign_keys = inspector.get_foreign_keys("machine_breakdowns")
+        production_loss_row_foreign_keys = inspector.get_foreign_keys(
+            "production_loss_report_rows"
+        )
         breakdown_check_constraints = {
             constraint["name"]
             for constraint in inspector.get_check_constraints("machine_breakdowns")
@@ -78,9 +123,13 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "machines",
         "machine_groups",
         "machine_group_machines",
+        "machine_cycle_table_rows",
         "production_engineers",
         "machine_breakdowns",
         "amount_control_shifts",
+        "production_loss_reports",
+        "production_loss_report_rows",
+        "production_loss_ifs_actuals",
     }
     assert "machines_cache" not in table_names
     assert {f"col_{letter}" for letter in "abcdefghijklmnopqrstuvwxy"} <= entry_columns
@@ -130,6 +179,18 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "updated_at",
     } <= production_engineer_columns
     assert {
+        "id",
+        "source_row_number",
+        "col_a",
+        "col_b",
+        "col_c",
+        "col_d",
+        "col_e",
+        "col_g",
+        "created_at",
+        "updated_at",
+    } <= cycle_table_columns
+    assert {
         "process_date",
         "machine_code",
         "production_engineer_id",
@@ -160,6 +221,60 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "created_at",
         "updated_at",
     } <= amount_control_columns
+    assert {
+        "id",
+        "date_from",
+        "date_to",
+        "generated_at",
+        "output_path",
+        "row_count",
+        "warning_count",
+        "source_summary_json",
+        "created_at",
+        "updated_at",
+    } <= production_loss_report_columns
+    assert {
+        "id",
+        "report_id",
+        "record_date",
+        "machine_id",
+        "machine_code",
+        "machine_name",
+        "job_order",
+        "product_no",
+        "product_description",
+        "gram",
+        "active_cavities",
+        "cycle_time_seconds",
+        "shift_2400_0800_quantity",
+        "shift_0800_1600_quantity",
+        "shift_1600_2400_quantity",
+        "daily_total_quantity",
+        "net_machine_minutes",
+        "gross_elapsed_minutes",
+        "gross_start_at",
+        "gross_finish_at",
+        "optimum_net_quantity",
+        "production_loss_net",
+        "optimum_gross_quantity",
+        "production_loss_gross",
+        "break_loss_quantity",
+        "local_breakdown_minutes",
+        "warnings",
+    } <= production_loss_row_columns
+    assert {
+        "id",
+        "job_order",
+        "machine_code",
+        "work_center_no",
+        "part_no",
+        "part_description",
+        "actual_start_at",
+        "actual_finish_at",
+        "net_machine_minutes",
+        "raw_json",
+        "source_updated_at",
+    } <= production_loss_ifs_columns
     assert {
         (
             tuple(foreign_key["constrained_columns"]),
@@ -202,6 +317,23 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
             ("id",),
             "SET NULL",
         ),
+    }
+    assert {
+        (
+            tuple(foreign_key["constrained_columns"]),
+            foreign_key["referred_table"],
+            tuple(foreign_key["referred_columns"]),
+            foreign_key["options"].get("ondelete"),
+        )
+        for foreign_key in production_loss_row_foreign_keys
+    } >= {
+        (
+            ("report_id",),
+            "production_loss_reports",
+            ("id",),
+            "CASCADE",
+        ),
+        (("machine_id",), "machines", ("id",), "SET NULL"),
     }
     assert {
         "ck_machine_breakdowns_produced_product",
@@ -410,6 +542,44 @@ def test_init_db_seeds_machine_groups_from_joined_machines(tmp_path):
     ]
     assert len(group_links) == 48
     assert ("PF4/1", "141") in group_links
+
+
+def test_init_db_seeds_machine_cycle_table_rows_from_workbook(tmp_path):
+    cycle_table_path = tmp_path / "cycle.xlsx"
+    _create_cycle_seed_workbook(cycle_table_path)
+    settings = Settings(
+        excel_path="dummy.xlsx",
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        cycle_table_path=str(cycle_table_path),
+    )
+
+    init_db(settings)
+    init_db(settings)
+
+    with create_session(settings) as session:
+        rows = (
+            session.query(MachineCycleTableRow)
+            .order_by(MachineCycleTableRow.source_row_number)
+            .all()
+        )
+
+    assert len(rows) == 2
+    assert [
+        (
+            row.source_row_number,
+            row.col_a,
+            row.col_b,
+            row.col_c,
+            row.col_d,
+            row.col_e,
+            row.col_g,
+        )
+        for row in rows
+    ] == [
+        (2, "174", "DPH70", "28", "35", "MOLD-A", "14"),
+        (3, "174", "DPH70", "28", "40", "MOLD-B", "16"),
+    ]
 
 
 def test_init_db_migrates_existing_tables_for_offline_idempotency(tmp_path):

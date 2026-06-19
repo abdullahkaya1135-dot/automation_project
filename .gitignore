@@ -12,5 +12,6 @@ runtime-logs/
 cevrim_kontrol_*.xlsx
 data/*.sqlite3
 data/backups/*.xlsx
+data/ifs-experiments/
 local-certs/
 phone-test/

@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ..auth import require_api_auth
 from ..domain.request_settings import settings_from_request
-from ..integrations.ifs_client import (
+from ..features.ifs_checks.service import (
+    missing_production_starts_from_operations,
+    whatsapp_status_message_from_operations,
+)
+from ..features.production_planning.service import ProductionPlanningError
+from ..integrations.ifs.client import (
     IFSClientError,
     IFSConfigurationError,
     fetch_operation_hm02_materials,
@@ -16,7 +21,6 @@ from ..integrations.ifs_client import (
     serialize_operation_row,
     serialize_stock_row,
 )
-from ..services.production_planning import ProductionPlanningError
 
 router = APIRouter(prefix="/api/ifs", dependencies=[Depends(require_api_auth)])
 
@@ -67,6 +71,35 @@ async def ifs_pet_ongoing_operations(request: Request) -> dict[str, Any]:
         "operation_count": len(rows),
         "operations": [serialize_operation_row(row) for row in rows],
     }
+
+
+@router.get("/missing-production-starts")
+async def ifs_missing_production_starts(
+    request: Request,
+    process_date: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    settings = settings_from_request(request)
+    try:
+        rows = await fetch_pet_ongoing_operations(settings)
+    except (IFSConfigurationError, IFSClientError) as exc:
+        raise _ifs_http_exception(exc) from exc
+
+    return missing_production_starts_from_operations(
+        settings,
+        process_date,
+        rows,
+    ).as_dict()
+
+
+@router.get("/whatsapp-status-message")
+async def ifs_whatsapp_status_message(request: Request) -> dict[str, Any]:
+    settings = settings_from_request(request)
+    try:
+        rows = await fetch_pet_ongoing_operations(settings)
+    except (IFSConfigurationError, IFSClientError) as exc:
+        raise _ifs_http_exception(exc) from exc
+
+    return whatsapp_status_message_from_operations(settings, rows).as_dict()
 
 
 @router.get("/operation-hm02-materials")

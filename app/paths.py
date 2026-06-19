@@ -1,5 +1,11 @@
-from pathlib import Path
+"""Compatibility alias for core filesystem paths.
 
-APP_DIR = Path(__file__).resolve().parent
-STATIC_DIR = APP_DIR / "static"
-TEMPLATES_DIR = APP_DIR / "templates"
+New code should import from app.core.paths.
+"""
+
+import sys as _sys
+
+from .core import paths as _paths
+from .core.paths import *  # noqa: F403
+
+_sys.modules[__name__] = _paths

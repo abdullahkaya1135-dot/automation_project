@@ -129,6 +129,42 @@ class MachineGroupMachine(Base):
     machine: Mapped[Machine] = relationship(back_populates="group_links")
 
 
+class MachineCycleTableRow(Base):
+    __tablename__ = "machine_cycle_table_rows"
+    __table_args__ = (
+        CheckConstraint(
+            "source_row_number > 1",
+            name="ck_machine_cycle_table_rows_source_row_number",
+        ),
+        Index(
+            "ux_machine_cycle_table_rows_source_row_number",
+            "source_row_number",
+            unique=True,
+        ),
+        Index("ix_machine_cycle_table_rows_lookup", "col_b", "col_c", "col_d"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    col_a: Mapped[str | None] = mapped_column(Text, nullable=True)
+    col_b: Mapped[str | None] = mapped_column(Text, nullable=True)
+    col_c: Mapped[str | None] = mapped_column(Text, nullable=True)
+    col_d: Mapped[str | None] = mapped_column(Text, nullable=True)
+    col_e: Mapped[str | None] = mapped_column(Text, nullable=True)
+    col_g: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+
 class ProductionEngineer(Base):
     __tablename__ = "production_engineers"
     __table_args__ = (
@@ -363,6 +399,214 @@ class AmountControlShift(Base):
     machine: Mapped[Machine] = relationship(back_populates="amount_control_shifts")
     machine_breakdowns: Mapped[list[MachineBreakdown]] = relationship(
         back_populates="amount_control_shift",
+    )
+
+
+class ProductionLossReport(Base):
+    __tablename__ = "production_loss_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "date_from <= date_to",
+            name="ck_production_loss_reports_date_range",
+        ),
+        CheckConstraint("row_count >= 0", name="ck_production_loss_reports_row_count"),
+        CheckConstraint(
+            "warning_count >= 0",
+            name="ck_production_loss_reports_warning_count",
+        ),
+        Index(
+            "ix_production_loss_reports_date_range",
+            "date_from",
+            "date_to",
+        ),
+        Index("ix_production_loss_reports_generated_at", "generated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date_from: Mapped[str] = mapped_column(String(10), nullable=False)
+    date_to: Mapped[str] = mapped_column(String(10), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    output_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    warning_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source_summary_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    rows: Mapped[list[ProductionLossReportRow]] = relationship(
+        back_populates="report",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProductionLossReportRow(Base):
+    __tablename__ = "production_loss_report_rows"
+    __table_args__ = (
+        CheckConstraint(
+            "shift_2400_0800_quantity >= 0",
+            name="ck_production_loss_rows_shift_2400",
+        ),
+        CheckConstraint(
+            "shift_0800_1600_quantity >= 0",
+            name="ck_production_loss_rows_shift_0800",
+        ),
+        CheckConstraint(
+            "shift_1600_2400_quantity >= 0",
+            name="ck_production_loss_rows_shift_1600",
+        ),
+        CheckConstraint(
+            "daily_total_quantity >= 0",
+            name="ck_production_loss_rows_daily_total",
+        ),
+        CheckConstraint(
+            "local_breakdown_minutes >= 0",
+            name="ck_production_loss_rows_breakdown_minutes",
+        ),
+        Index("ix_production_loss_rows_report_id", "report_id"),
+        Index(
+            "ix_production_loss_rows_lookup",
+            "record_date",
+            "machine_code",
+            "job_order",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    report_id: Mapped[int] = mapped_column(
+        ForeignKey("production_loss_reports.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    record_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    machine_id: Mapped[int | None] = mapped_column(
+        ForeignKey("machines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    machine_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    machine_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    job_order: Mapped[str] = mapped_column(Text, nullable=False)
+    product_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    product_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gram: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active_cavities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cycle_time_seconds: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shift_2400_0800_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    shift_0800_1600_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    shift_1600_2400_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    daily_total_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    net_machine_minutes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gross_elapsed_minutes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gross_start_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    gross_finish_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    optimum_net_quantity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    production_loss_net: Mapped[str | None] = mapped_column(Text, nullable=True)
+    optimum_gross_quantity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    production_loss_gross: Mapped[str | None] = mapped_column(Text, nullable=True)
+    break_loss_quantity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    local_breakdown_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    report: Mapped[ProductionLossReport] = relationship(back_populates="rows")
+    machine: Mapped[Machine | None] = relationship()
+
+
+class ProductionLossIfsActual(Base):
+    __tablename__ = "production_loss_ifs_actuals"
+    __table_args__ = (
+        CheckConstraint(
+            "trim(job_order) <> ''",
+            name="ck_production_loss_ifs_actuals_job_order",
+        ),
+        CheckConstraint(
+            "machine_code IS NULL OR trim(machine_code) <> ''",
+            name="ck_production_loss_ifs_actuals_machine_code",
+        ),
+        Index(
+            "ux_production_loss_ifs_actuals_order_machine",
+            "job_order",
+            "machine_code",
+            unique=True,
+        ),
+        Index(
+            "ix_production_loss_ifs_actuals_updated",
+            "source_updated_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_order: Mapped[str] = mapped_column(Text, nullable=False)
+    machine_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    release_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sequence_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operation_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    work_center_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    part_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    part_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actual_start_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    actual_finish_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    net_machine_minutes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_quantity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scrap_quantity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(64), default="ifs", nullable=False)
+    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
     )
 
 

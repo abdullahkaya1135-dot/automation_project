@@ -18,13 +18,14 @@ from app.services.excel_service import (
     WorkbookMissingError,
     WorkbookPermissionError,
     WorkbookStructureError,
+    append_entries_to_workbook,
     append_entry_to_workbook,
     check_excel_reachable,
     detect_last_value_row,
     normalize_excel_value,
     validate_headers,
 )
-from app.services.sync_service import attempt_excel_append
+from app.services.sync_service import attempt_excel_append, retry_unsynced_entries
 
 HEADERS = [
     "Date",
@@ -217,6 +218,29 @@ def test_append_entry_to_workbook_writes_next_real_row_and_creates_backup(tmp_pa
     backup.close()
 
 
+def test_append_entries_to_workbook_writes_bulk_rows_with_one_backup(tmp_path):
+    workbook_path = tmp_path / "process.xlsx"
+    _create_workbook(workbook_path)
+    settings = _settings(workbook_path, tmp_path)
+    first_payload = _payload()
+    second_payload = _payload() | {"col_f": "102", "col_h": "WO-2"}
+
+    row_numbers = append_entries_to_workbook(
+        settings,
+        [first_payload, second_payload],
+    )
+
+    assert row_numbers == [1726, 1727]
+    assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
+
+    workbook = load_workbook(workbook_path)
+    worksheet = workbook["PROSES 2026"]
+    assert worksheet.cell(row=1726, column=6).value == "101"
+    assert worksheet.cell(row=1727, column=6).value == "102"
+    assert worksheet.cell(row=1727, column=8).value == "WO-2"
+    workbook.close()
+
+
 def test_append_entry_to_workbook_prunes_old_backups(tmp_path):
     workbook_path = tmp_path / "process.xlsx"
     _create_workbook(workbook_path)
@@ -304,6 +328,60 @@ def test_retry_reuses_existing_matching_excel_row_after_partial_success(tmp_path
     workbook.close()
 
     assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
+
+
+def test_retry_unsynced_entries_bulk_appends_selected_process_day(tmp_path):
+    workbook_path = tmp_path / "process.xlsx"
+    _create_workbook(workbook_path)
+    settings = _settings(workbook_path, tmp_path)
+    init_db(settings)
+
+    with create_session(settings) as session:
+        same_day_first = Entry(
+            sync_status=SYNC_STATUS_PENDING_EXCEL,
+            process_date="2026-06-08",
+            machine_code="101",
+            **_payload(),
+        )
+        same_day_second = Entry(
+            sync_status=SYNC_STATUS_PENDING_EXCEL,
+            process_date="2026-06-08",
+            machine_code="102",
+            **(_payload() | {"col_f": "102", "col_h": "WO-2"}),
+        )
+        other_day = Entry(
+            sync_status=SYNC_STATUS_PENDING_EXCEL,
+            process_date="2026-06-09",
+            machine_code="103",
+            **(_payload() | {"col_a": "2026-06-09", "col_f": "103"}),
+        )
+        session.add_all([same_day_first, same_day_second, other_day])
+        commit_session(session)
+
+    result = retry_unsynced_entries(settings, process_date="2026-06-08")
+
+    assert result["attempted"] == 2
+    assert result["synced"] == 2
+    assert result["failed"] == 0
+    assert result["remaining"] == 0
+    assert result["process_date"] == "2026-06-08"
+    assert [item["excel_row_number"] for item in result["results"]] == [1726, 1727]
+    assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
+
+    workbook = load_workbook(workbook_path)
+    worksheet = workbook["PROSES 2026"]
+    assert worksheet.cell(row=1726, column=6).value == "101"
+    assert worksheet.cell(row=1727, column=6).value == "102"
+    assert worksheet.cell(row=1728, column=6).value is None
+    workbook.close()
+
+    with create_session(settings) as session:
+        entries = session.query(Entry).order_by(Entry.machine_code).all()
+        assert [entry.sync_status for entry in entries] == [
+            "synced",
+            "synced",
+            SYNC_STATUS_PENDING_EXCEL,
+        ]
 
 
 def test_append_entry_to_workbook_blanks_first_section_injection_settings(tmp_path):

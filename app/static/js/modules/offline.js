@@ -415,10 +415,6 @@ function applyServerResultToUi(record, payload) {
 
 async function flushServerExcelQueues() {
   await Promise.allSettled([
-    apiJson("/api/sync/retry", {
-      method: "POST",
-      redirectOnAuth: false,
-    }),
     apiJson("/api/auxiliary-systems/sync/retry", {
       method: "POST",
       redirectOnAuth: false,

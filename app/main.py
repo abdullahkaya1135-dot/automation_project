@@ -3,18 +3,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from .config import get_settings
-from .database import init_db
-from .paths import STATIC_DIR
-from .routers.amount_control import router as amount_control_router
-from .routers.auth import router as auth_router
-from .routers.auxiliary import router as auxiliary_router
-from .routers.bootstrap import router as bootstrap_router
-from .routers.entries import router as entries_router
-from .routers.health import router as health_router
+from .core.config import get_settings
+from .core.database import init_db
+from .core.paths import STATIC_DIR
+from .features.amount_control.api import router as amount_control_router
+from .features.auth.api import router as auth_router
+from .features.auxiliary_systems.api import router as auxiliary_router
+from .features.bootstrap.api import router as bootstrap_router
+from .features.cycle_reports.api import router as reports_router
+from .features.health.api import router as health_router
+from .features.process_entries.api import router as entries_router
+from .features.production_loss.api import router as production_loss_router
 from .routers.ifs import router as ifs_router
-from .routers.pages import router as pages_router
-from .routers.reports import router as reports_router
+from .web.pages import router as pages_router
 
 
 @asynccontextmanager
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     fastapi_app.include_router(amount_control_router)
     fastapi_app.include_router(auxiliary_router)
     fastapi_app.include_router(reports_router)
+    fastapi_app.include_router(production_loss_router)
     fastapi_app.include_router(ifs_router)
     fastapi_app.include_router(health_router)
     fastapi_app.include_router(pages_router)
