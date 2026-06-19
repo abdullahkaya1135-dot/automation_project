@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from urllib.parse import unquote
 
 import httpx
@@ -6,6 +7,7 @@ import pytest
 from openpyxl import Workbook
 
 import app.core.config as config
+import app.integrations.ifs.client as ifs_client
 from app.core.config import Settings
 from app.integrations.ifs.client import (
     IFSClientError,
@@ -52,20 +54,58 @@ def test_get_settings_expands_default_hm02_prefix_to_configured_prefixes(monkeyp
 
 def test_get_settings_accepts_new_prefix_list_and_custom_legacy_prefix(
     monkeypatch,
+    caplog,
 ):
     monkeypatch.setattr(config, "load_dotenv", lambda **_: None)
     monkeypatch.setenv("IFS_PART_PREFIXES", "HM-03, HM-04, HM-03")
     monkeypatch.setenv("IFS_PART_PREFIX", "HM-99")
+    caplog.set_level(logging.INFO, logger="app.core.config")
 
     settings = config.get_settings(validate=False)
 
     assert settings.ifs_part_prefix == "HM-99"
     assert settings.ifs_part_prefixes == ("HM-03", "HM-04")
+    assert not [
+        record
+        for record in caplog.records
+        if record.name == "app.core.config"
+    ]
 
+    caplog.clear()
     monkeypatch.delenv("IFS_PART_PREFIXES", raising=False)
     settings = config.get_settings(validate=False)
 
     assert settings.ifs_part_prefixes == ("HM-99",)
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "app.core.config"
+    ]
+    assert len(records) == 1
+    assert records[0].legacy_setting == "IFS_PART_PREFIX"
+    assert records[0].replacement_setting == "IFS_PART_PREFIXES"
+    assert records[0].legacy_prefix_count == 1
+    assert "HM-99" not in records[0].getMessage()
+    assert "HM-99" not in caplog.text
+
+
+def test_part_no_prefix_filter_logs_direct_legacy_prefix_fallback(caplog):
+    settings = Settings(ifs_part_prefix="HM-99", ifs_part_prefixes=())
+    caplog.set_level(logging.INFO, logger="app.integrations.ifs.client")
+
+    assert ifs_client._part_no_prefix_filter(settings) == "startswith(PartNo,'HM-99')"
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "app.integrations.ifs.client"
+    ]
+    assert len(records) == 1
+    assert records[0].legacy_setting == "IFS_PART_PREFIX"
+    assert records[0].replacement_setting == "IFS_PART_PREFIXES"
+    assert records[0].legacy_prefix_count == 1
+    assert "HM-99" not in records[0].getMessage()
+    assert "HM-99" not in caplog.text
 
 
 def test_fetch_u1_hm02_stock_uses_filter_and_follows_next_link():

@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any
 
@@ -22,6 +23,7 @@ TEMPERATURE_REPEAT_TOKEN_PATTERN = re.compile(
 )
 TEMPERATURE_SINGLE_TOKEN_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
 TEMPERATURE_REPEAT_MAX_COUNT = 200
+logger = logging.getLogger(__name__)
 
 
 def _expand_temperature_shorthand(value: str | None) -> str | None:
@@ -97,6 +99,14 @@ def _entry_payload_from_body(body: dict[str, Any]) -> dict[str, str | None]:
             source_payload[field_name] = optional_text(body.get(field_name), field_name)
 
     if source_field_names == LEGACY_ENTRY_FIELD_NAMES:
+        logger.info(
+            "Canonicalizing legacy process entry payload.",
+            extra={
+                "legacy_payload_field_count": len(LEGACY_ENTRY_FIELD_NAMES),
+                "canonical_payload_field_count": len(ENTRY_FIELD_NAMES),
+                "entry_payload_schema_version": ENTRY_PAYLOAD_SCHEMA_VERSION,
+            },
+        )
         payload = canonicalize_legacy_entry_payload(source_payload)
     else:
         payload = {

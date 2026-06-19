@@ -12,6 +12,11 @@ from app.features.process_entries.sync import (
     attempt_excel_append,
     retry_unsynced_entries,
 )
+from app.features.process_entries.workbook import (
+    append_entries_to_workbook,
+    append_entry_to_workbook,
+    normalize_excel_value,
+)
 from app.models import (
     SYNC_STATUS_FAILED_EXCEL,
     SYNC_STATUS_PENDING_EXCEL,
@@ -22,11 +27,8 @@ from app.services.excel_service import (
     WorkbookMissingError,
     WorkbookPermissionError,
     WorkbookStructureError,
-    append_entries_to_workbook,
-    append_entry_to_workbook,
     check_excel_reachable,
     detect_last_value_row,
-    normalize_excel_value,
     validate_headers,
 )
 
@@ -58,14 +60,24 @@ HEADERS = [
     "Mold Temperatures",
 ]
 
+FIXTURE_LAST_DATA_ROW = 1725
+FIXTURE_FIRST_APPEND_ROW = FIXTURE_LAST_DATA_ROW + 1
+FIXTURE_FORMATTING_ONLY_ROW = 1_048_506
+FIXTURE_FIRST_TWO_APPEND_ROWS = tuple(
+    range(FIXTURE_FIRST_APPEND_ROW, FIXTURE_FIRST_APPEND_ROW + 2)
+)
+FIXTURE_FIRST_FOUR_APPEND_ROWS = tuple(
+    range(FIXTURE_FIRST_APPEND_ROW, FIXTURE_FIRST_APPEND_ROW + 4)
+)
 
-def _create_workbook(path: Path, *, last_data_row: int = 1725) -> None:
+
+def _create_workbook(path: Path, *, last_data_row: int = FIXTURE_LAST_DATA_ROW) -> None:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "PROSES 2026"
     worksheet.append(HEADERS)
     worksheet.cell(row=last_data_row, column=1, value="existing")
-    worksheet.cell(row=1_048_506, column=25).fill = PatternFill(
+    worksheet.cell(row=FIXTURE_FORMATTING_ONLY_ROW, column=25).fill = PatternFill(
         fill_type="solid",
         fgColor="FFFF00",
     )
@@ -120,8 +132,8 @@ def test_detect_last_value_row_ignores_formatting_only_rows(tmp_path):
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
 
-    assert worksheet.max_row == 1_048_506
-    assert detect_last_value_row(worksheet) == 1725
+    assert worksheet.max_row == FIXTURE_FORMATTING_ONLY_ROW
+    assert detect_last_value_row(worksheet) == FIXTURE_LAST_DATA_ROW
 
     workbook.close()
 
@@ -172,7 +184,7 @@ def test_append_entry_to_workbook_writes_next_real_row_and_creates_backup(tmp_pa
 
     row_number = append_entry_to_workbook(settings, _payload())
 
-    assert row_number == 1726
+    assert row_number == FIXTURE_FIRST_APPEND_ROW
     backup_files = list((tmp_path / "backups").glob("process_*.xlsx"))
     assert len(backup_files) == 1
 
@@ -182,7 +194,8 @@ def test_append_entry_to_workbook_writes_next_real_row_and_creates_backup(tmp_pa
         worksheet.cell(row=1, column=index).value for index in range(1, 26)
     ]
     row_values = [
-        worksheet.cell(row=1726, column=index).value for index in range(1, 26)
+        worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=index).value
+        for index in range(1, 26)
     ]
     expected_row_values = [
         "2026-06-08",
@@ -217,7 +230,7 @@ def test_append_entry_to_workbook_writes_next_real_row_and_creates_backup(tmp_pa
 
     backup = load_workbook(backup_files[0])
     backup_worksheet = backup["PROSES 2026"]
-    assert backup_worksheet.cell(row=1726, column=1).value is None
+    assert backup_worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=1).value is None
     backup.close()
 
 
@@ -233,14 +246,16 @@ def test_append_entries_to_workbook_writes_bulk_rows_with_one_backup(tmp_path):
         [first_payload, second_payload],
     )
 
-    assert row_numbers == [1726, 1727]
+    first_row, second_row = FIXTURE_FIRST_TWO_APPEND_ROWS
+
+    assert row_numbers == list(FIXTURE_FIRST_TWO_APPEND_ROWS)
     assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
 
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=1726, column=6).value == "101"
-    assert worksheet.cell(row=1727, column=6).value == "102"
-    assert worksheet.cell(row=1727, column=8).value == "WO-2"
+    assert worksheet.cell(row=first_row, column=6).value == "101"
+    assert worksheet.cell(row=second_row, column=6).value == "102"
+    assert worksheet.cell(row=second_row, column=8).value == "WO-2"
     workbook.close()
 
 
@@ -276,7 +291,7 @@ def test_concurrent_appends_are_serialized_with_unique_rows(tmp_path):
             )
         )
 
-    assert sorted(row_numbers) == [1726, 1727, 1728, 1729]
+    assert sorted(row_numbers) == list(FIXTURE_FIRST_FOUR_APPEND_ROWS)
 
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
@@ -309,7 +324,7 @@ def test_retry_reuses_existing_matching_excel_row_after_partial_success(tmp_path
         commit_session(session)
 
         row_number = append_entry_to_workbook(settings, entry)
-        assert row_number == 1726
+        assert row_number == FIXTURE_FIRST_APPEND_ROW
 
         result = attempt_excel_append(
             settings,
@@ -319,15 +334,16 @@ def test_retry_reuses_existing_matching_excel_row_after_partial_success(tmp_path
         )
 
         assert result["success"] is True
-        assert result["excel_row_number"] == 1726
+        assert result["excel_row_number"] == FIXTURE_FIRST_APPEND_ROW
         assert entry.sync_status == "synced"
-        assert entry.excel_row_number == 1726
+        assert entry.excel_row_number == FIXTURE_FIRST_APPEND_ROW
         assert entry.last_error is None
 
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=1726, column=6).value == "101"
-    assert worksheet.cell(row=1727, column=6).value is None
+    first_row, next_append_row = FIXTURE_FIRST_TWO_APPEND_ROWS
+    assert worksheet.cell(row=first_row, column=6).value == "101"
+    assert worksheet.cell(row=next_append_row, column=6).value is None
     workbook.close()
 
     assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
@@ -368,14 +384,18 @@ def test_retry_unsynced_entries_bulk_appends_selected_process_day(tmp_path):
     assert result["failed"] == 0
     assert result["remaining"] == 0
     assert result["process_date"] == "2026-06-08"
-    assert [item["excel_row_number"] for item in result["results"]] == [1726, 1727]
+    assert [item["excel_row_number"] for item in result["results"]] == list(
+        FIXTURE_FIRST_TWO_APPEND_ROWS
+    )
     assert len(list((tmp_path / "backups").glob("process_*.xlsx"))) == 1
 
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=1726, column=6).value == "101"
-    assert worksheet.cell(row=1727, column=6).value == "102"
-    assert worksheet.cell(row=1728, column=6).value is None
+    first_row, second_row = FIXTURE_FIRST_TWO_APPEND_ROWS
+    next_append_row = second_row + 1
+    assert worksheet.cell(row=first_row, column=6).value == "101"
+    assert worksheet.cell(row=second_row, column=6).value == "102"
+    assert worksheet.cell(row=next_append_row, column=6).value is None
     workbook.close()
 
     with create_session(settings) as session:
@@ -397,11 +417,14 @@ def test_append_entry_to_workbook_blanks_first_section_injection_settings(tmp_pa
 
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=1726, column=6).value == "271"
-    assert worksheet.cell(row=1726, column=15).value == 6
-    assert worksheet.cell(row=1726, column=16).value == 45
-    assert worksheet.cell(row=1726, column=17).value == 180
-    assert [worksheet.cell(row=1726, column=column).value for column in range(18, 24)] == [
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=6).value == "271"
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=15).value == 6
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=16).value == 45
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=17).value == 180
+    assert [
+        worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=column).value
+        for column in range(18, 24)
+    ] == [
         None,
         None,
         None,
@@ -422,16 +445,19 @@ def test_append_entry_to_workbook_blanks_second_section_conditioning_fields(tmp_
 
     workbook = load_workbook(workbook_path)
     worksheet = workbook["PROSES 2026"]
-    assert worksheet.cell(row=1726, column=6).value == "203"
-    assert [worksheet.cell(row=1726, column=column).value for column in range(15, 18)] == [
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=6).value == "203"
+    assert [
+        worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=column).value
+        for column in range(15, 18)
+    ] == [
         None,
         None,
         None,
     ]
-    assert worksheet.cell(row=1726, column=18).value == "70-69"
-    assert worksheet.cell(row=1726, column=19).value == "50-49"
-    assert worksheet.cell(row=1726, column=20).value == 1.5
-    assert worksheet.cell(row=1726, column=23).value == 125
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=18).value == "70-69"
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=19).value == "50-49"
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=20).value == 1.5
+    assert worksheet.cell(row=FIXTURE_FIRST_APPEND_ROW, column=23).value == 125
     workbook.close()
 
 

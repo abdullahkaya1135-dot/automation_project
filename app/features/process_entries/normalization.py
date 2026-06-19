@@ -3,6 +3,8 @@ import unicodedata
 from datetime import date, datetime
 from typing import Any
 
+from ...services.text_normalization import collapsed_whitespace_text as _clean_text
+
 PRODUCTION_ENGINEER_NAMES = (
     "Barış Çetik",
     "Abdullah Kaya",
@@ -23,12 +25,6 @@ _DATE_FORMATS = (
     "%d-%m-%Y",
     "%Y/%m/%d",
 )
-
-
-def _clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return " ".join(str(value).strip().split())
 
 
 def _ascii_key(value: Any) -> str:

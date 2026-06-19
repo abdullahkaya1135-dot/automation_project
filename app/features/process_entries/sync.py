@@ -6,10 +6,6 @@ from sqlalchemy.orm import Session
 
 from ...core.config import Settings
 from ...core.database import commit_session, create_session
-from ...services.excel_service import (
-    append_entries_to_workbook,
-    append_entry_to_workbook,
-)
 from ..serialization import timestamp as _timestamp
 from .fields import ENTRY_FIELD_NAMES
 from .models import (
@@ -21,6 +17,7 @@ from .models import (
     utc_now,
 )
 from .normalization import normalize_process_date
+from .workbook import append_entries_to_workbook, append_entry_to_workbook
 
 UNSYNCED_STATUSES = (SYNC_STATUS_PENDING_EXCEL, SYNC_STATUS_FAILED_EXCEL)
 

@@ -31,6 +31,12 @@ from ...features.process_entries.normalization import (
     normalize_process_date,
 )
 from ...integrations.ifs.client import fetch_shop_order_operation_actual_rows
+from ...services.text_normalization import (
+    collapsed_whitespace_text as _clean_text,
+)
+from ...services.text_normalization import (
+    optional_collapsed_whitespace_text as _optional_text,
+)
 from ..serialization import timestamp as _timestamp
 from .models import (
     AmountControlShift,
@@ -1013,17 +1019,6 @@ def _identifier(value: Any) -> str:
     if re.fullmatch(r"\d+\.0+", text):
         return text.split(".", 1)[0]
     return text
-
-
-def _optional_text(value: Any) -> str | None:
-    text = _clean_text(value)
-    return text or None
-
-
-def _clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return " ".join(str(value).strip().split())
 
 
 def _decimal(value: Any) -> Decimal | None:

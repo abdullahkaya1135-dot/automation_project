@@ -207,7 +207,7 @@ def test_static_asset_urls_share_versioned_static_prefix():
 
 def test_service_worker_injects_current_route_and_shell_constants():
     response = pages.service_worker()
-    source = response.body.decode()
+    source = bytes(response.body).decode()
 
     assert response.media_type == "application/javascript"
     assert response.headers["Cache-Control"] == "no-cache"

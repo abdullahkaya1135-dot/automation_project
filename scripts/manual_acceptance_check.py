@@ -226,7 +226,7 @@ def parse_args() -> argparse.Namespace:
         "--expected-row",
         type=int,
         default=None,
-        help="Expected Excel row for the latest synced entry, for example 1726.",
+        help="Expected Excel row for the latest synced entry.",
     )
     parser.add_argument(
         "--skip-http",

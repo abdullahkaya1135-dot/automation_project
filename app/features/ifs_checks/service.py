@@ -15,6 +15,9 @@ from ...features.process_entries.normalization import (
     normalize_process_date,
 )
 from ...models import Entry, Machine
+from ...services.text_normalization import (
+    optional_collapsed_whitespace_text as _optional_text,
+)
 from ..serialization import timestamp as _timestamp
 
 RESPONSIBLE_HALL_NUMBERS = (3, 4)
@@ -253,7 +256,7 @@ def _working_machines_by_cycle_time(
     entry_counts: dict[str, int] = {}
 
     with create_session(settings) as session:
-        rows = session.execute(
+        session_rows = session.execute(
             select(Entry, Machine)
             .join(Machine, Entry.machine_code == Machine.machine_code)
             .where(Entry.process_date == process_date)
@@ -266,7 +269,7 @@ def _working_machines_by_cycle_time(
             )
         ).all()
 
-    for entry, machine in rows:
+    for entry, machine in session_rows:
         cycle_time = _valid_cycle_time_text(entry.col_l)
         if cycle_time is None:
             continue
@@ -296,9 +299,9 @@ def _working_machines_by_cycle_time(
             entry_count=entry_counts[machine_code],
         )
 
-    rows: list[MissingProductionStartRow] = []
+    report_rows: list[MissingProductionStartRow] = []
     for machine_code, row in latest_by_machine.items():
-        rows.append(
+        report_rows.append(
             MissingProductionStartRow(
                 machine_code=row.machine_code,
                 hall_number=row.hall_number,
@@ -312,7 +315,7 @@ def _working_machines_by_cycle_time(
             )
         )
     return sorted(
-        rows,
+        report_rows,
         key=lambda row: (row.hall_number, row.display_order, row.machine_code),
     )
 
@@ -328,10 +331,3 @@ def _valid_cycle_time_text(value: Any) -> str | None:
     if not number.is_finite() or number <= 0:
         return None
     return text
-
-
-def _optional_text(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = " ".join(str(value).strip().split())
-    return text or None

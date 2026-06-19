@@ -2,6 +2,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from ...services.text_normalization import stripped_text as _clean_text
+
 ENTRY_FIELD_NAMES = tuple(f"col_{letter}" for letter in "abcdefghijklmnopqrstuvwxy")
 LEGACY_ENTRY_FIELD_NAMES = tuple(f"col_{letter}" for letter in "abcdefghijklmnopq")
 ENTRY_PAYLOAD_SCHEMA_VERSION = 2
@@ -37,10 +39,6 @@ SECOND_SECTION_EXCLUDED_FIELDS = frozenset(
     f"col_{letter}" for letter in "opq"
 )
 MACHINE_CODE_PATTERN = re.compile(r"\d+")
-
-
-def _clean_text(value: Any) -> str:
-    return str(value).strip() if value is not None else ""
 
 
 def machine_code(value: Any) -> int | None:

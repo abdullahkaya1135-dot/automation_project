@@ -1,8 +1,11 @@
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsError(ValueError):
@@ -127,6 +130,15 @@ def _ifs_part_prefixes_setting(legacy_prefix: str) -> tuple[str, ...]:
         return _csv_setting(raw_value) or DEFAULT_IFS_PART_PREFIXES
     legacy_prefixes = _csv_setting(legacy_prefix)
     if legacy_prefixes and legacy_prefixes != (DEFAULT_IFS_PART_PREFIX,):
+        logger.info(
+            "Using legacy IFS_PART_PREFIX to configure IFS part prefixes; "
+            "prefer IFS_PART_PREFIXES.",
+            extra={
+                "legacy_setting": "IFS_PART_PREFIX",
+                "replacement_setting": "IFS_PART_PREFIXES",
+                "legacy_prefix_count": len(legacy_prefixes),
+            },
+        )
         return legacy_prefixes
     return DEFAULT_IFS_PART_PREFIXES
 

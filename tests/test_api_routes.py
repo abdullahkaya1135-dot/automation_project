@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -632,8 +633,9 @@ def test_second_section_entry_blanks_first_section_only_columns(client):
     assert response.json()["entry"]["machine_code"] == "203"
 
 
-def test_legacy_entry_payload_is_canonicalized_before_database_save(client):
+def test_legacy_entry_payload_is_canonicalized_before_database_save(client, caplog):
     context_id = _tour_context(client)
+    caplog.set_level(logging.INFO, logger="app.features.process_entries.payloads")
 
     response = client.post(
         "/api/entries",
@@ -662,6 +664,21 @@ def test_legacy_entry_payload_is_canonicalized_before_database_save(client):
     assert entry_payload["col_y"] == "30-30"
     assert response.json()["entry"]["process_date"] == "2026-06-08"
     assert response.json()["entry"]["machine_code"] == "101"
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "app.features.process_entries.payloads"
+    ]
+    assert len(records) == 1
+    assert records[0].legacy_payload_field_count == 17
+    assert records[0].canonical_payload_field_count == 25
+    assert records[0].entry_payload_schema_version == 2
+    assert "WO-LEGACY" not in records[0].getMessage()
+    assert "270x2" not in records[0].getMessage()
+    assert "30x2" not in records[0].getMessage()
+    assert "WO-LEGACY" not in caplog.text
+    assert "270x2" not in caplog.text
+    assert "30x2" not in caplog.text
 
 
 def test_auxiliary_systems_submission_saves_locally_and_appends_block(

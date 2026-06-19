@@ -16,7 +16,6 @@ from ...services.excel_service import (
     EXCEL_COLUMN_LETTERS,
     HEADER_ROW,
     detect_last_value_row,
-    normalize_excel_value,
     validate_headers,
 )
 from .fields import ENTRY_FIELD_NAMES
@@ -28,6 +27,7 @@ from .normalization import (
     production_engineer_display_order,
 )
 from .service import apply_entry_process_metadata
+from .workbook import normalize_excel_value
 
 
 @dataclass(frozen=True)

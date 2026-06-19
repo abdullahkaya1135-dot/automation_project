@@ -6,13 +6,13 @@ from typing import Any
 
 from openpyxl.worksheet.worksheet import Worksheet
 
+from .text_normalization import stripped_text
+
 INVALID_BACKUP_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]+')
 
 
 def clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
+    return stripped_text(value)
 
 
 def has_meaningful_value(value: Any) -> bool:

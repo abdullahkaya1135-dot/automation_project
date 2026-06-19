@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .text_normalization import stripped_text as _clean_text
+
 
 @dataclass(frozen=True)
 class ShopOrderOption:
@@ -13,10 +15,6 @@ class ShopOrderOption:
     part_no: str = ""
     work_center_no: str = ""
     part_description: str = ""
-
-
-def _clean_text(value: Any) -> str:
-    return str(value).strip() if value is not None else ""
 
 
 def _clean_int(value: Any) -> int | None:

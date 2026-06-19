@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
@@ -7,11 +8,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from ...core.config import Settings
+from ...core.config import DEFAULT_IFS_PART_PREFIX, Settings
 from ...features.production_planning.service import (
     read_visible_planning_orders,
     resolve_planning_workbook,
 )
+
+logger = logging.getLogger(__name__)
 
 PROJECTION_ROOT_PATH = "/main/ifsapplications/projection/v1"
 PLANNING_IFS_CONCURRENCY = 8
@@ -170,6 +173,16 @@ def _part_no_prefixes(settings: Settings) -> tuple[str, ...]:
 
     legacy_prefix = str(getattr(settings, "ifs_part_prefix", "") or "").strip()
     if legacy_prefix:
+        if legacy_prefix != DEFAULT_IFS_PART_PREFIX:
+            logger.info(
+                "Using legacy IFS_PART_PREFIX fallback for IFS part prefixes; "
+                "prefer IFS_PART_PREFIXES.",
+                extra={
+                    "legacy_setting": "IFS_PART_PREFIX",
+                    "replacement_setting": "IFS_PART_PREFIXES",
+                    "legacy_prefix_count": 1,
+                },
+            )
         return (legacy_prefix,)
 
     raise IFSConfigurationError("Missing IFS configuration: IFS_PART_PREFIXES")

@@ -19,6 +19,7 @@ from ...services.shop_order_source import (
     ShopOrderOption,
     shop_order_options_from_ifs_operations,
 )
+from ...services.text_normalization import stripped_text as _clean_text
 from ...services.workbook_utils import merged_cell_values, merged_value
 from .models import Entry, MachineCycleTableRow
 
@@ -99,12 +100,6 @@ class CycleReportResult:
             "warning_count": self.warning_count,
             "date": self.report_date.isoformat(),
         }
-
-
-def _clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
 
 
 def _identifier(value: Any) -> str:
