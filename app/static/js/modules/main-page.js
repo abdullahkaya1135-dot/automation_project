@@ -68,6 +68,7 @@ import {
   formatTimestamp,
   setButtonBusy,
   setMessage,
+  updateStatusPill,
 } from "./utils.js?v=20260619-frontend-cleanup";
 
 export function initMainPage() {
@@ -380,28 +381,19 @@ function updateExcelStatus(excel) {
     return;
   }
 
-  status.classList.remove(
-    "status-muted",
-    "status-success",
-    "status-warning",
-    "status-error",
-  );
   if (excel?.database_backed) {
-    status.textContent = "Veritabani hazir";
+    updateStatusPill(status, "Veritabani hazir", "success");
     status.title = "";
-    status.classList.add("status-success");
     return;
   }
   if (excel && excel.available) {
-    status.textContent = "Excel hazir";
+    updateStatusPill(status, "Excel hazir", "success");
     status.title = "";
-    status.classList.add("status-success");
     return;
   }
 
-  status.textContent = "Excel kullanilamiyor";
+  updateStatusPill(status, "Excel kullanilamiyor", "warning");
   status.title = excel?.last_error || "";
-  status.classList.add("status-warning");
 }
 
 function updateProductionEngineerOptions(engineers) {
@@ -441,29 +433,20 @@ function updateAuxiliarySystemsStatus(auxiliarySystems) {
     return;
   }
 
-  status.classList.remove(
-    "status-muted",
-    "status-success",
-    "status-warning",
-    "status-error",
-  );
   if (auxiliarySystems?.target_available && auxiliarySystems?.form_available) {
-    status.textContent = "Yardimci hazir";
+    updateStatusPill(status, "Yardimci hazir", "success");
     status.title = "";
-    status.classList.add("status-success");
     return;
   }
 
   if (auxiliarySystems?.target_available) {
-    status.textContent = "Form dosyasi yok";
+    updateStatusPill(status, "Form dosyasi yok", "warning");
     status.title = auxiliarySystems?.form_error || "";
-    status.classList.add("status-warning");
     return;
   }
 
-  status.textContent = "Yardimci Excel yok";
+  updateStatusPill(status, "Yardimci Excel yok", "warning");
   status.title = auxiliarySystems?.target_error || auxiliarySystems?.form_error || "";
-  status.classList.add("status-warning");
 }
 
 function applyAuxiliaryDate(value) {

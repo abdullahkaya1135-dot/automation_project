@@ -1,32 +1,4 @@
 const CACHE_NAME = "process-offline-shell-v12";
-const APP_ROUTE_URLS = [
-  "/",
-  "/process",
-  "/auxiliary",
-  "/amount-control",
-  "/reports",
-  "/login",
-];
-const APP_SHELL_URLS = [
-  "/manifest.webmanifest",
-  "/static/css/app.css?v=20260619-frontend-cleanup",
-  "/static/js/api.js?v=20260619-frontend-cleanup",
-  "/static/js/app.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/amount-control.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/constants.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/dates.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/ifs-return.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/lists.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/login.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/main-page.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/offline.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/payloads.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/render.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/shop-orders.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/temperature.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/tour-context.js?v=20260619-frontend-cleanup",
-  "/static/js/modules/utils.js?v=20260619-frontend-cleanup",
-];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

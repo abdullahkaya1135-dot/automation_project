@@ -5,6 +5,7 @@ import {
   formatTimestamp,
   setInputValue,
   setMessage,
+  updateStatusPill,
   uniqueSorted,
 } from "./utils.js?v=20260619-frontend-cleanup";
 
@@ -150,12 +151,6 @@ function updateShopOrderSourceStatus(source, pairCount) {
     return;
   }
 
-  status.classList.remove(
-    "status-muted",
-    "status-success",
-    "status-warning",
-    "status-error",
-  );
   if (pairCount > 0) {
     const orderCount = source?.order_count
       || uniqueSorted(shopOrderPairs.map((pair) => pair.orderNo)).length;
@@ -163,20 +158,21 @@ function updateShopOrderSourceStatus(source, pairCount) {
       || uniqueSorted(shopOrderPairs.map((pair) => pair.resourceId)).length;
     const sourceLabel = String(source?.source || "").startsWith("ifs") ? "IFS" : "Dosya";
     if (source?.offline_cached_at) {
-      status.textContent = `${orderCount} iş emri (offline)`;
+      updateStatusPill(status, `${orderCount} iş emri (offline)`, "warning");
       status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eşleşme / ${formatTimestamp(source.offline_cached_at)}`;
-      status.classList.add("status-warning");
       return;
     }
-    status.textContent = `${orderCount} iş emri`;
+    updateStatusPill(status, `${orderCount} iş emri`, "success");
     status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eşleşme`;
-    status.classList.add("status-success");
     return;
   }
 
-  status.textContent = source?.source === "ifs" ? "IFS iş emri yok" : "İş emri listesi yok";
+  updateStatusPill(
+    status,
+    source?.source === "ifs" ? "IFS iş emri yok" : "İş emri listesi yok",
+    "warning",
+  );
   status.title = source?.last_error || "";
-  status.classList.add("status-warning");
 }
 
 function populateMachineSelect(selectedValue) {

@@ -13,9 +13,8 @@ app/
   features/      Business features with their API, domain, schema, and service code
   integrations/  External system clients such as IFS
   web/           Page routing; static assets and templates still live under app/static and app/templates
-  routers/       Compatibility exports for older route import paths
-  services/      Compatibility exports plus shared workbook/browser-facing helpers
-  domain/        Compatibility exports plus shared request/date helpers
+  services/      Shared workbook/browser-facing helpers used by feature services
+  domain/        Shared request/date helpers used across features
   static/        Browser CSS, JavaScript modules, manifest, and service worker
   templates/     Page templates and shared partials
 docs/            Historical plans, implementation notes, and audit reports
@@ -80,7 +79,7 @@ IFS_USERNAME=your-ifs-user
 IFS_PASSWORD=your-ifs-password
 IFS_PART_PREFIXES=HM-02,HM-03,HM-04
 PRODUCTION_PLANNING_DIR=\\fileserver\GENEL\URETIM GUNLUK TAKIP
-PRODUCTION_PLANNING_PATH=\\fileserver\GENEL\URETIM GUNLUK TAKIP\10.06.2026 ÇİZELGE 2.xlsx
+PRODUCTION_PLANNING_PATH=\\fileserver\GENEL\URETIM GUNLUK TAKIP\GG.AA.YYYY ÇİZELGE 1.xlsx
 ```
 
 Do not commit `.env`; it contains the local workbook path, shared PIN, session
@@ -209,7 +208,7 @@ dropdown.
 The `IFS U1 Iade Adaylari` check also reads visible job orders from column `A`
 of the latest valid `.xlsx` workbook in `PRODUCTION_PLANNING_DIR`. Daily files
 are selected by the newest date at the start of the filename, such as
-`12.06.2026 CIZELGE 1.xlsx`; file modified time is only used as a tie-breaker.
+`GG.AA.YYYY ÇİZELGE 1.xlsx`; file modified time is only used as a tie-breaker.
 Temporary Excel files starting with `~$` are ignored. If
 `PRODUCTION_PLANNING_DIR` is blank, the app falls back to the configured
 `PRODUCTION_PLANNING_PATH` workbook. Hidden sheets, hidden rows, and hidden
@@ -278,7 +277,7 @@ reports page until `Excel'e aktar` is run for that date.
 After submitting the row, run the acceptance verifier from another terminal:
 
 ```powershell
-python scripts\manual_acceptance_check.py --expected-row 1726
+python scripts\manual_acceptance_check.py
 ```
 
 The verifier checks that the running app responds, authenticated bootstrap works,
@@ -287,7 +286,8 @@ and a timestamped backup exists within the configured retention count.
 
 If Excel was unavailable during export, restore workbook access, use the dated
 `Excel'e aktar` button, then run the verifier again. For a dry run against a
-safe workbook copy, omit `--expected-row` or pass the expected row for that copy.
+safe workbook copy, add `--expected-row` with that copy's expected row number
+only when the row number is known ahead of time.
 
 ## Tests
 

@@ -355,7 +355,8 @@ textarea {
   padding: 10px 12px;
 }
 
-input[readonly] {
+input[readonly],
+textarea[readonly] {
   background: var(--surface-strong);
   color: #26323b;
 }

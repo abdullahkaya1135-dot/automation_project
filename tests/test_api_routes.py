@@ -18,6 +18,12 @@ from app.models import (
     MachineBreakdown,
     ProductionEngineer,
 )
+from app.web.pages import (
+    APP_ROUTE_URLS,
+    APP_SHELL_URLS,
+    PROTECTED_PAGE_PATHS,
+    SHARED_PAGE_ASSET_URLS,
+)
 
 HEADERS = [
     "Date",
@@ -59,10 +65,9 @@ AUXILIARY_HEADERS = [
 ]
 ISTANBUL_TIMEZONE = timezone(timedelta(hours=3), "Europe/Istanbul")
 DEFAULT_REQUEST_TIME = datetime(2026, 6, 8, 9, 15, tzinfo=ISTANBUL_TIMEZONE)
-PROTECTED_PAGE_ROUTES = ("/", "/process", "/auxiliary", "/amount-control", "/reports")
 SHARED_PAGE_ASSET_MARKERS = (
-    'href="/static/css/app.css?v=',
-    'type="module" src="/static/js/app.js?v=',
+    f'href="{SHARED_PAGE_ASSET_URLS[0]}"',
+    f'type="module" src="{SHARED_PAGE_ASSET_URLS[1]}"',
 )
 PAGE_SECTION_EXPECTATIONS = {
     "/": (
@@ -157,15 +162,6 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="amount-control-form"',
     ),
 }
-SERVICE_WORKER_ASSET_MARKERS = (
-    "/manifest.webmanifest",
-    "/static/css/app.css?v=",
-    "/static/js/api.js?v=",
-    "/static/js/app.js?v=",
-    "/static/js/modules/amount-control.js?v=",
-    "/static/js/modules/main-page.js?v=",
-    "/static/js/modules/offline.js?v=",
-)
 
 
 def _create_workbook(path: Path) -> None:
@@ -1573,7 +1569,11 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
 
 
 def test_page_routes_render_expected_split_sections_and_shared_assets(client):
-    for path, expected_markers in PAGE_SECTION_EXPECTATIONS.items():
+    assert tuple(PAGE_SECTION_EXPECTATIONS) == PROTECTED_PAGE_PATHS
+    assert tuple(PAGE_SECTION_EXCLUSIONS) == PROTECTED_PAGE_PATHS
+
+    for path in PROTECTED_PAGE_PATHS:
+        expected_markers = PAGE_SECTION_EXPECTATIONS[path]
         response = client.get(path)
 
         assert response.status_code == 200
@@ -1614,10 +1614,14 @@ def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(
     assert 'networkFirst(request, "/")' not in source
     assert "cache.put(cacheKey, response.clone())" in source
     assert "cache.match(cacheKey)" in source
-    for route in PROTECTED_PAGE_ROUTES:
+    for route in APP_ROUTE_URLS:
         assert f'"{route}"' in source
-    for marker in SERVICE_WORKER_ASSET_MARKERS:
-        assert marker in source
+    for asset_url in APP_SHELL_URLS:
+        assert f'"{asset_url}"' in source
+
+    static_source = Path("app/static/service-worker.js").read_text(encoding="utf-8")
+    assert "const APP_ROUTE_URLS" not in static_source
+    assert "const APP_SHELL_URLS" not in static_source
 
 
 def test_manifest_start_url_and_scope_stay_at_root(client):

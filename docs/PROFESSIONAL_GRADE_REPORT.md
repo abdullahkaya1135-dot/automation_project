@@ -1,5 +1,11 @@
 # Professional Grade Code Audit Report
 
+> Historical note: This audit captures the repository state on 2026-06-11.
+> Several findings mention pre-migration module paths and file sizes that are no
+> longer current after the first-batch feature/module split. Keep this report as
+> historical context; use [../README.md](../README.md) for current layout and
+> operation guidance.
+
 Date: 2026-06-11
 
 Scope: FastAPI backend, SQLite persistence, Excel/IFS integrations, Jinja/static mobile UI, tests, docs, repository hygiene, and operational readiness.

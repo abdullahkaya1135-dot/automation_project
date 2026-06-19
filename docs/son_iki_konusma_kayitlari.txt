@@ -1,4 +1,7 @@
 Son Iki Konusma Kaydi
+Historical note: This is a 10.06.2026 conversation export. Paths, endpoints,
+worktree status, and unfinished-thread notes are retained as historical context
+and should not be treated as current project guidance.
 Olusturma tarihi: 10.06.2026
 Kapsam: Bu disari aktarma istegi haric tutularak onceki iki is konusmasi alindi.
 Not: Kayitlar Codex thread ozetlerinden derlenmistir; terminal komut ciktilari ve tam loglar dahil edilmemistir.

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ...core.security import require_api_auth
 from ...domain.request_settings import settings_from_request
-from .schemas import ProductionLossReportCreate
+from .schemas import ProductionLossReportCreate, ProductionLossReportListResponse
 from .service import (
     ProductionLossReportError,
     create_production_loss_report,
@@ -38,7 +38,7 @@ def create_report(
         ) from exc
 
 
-@router.get("")
+@router.get("", response_model=ProductionLossReportListResponse)
 def list_reports(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
@@ -60,4 +60,3 @@ def get_report(
             detail="Production loss report not found.",
         )
     return report
-

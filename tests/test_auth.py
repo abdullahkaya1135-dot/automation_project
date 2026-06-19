@@ -10,8 +10,8 @@ from app.core.security import (
     verify_session_cookie_value,
 )
 from app.main import create_app
+from app.web.pages import PROTECTED_PAGE_PATHS
 
-PROTECTED_PAGE_ROUTES = ("/", "/process", "/auxiliary", "/amount-control", "/reports")
 PROTECTED_PAGE_MARKERS = {
     "/": 'id="dashboard-heading"',
     "/process": 'id="entry-form"',
@@ -40,7 +40,7 @@ def test_unauthenticated_api_requests_return_401(client):
     assert response.json()["detail"] == "Oturum açmanız gerekiyor."
 
 
-@pytest.mark.parametrize("path", PROTECTED_PAGE_ROUTES)
+@pytest.mark.parametrize("path", PROTECTED_PAGE_PATHS)
 def test_unauthenticated_page_requests_redirect_to_login(client, path):
     response = client.get(path, follow_redirects=False)
 
@@ -72,6 +72,7 @@ def test_login_sets_cookie_and_allows_protected_routes(client):
     assert len(bootstrap_payload["machines"]) == 47
     assert "machine_count" not in bootstrap_payload["excel"]
 
+    assert tuple(PROTECTED_PAGE_MARKERS) == PROTECTED_PAGE_PATHS
     for path, marker in PROTECTED_PAGE_MARKERS.items():
         page_response = client.get(path)
         assert page_response.status_code == 200

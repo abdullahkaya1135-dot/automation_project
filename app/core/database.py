@@ -7,7 +7,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from ..domain.process_records import (
+from ..features.process_entries.normalization import (
     PRODUCTION_ENGINEER_NAMES,
     normalize_machine_code,
     normalize_process_date,

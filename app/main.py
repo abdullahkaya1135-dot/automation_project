@@ -15,7 +15,7 @@ from .features.health.api import router as health_router
 from .features.ifs.api import router as ifs_router
 from .features.process_entries.api import router as entries_router
 from .features.production_loss.api import router as production_loss_router
-from .web.pages import router as pages_router
+from .web import pages
 
 
 @asynccontextmanager
@@ -45,21 +45,14 @@ def create_app() -> FastAPI:
     fastapi_app.include_router(production_loss_router)
     fastapi_app.include_router(ifs_router)
     fastapi_app.include_router(health_router)
-    fastapi_app.include_router(pages_router)
+    fastapi_app.include_router(pages.router)
 
     @fastapi_app.middleware("http")
     async def no_cache_ui_assets(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path in {
-            "/",
-            "/process",
-            "/auxiliary",
-            "/amount-control",
-            "/reports",
-            "/login",
-        }:
+        if request.url.path in pages.NO_CACHE_PAGE_PATHS:
             response.headers["Cache-Control"] = "no-store, max-age=0"
-        elif request.url.path.startswith("/static/"):
+        elif request.url.path.startswith(pages.STATIC_URL_PREFIX):
             response.headers["Cache-Control"] = "public, max-age=3600"
         return response
 

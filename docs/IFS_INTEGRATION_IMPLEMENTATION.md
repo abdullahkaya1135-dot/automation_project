@@ -15,6 +15,20 @@ but is not currently used by any active machine/order in the PET dispatch list.
 
 The final result is a list of U1 stock rows that should be returned to inventory.
 
+## Current Implementation Status
+
+The implementation has moved into the feature/integration layout:
+
+```text
+app/integrations/ifs/client.py      OAuth, OData requests, pagination, and comparison logic
+app/features/ifs/api.py             Authenticated `/api/ifs/*` routes
+app/features/ifs_checks/service.py  WhatsApp status and missing-production checks
+app/features/bootstrap/api.py       Bootstrap-time IFS shop-order loading
+```
+
+The older import aliases have been retired; code and docs should use the paths
+above.
+
 ## Confirmed IFS Environment
 
 Base URL:
@@ -543,15 +557,15 @@ IFS/server-side issue. Retry with backoff for read calls.
 Log the endpoint category, HTTP status, and response body snippet. Do not log
 access tokens or client secrets.
 
-## Suggested App Modules
+## Current App Modules
 
-Add a dedicated IFS client module:
+IFS client logic lives in:
 
 ```text
-app/ifs_client.py
+app/integrations/ifs/client.py
 ```
 
-Suggested responsibilities:
+Responsibilities:
 
 ```text
 load IFS settings
@@ -563,7 +577,7 @@ fetch operation materials
 compute return candidates
 ```
 
-Possible public functions:
+Current public functions include:
 
 ```python
 async def fetch_u1_hm02_stock(settings) -> list[dict]:
@@ -579,34 +593,27 @@ async def find_u1_return_candidates(settings) -> dict:
     ...
 ```
 
-Add an API route:
+IFS API routes live in:
 
 ```text
+app/features/ifs/api.py
+```
+
+Implemented authenticated routes:
+
+```text
+GET /api/ifs/u1-hm02-stock
+GET /api/ifs/pet-ongoing-operations
+GET /api/ifs/operation-hm02-materials
+GET /api/ifs/used-hm02-materials
 GET /api/ifs/u1-return-candidates
+GET /api/ifs/missing-production-starts
+GET /api/ifs/whatsapp-status-message
 ```
 
-The route should return:
-
-```text
-stock rows in U1 whose PartNo is not used in active PET machine materials
-```
-
-Optional route for diagnostics:
-
-```text
-GET /api/ifs/diagnostics
-```
-
-Diagnostics should test:
-
-```text
-InventoryPartInStockHandling readable
-Reference_DispatchListFilter returns PET
-GetOperations returns operations
-One operation material call succeeds
-```
-
-Do not expose secrets in diagnostics output.
+No standalone IFS diagnostics route is currently implemented. Keep ad hoc
+diagnostic checks in authenticated developer tooling or tests, and do not expose
+secrets in any diagnostic output.
 
 ## Implementation Notes For Existing App
 The app calls `GetOperations` directly with a bearer token. It does not parse

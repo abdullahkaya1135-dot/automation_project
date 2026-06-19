@@ -4,7 +4,10 @@ import {
   dateForDisplay,
   dateForRequest,
 } from "./dates.js?v=20260619-frontend-cleanup";
-import { setInputValue } from "./utils.js?v=20260619-frontend-cleanup";
+import {
+  setInputValue,
+  updateStatusPill,
+} from "./utils.js?v=20260619-frontend-cleanup";
 
 export function updateContextStatus(context) {
   const status = document.querySelector("#context-status");
@@ -12,20 +15,12 @@ export function updateContextStatus(context) {
     return;
   }
 
-  status.classList.remove(
-    "status-muted",
-    "status-success",
-    "status-warning",
-    "status-error",
-  );
   if (!context) {
-    status.textContent = "Aktif tur yok";
-    status.classList.add("status-muted");
+    updateStatusPill(status, "Aktif tur yok", "muted");
     return;
   }
 
-  status.textContent = `Tur ${dateForDisplay(context.date)} / ${context.shift}`;
-  status.classList.add("status-success");
+  updateStatusPill(status, `Tur ${dateForDisplay(context.date)} / ${context.shift}`, "success");
 }
 
 export function applyTourContext(context) {

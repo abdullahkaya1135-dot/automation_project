@@ -11,7 +11,7 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ..core.config import Settings
-from ..domain.entry_fields import (
+from ..features.process_entries.fields import (
     ENTRY_FIELD_NAMES,
     EXCEL_FIELD_NAME_BY_COLUMN,
     blank_excluded_section_fields,

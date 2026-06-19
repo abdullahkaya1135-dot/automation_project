@@ -1,4 +1,6 @@
-from app.domain.process_records import normalize_production_engineer_name
+from app.features.process_entries.normalization import (
+    normalize_production_engineer_name,
+)
 
 
 def test_normalize_production_engineer_name_known_variants():

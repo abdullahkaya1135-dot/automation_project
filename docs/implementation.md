@@ -1,5 +1,9 @@
 # Mobile Process Data Entry MVP Implementation Plan
 
+> Historical note: This original MVP plan predates the first-batch module
+> migration to `app/core`, `app/features`, `app/domain`, and `app/integrations`.
+> Use [README.md](../README.md) for current setup and module layout.
+
 ## 1. Confirm Local Prerequisites
 
 1. Verify the workspace contains only project files that should be part of the MVP.
@@ -9,7 +13,7 @@
 3. Confirm the production Excel workbook can be opened from the office computer.
    - Verify the configured UNC path is reachable.
    - Confirm the workbook contains the target sheet `PROSES 2026`.
-   - Confirm the real data currently ends at row 1725.
+   - Confirm the real last data row in the workbook.
 4. Confirm the office computer can serve the app over LAN.
    - Host: `0.0.0.0`
    - Port: `8080`
@@ -231,7 +235,7 @@
 
 1. Add unit tests for true last-row detection.
    - Use a temporary workbook where `ws.max_row` is misleading because of formatting.
-   - Confirm the detected next row is 1726 for the current workbook scenario.
+   - Confirm the detected next row follows the current workbook's real last row.
 2. Add unit tests for Excel append.
    - Use a temporary workbook copy.
    - Submit one full entry.
@@ -296,7 +300,7 @@
    - Synced to Excel.
    - Saved locally, Excel pending.
 8. Confirm the SQLite entry exists.
-9. If Excel was available, confirm the workbook has a new row at 1726.
+9. If Excel was available, confirm the workbook has a new row at the expected next row.
 10. If Excel was unavailable, restore access and run retry sync.
 11. Confirm a timestamped backup was created in `data/backups/`.
 12. Confirm old backups are pruned after the retention count is exceeded.
