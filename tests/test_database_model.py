@@ -4,8 +4,13 @@ import pytest
 from openpyxl import Workbook
 from sqlalchemy import inspect, text
 
-from app.config import Settings
-from app.database import DatabaseCommitError, create_session, init_db, session_scope
+from app.core.config import Settings
+from app.core.database import (
+    DatabaseCommitError,
+    create_session,
+    init_db,
+    session_scope,
+)
 from app.models import (
     SYNC_STATUS_PENDING_EXCEL,
     AmountControlShift,

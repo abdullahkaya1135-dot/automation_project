@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from app.config import Settings
-from app.database import init_db
-from app.services.cycle_report_service import (
+from app.core.config import Settings
+from app.core.database import init_db
+from app.features.cycle_reports.service import (
     CycleTableEntry,
     NoTodayRowsError,
     ProcessCycleRow,
@@ -16,7 +16,7 @@ from app.services.cycle_report_service import (
     normalize_machine_group,
     parse_part_description,
 )
-from app.services.process_excel_import import import_process_excel_to_database
+from app.features.process_entries.excel_import import import_process_excel_to_database
 from app.services.shop_order_source import ShopOrderOption
 
 HEADERS = [
@@ -315,7 +315,7 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
         return _ifs_operations()
 
     monkeypatch.setattr(
-        "app.services.cycle_report_service.fetch_pet_ongoing_operations",
+        "app.features.cycle_reports.service.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     _create_process_workbook(

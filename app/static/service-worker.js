@@ -1,4 +1,4 @@
-const CACHE_NAME = "process-offline-shell-v11";
+const CACHE_NAME = "process-offline-shell-v12";
 const APP_ROUTE_URLS = [
   "/",
   "/process",
@@ -9,26 +9,23 @@ const APP_ROUTE_URLS = [
 ];
 const APP_SHELL_URLS = [
   "/manifest.webmanifest",
-  "/static/css/app.css?v=20260619-whatsapp-status",
-  "/static/js/api.js?v=20260612-refactor",
-  "/static/js/app.js?v=20260619-whatsapp-status",
-  "/static/js/modules/amount-control.js?v=20260617-amount-control",
-  "/static/js/modules/constants.js?v=20260612-refactor",
-  "/static/js/modules/constants.js?v=20260617-amount-control",
-  "/static/js/modules/dates.js?v=20260612-refactor",
-  "/static/js/modules/dates.js?v=20260617-amount-control",
-  "/static/js/modules/ifs-return.js?v=20260612-refactor",
-  "/static/js/modules/lists.js?v=20260618-recent-entries",
-  "/static/js/modules/login.js?v=20260612-refactor",
-  "/static/js/modules/main-page.js?v=20260619-whatsapp-status",
-  "/static/js/modules/offline.js?v=20260618-excel-bulk",
-  "/static/js/modules/payloads.js?v=20260612-refactor",
-  "/static/js/modules/render.js?v=20260619-production-loss",
-  "/static/js/modules/shop-orders.js?v=20260612-refactor",
-  "/static/js/modules/temperature.js?v=20260612-refactor",
-  "/static/js/modules/tour-context.js?v=20260612-refactor",
-  "/static/js/modules/utils.js?v=20260612-refactor",
-  "/static/js/modules/utils.js?v=20260617-amount-control",
+  "/static/css/app.css?v=20260619-frontend-cleanup",
+  "/static/js/api.js?v=20260619-frontend-cleanup",
+  "/static/js/app.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/amount-control.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/constants.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/dates.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/ifs-return.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/lists.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/login.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/main-page.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/offline.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/payloads.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/render.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/shop-orders.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/temperature.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/tour-context.js?v=20260619-frontend-cleanup",
+  "/static/js/modules/utils.js?v=20260619-frontend-cleanup",
 ];
 
 self.addEventListener("install", (event) => {

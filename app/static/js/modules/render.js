@@ -1,10 +1,10 @@
-import { SYNC_LABELS } from "./constants.js?v=20260612-refactor";
-import { dateForDisplay } from "./dates.js?v=20260617-amount-control";
+import { SYNC_LABELS } from "./constants.js?v=20260619-frontend-cleanup";
+import { dateForDisplay } from "./dates.js?v=20260619-frontend-cleanup";
 import {
   displayValue,
-  entryTime,
   formatTimestamp,
-} from "./utils.js?v=20260612-refactor";
+  updateStatusPill,
+} from "./utils.js?v=20260619-frontend-cleanup";
 
 export function renderEntryList(container, entries, emptyText) {
   if (!container) {
@@ -491,8 +491,7 @@ function renderEntryRow(entry) {
   }
 
   const status = document.createElement("span");
-  status.className = `status-pill ${statusClass(entry.sync_status)}`;
-  status.textContent = SYNC_LABELS[entry.sync_status] || entry.sync_status || "Bilinmiyor";
+  updateSyncStatusPill(status, entry.sync_status);
   if (entry.excel_row_number) {
     status.title = `Excel satırı ${entry.excel_row_number}`;
   }
@@ -523,8 +522,7 @@ function renderAuxiliarySubmissionRow(submission) {
   }
 
   const status = document.createElement("span");
-  status.className = `status-pill ${statusClass(submission.sync_status)}`;
-  status.textContent = SYNC_LABELS[submission.sync_status] || submission.sync_status || "Bilinmiyor";
+  updateSyncStatusPill(status, submission.sync_status);
   if (submission.excel_start_row && submission.excel_end_row) {
     status.title = `Excel satırları ${submission.excel_start_row}-${submission.excel_end_row}`;
   }
@@ -549,8 +547,7 @@ function renderAmountControlShiftRow(amountShift) {
   details.append(title, meta);
 
   const status = document.createElement("span");
-  status.className = "status-pill status-success";
-  status.textContent = `${displayValue(amountShift.produced_quantity)} adet`;
+  updateStatusPill(status, `${displayValue(amountShift.produced_quantity)} adet`, "success");
 
   row.append(details, status);
   return row;
@@ -609,14 +606,20 @@ function amountControlShiftMeta(amountShift) {
   return pieces.join(" / ");
 }
 
-function statusClass(syncStatus) {
-  if (syncStatus === "synced") {
-    return "status-success";
-  }
-  if (syncStatus === "failed_excel") {
-    return "status-error";
-  }
-  return "status-warning";
+function updateSyncStatusPill(element, syncStatus) {
+  updateStatusPill(
+    element,
+    SYNC_LABELS[syncStatus] || syncStatus || "Bilinmiyor",
+    syncStatusKind(syncStatus),
+  );
 }
 
-export { entryTime };
+function syncStatusKind(syncStatus) {
+  if (syncStatus === "synced") {
+    return "success";
+  }
+  if (syncStatus === "failed_excel") {
+    return "error";
+  }
+  return "warning";
+}

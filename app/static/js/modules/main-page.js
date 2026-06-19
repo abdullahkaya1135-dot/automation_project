@@ -1,24 +1,24 @@
-import { apiJson } from "../api.js?v=20260612-refactor";
+import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
 import {
   amountControlRequestBodies,
   initializeAmountControlControls,
   resetAmountControlForm,
   updateAmountControlBootstrap,
-} from "./amount-control.js?v=20260617-amount-control";
+} from "./amount-control.js?v=20260619-frontend-cleanup";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
-} from "./dates.js?v=20260612-refactor";
+} from "./dates.js?v=20260619-frontend-cleanup";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
-} from "./ifs-return.js?v=20260612-refactor";
+} from "./ifs-return.js?v=20260619-frontend-cleanup";
 import {
   loadAmountControlShifts,
   loadAuxiliarySubmissions,
   loadEntryLists,
-} from "./lists.js?v=20260618-recent-entries";
+} from "./lists.js?v=20260619-frontend-cleanup";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -31,27 +31,27 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260618-excel-bulk";
+} from "./offline.js?v=20260619-frontend-cleanup";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
-} from "./payloads.js?v=20260612-refactor";
+} from "./payloads.js?v=20260619-frontend-cleanup";
 import {
   renderListError,
   renderLoading,
   renderMissingProductionStarts,
   renderProductionLossReport,
-} from "./render.js?v=20260619-production-loss";
+} from "./render.js?v=20260619-frontend-cleanup";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
   updateShopOrderOptions,
-} from "./shop-orders.js?v=20260612-refactor";
+} from "./shop-orders.js?v=20260619-frontend-cleanup";
 import {
   initializeTemperatureShorthandInputs,
   normalizeTemperatureShorthandForm,
-} from "./temperature.js?v=20260612-refactor";
+} from "./temperature.js?v=20260619-frontend-cleanup";
 import {
   applyAutomaticTourTiming,
   applyTourContext,
@@ -61,14 +61,14 @@ import {
   readStoredTourContext,
   storeTourContext,
   updateContextStatus,
-} from "./tour-context.js?v=20260612-refactor";
+} from "./tour-context.js?v=20260619-frontend-cleanup";
 import {
   cleanRequired,
   createClientRequestId,
   formatTimestamp,
   setButtonBusy,
   setMessage,
-} from "./utils.js?v=20260612-refactor";
+} from "./utils.js?v=20260619-frontend-cleanup";
 
 export function initMainPage() {
   const page = document.body?.dataset?.page;

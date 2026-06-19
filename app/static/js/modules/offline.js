@@ -1,4 +1,4 @@
-import { ApiError, apiJson } from "../api.js?v=20260612-refactor";
+import { ApiError, apiJson } from "../api.js?v=20260619-frontend-cleanup";
 import {
   OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
@@ -8,19 +8,19 @@ import {
   OFFLINE_STATUS_SERVER_SAVED,
   OFFLINE_STATUS_SYNCING,
   OFFLINE_STATUS_VALIDATION_FAILED,
-} from "./constants.js?v=20260612-refactor";
+} from "./constants.js?v=20260619-frontend-cleanup";
 import {
   applyTourContext,
   readStoredTourContext,
   storeTourContext,
-} from "./tour-context.js?v=20260612-refactor";
+} from "./tour-context.js?v=20260619-frontend-cleanup";
 import {
   createClientRequestId,
   downloadTextFile,
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260612-refactor";
+} from "./utils.js?v=20260619-frontend-cleanup";
 
 let offlineDbPromise = null;
 let offlineSyncInProgress = false;

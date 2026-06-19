@@ -31,14 +31,14 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.config import Settings, get_settings  # noqa: E402
-from app.database import create_session  # noqa: E402
+from app.core.config import Settings, get_settings  # noqa: E402
+from app.core.database import create_session  # noqa: E402
 from app.features.cycle_reports.service import (  # noqa: E402
     _lookup_optimum_cycle,
     _read_cycle_table,
     normalize_machine_group,
 )
-from app.integrations.ifs_client import obtain_access_token  # noqa: E402
+from app.integrations.ifs.client import obtain_access_token  # noqa: E402
 from app.models import Entry  # noqa: E402
 from scripts.experiment_ifs_past_job_order_machine_product import (  # noqa: E402
     AGIZ_FIELD,

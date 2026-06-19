@@ -11,8 +11,8 @@ from ...domain.request_values import (
     client_recorded_datetime,
     client_request_id,
     stored_client_recorded_at,
+    validate_sync_status,
 )
-from ...routers.validators import validate_sync_status
 from .domain import (
     auxiliary_payload_from_body,
     auxiliary_recorded_date_from_body,

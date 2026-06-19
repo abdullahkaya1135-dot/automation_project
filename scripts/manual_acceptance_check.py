@@ -16,8 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.config import Settings, SettingsError, get_settings  # noqa: E402
-from app.database import create_session, sqlite_health  # noqa: E402
+from app.core.config import Settings, SettingsError, get_settings  # noqa: E402
+from app.core.database import create_session, sqlite_health  # noqa: E402
 from app.models import Entry  # noqa: E402
 from app.services.excel_service import (  # noqa: E402
     INVALID_BACKUP_FILENAME_CHARS,

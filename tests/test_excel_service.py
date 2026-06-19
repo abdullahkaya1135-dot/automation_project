@@ -6,8 +6,12 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.workbook.workbook import Workbook as OpenpyxlWorkbook
 
-from app.config import Settings
-from app.database import commit_session, create_session, init_db
+from app.core.config import Settings
+from app.core.database import commit_session, create_session, init_db
+from app.features.process_entries.sync import (
+    attempt_excel_append,
+    retry_unsynced_entries,
+)
 from app.models import (
     SYNC_STATUS_FAILED_EXCEL,
     SYNC_STATUS_PENDING_EXCEL,
@@ -25,7 +29,6 @@ from app.services.excel_service import (
     normalize_excel_value,
     validate_headers,
 )
-from app.services.sync_service import attempt_excel_append, retry_unsynced_entries
 
 HEADERS = [
     "Date",

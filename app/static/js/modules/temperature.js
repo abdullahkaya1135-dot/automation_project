@@ -1,4 +1,4 @@
-import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260612-refactor";
+import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260619-frontend-cleanup";
 
 export function initializeTemperatureShorthandInputs() {
   for (const selector of TEMPERATURE_SHORTHAND_SELECTORS) {

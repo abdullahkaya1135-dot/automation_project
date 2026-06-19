@@ -3,7 +3,7 @@ import os
 import pytest
 from openpyxl import Workbook
 
-from app.services.production_planning import (
+from app.features.production_planning.service import (
     ProductionPlanningError,
     latest_planning_workbook,
     read_visible_planning_orders,

@@ -2,10 +2,10 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from app.config import Settings
-from app.database import create_session, init_db
+from app.core.config import Settings
+from app.core.database import create_session, init_db
+from app.features.process_entries.excel_import import import_process_excel_to_database
 from app.models import Entry
-from app.services.process_excel_import import import_process_excel_to_database
 
 HEADERS = [
     "Date",

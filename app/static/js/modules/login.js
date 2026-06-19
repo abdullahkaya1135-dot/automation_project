@@ -1,4 +1,4 @@
-import { setButtonBusy } from "./utils.js?v=20260612-refactor";
+import { setButtonBusy } from "./utils.js?v=20260619-frontend-cleanup";
 
 export function initLogin() {
   const loginForm = document.querySelector("#login-form");

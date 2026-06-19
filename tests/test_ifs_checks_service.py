@@ -1,8 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from app.config import Settings
-from app.database import create_session, init_db
+from app.core.config import Settings
+from app.core.database import create_session, init_db
 from app.features.ifs_checks.service import (
     missing_production_starts_from_operations,
     whatsapp_status_message_from_operations,

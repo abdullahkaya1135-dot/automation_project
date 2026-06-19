@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from ..config import Settings
+from ..core.config import Settings
 from ..domain.entry_fields import (
     ENTRY_FIELD_NAMES,
     EXCEL_FIELD_NAME_BY_COLUMN,

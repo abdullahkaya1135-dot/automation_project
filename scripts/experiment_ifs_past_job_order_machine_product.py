@@ -34,8 +34,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.config import Settings, get_settings  # noqa: E402
-from app.integrations.ifs_client import (  # noqa: E402
+from app.core.config import Settings, get_settings  # noqa: E402
+from app.integrations.ifs.client import (  # noqa: E402
     _get_all,
     _odata_string,
     _projection_url,

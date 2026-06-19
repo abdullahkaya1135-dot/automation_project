@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from app.config import get_settings
-from app.database import init_db
-from app.services.process_excel_import import import_process_excel_to_database
+from app.core.config import get_settings
+from app.core.database import init_db
+from app.features.process_entries.excel_import import import_process_excel_to_database
 
 
 def main() -> None:

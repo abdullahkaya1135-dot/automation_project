@@ -34,13 +34,16 @@ export function updateStatusPill(element, text, kind) {
     return;
   }
   element.textContent = text;
+  element.classList.add("status-pill");
   element.classList.remove(
     "status-muted",
     "status-success",
     "status-warning",
     "status-error",
   );
-  element.classList.add(`status-${kind}`);
+  if (kind) {
+    element.classList.add(`status-${kind}`);
+  }
 }
 
 export function numericContextId(value) {

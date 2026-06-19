@@ -5,9 +5,9 @@ import httpx
 import pytest
 from openpyxl import Workbook
 
-from app import config
-from app.config import Settings
-from app.integrations.ifs_client import (
+import app.core.config as config
+from app.core.config import Settings
+from app.integrations.ifs.client import (
     IFSClientError,
     fetch_operation_hm02_materials,
     fetch_pet_ongoing_operations,

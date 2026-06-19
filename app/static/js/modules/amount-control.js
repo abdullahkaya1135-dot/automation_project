@@ -1,11 +1,11 @@
-import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260617-amount-control";
-import { localIsoDate } from "./dates.js?v=20260617-amount-control";
+import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260619-frontend-cleanup";
+import { localIsoDate } from "./dates.js?v=20260619-frontend-cleanup";
 import {
   cleanOptional,
   cleanRequired,
   compareOptionText,
   uniqueSorted,
-} from "./utils.js?v=20260617-amount-control";
+} from "./utils.js?v=20260619-frontend-cleanup";
 
 let amountControlMachines = [];
 let amountControlShopOrders = [];

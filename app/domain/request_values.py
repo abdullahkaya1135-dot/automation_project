@@ -3,7 +3,8 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from ..config import Settings
+from ..core.config import Settings
+from ..models import SYNC_STATUSES
 from . import shifts
 
 
@@ -12,6 +13,13 @@ def validation_error(message: str) -> HTTPException:
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail=message,
     )
+
+
+def validate_sync_status(sync_status: str | None) -> None:
+    if sync_status is not None and sync_status not in SYNC_STATUSES:
+        raise validation_error(
+            "sync_status şunlardan biri olmalıdır: " + ", ".join(SYNC_STATUSES)
+        )
 
 
 def required_text(value: Any, field_name: str, max_length: int) -> str:

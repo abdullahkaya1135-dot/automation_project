@@ -3,15 +3,15 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from app.config import Settings
-from app.database import commit_session, create_session, init_db
+from app.core.config import Settings
+from app.core.database import commit_session, create_session, init_db
+from app.features.auxiliary_systems.sync import attempt_auxiliary_excel_append
+from app.features.auxiliary_systems.workbook import append_auxiliary_systems_to_workbook
 from app.models import (
     SYNC_STATUS_FAILED_EXCEL,
     SYNC_STATUS_PENDING_EXCEL,
     AuxiliarySystemsSubmission,
 )
-from app.services.auxiliary_systems_service import append_auxiliary_systems_to_workbook
-from app.services.auxiliary_systems_sync_service import attempt_auxiliary_excel_append
 
 AUXILIARY_HEADERS = [
     "TARİH",

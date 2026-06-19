@@ -12,9 +12,9 @@ from .features.auxiliary_systems.api import router as auxiliary_router
 from .features.bootstrap.api import router as bootstrap_router
 from .features.cycle_reports.api import router as reports_router
 from .features.health.api import router as health_router
+from .features.ifs.api import router as ifs_router
 from .features.process_entries.api import router as entries_router
 from .features.production_loss.api import router as production_loss_router
-from .routers.ifs import router as ifs_router
 from .web.pages import router as pages_router
 
 

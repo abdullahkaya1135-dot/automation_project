@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .database import Base
+from .core.database import Base
 
 SYNC_STATUS_SYNCED = "synced"
 SYNC_STATUS_PENDING_EXCEL = "pending_excel"

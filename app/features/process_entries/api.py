@@ -16,8 +16,8 @@ from ...domain.request_values import (
     shift_chief,
     stored_client_recorded_at,
     tour_context_id_from_body,
+    validate_sync_status,
 )
-from ...routers.validators import validate_sync_status
 from .models import (
     SYNC_STATUS_PENDING_EXCEL,
     SYNC_STATUS_SYNCED,

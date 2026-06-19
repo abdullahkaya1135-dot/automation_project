@@ -1,7 +1,7 @@
 from fastapi import Request
 
-from ..config import Settings, get_settings
-from ..database import init_db
+from ..core.config import Settings, get_settings
+from ..core.database import init_db
 
 
 def settings_from_request(request: Request) -> Settings:

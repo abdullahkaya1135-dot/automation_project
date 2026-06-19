@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260612-refactor";
+import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
 import {
   renderAmountControlShiftList,
   renderAuxiliarySubmissionList,
   renderEntryList,
   renderListError,
-} from "./render.js?v=20260617-amount-control";
-import { entryTime } from "./utils.js?v=20260612-refactor";
+} from "./render.js?v=20260619-frontend-cleanup";
+import { entryTime } from "./utils.js?v=20260619-frontend-cleanup";
 
 export async function loadEntryLists() {
   await Promise.all([loadRecentEntries(), loadPendingEntries()]);

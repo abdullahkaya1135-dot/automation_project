@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260612-refactor";
+import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
 import {
   renderIfsReturnCandidates,
   renderIfsReturnPrintArea,
   renderListError,
   renderLoading,
-} from "./render.js?v=20260612-refactor";
-import { setButtonBusy, setMessage } from "./utils.js?v=20260612-refactor";
+} from "./render.js?v=20260619-frontend-cleanup";
+import { setButtonBusy, setMessage } from "./utils.js?v=20260619-frontend-cleanup";
 
 let latestIfsReturnCandidatesPayload = null;
 

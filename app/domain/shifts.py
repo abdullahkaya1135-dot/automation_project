@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from datetime import date as Date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..config import Settings
+from ..core.config import Settings
 
 DISPLAY_DATE_FORMAT = "%d.%m.%Y"
 SHIFT_OPTIONS = ("24.00-08.00", "08.00-16.00", "16.00-24.00")

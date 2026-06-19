@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from app.config import Settings
-from app.database import create_session, init_db
+from app.core.config import Settings
+from app.core.database import create_session, init_db
 from app.features.production_loss.service import (
     ProductionLossReportError,
     create_production_loss_report,
@@ -187,4 +187,3 @@ def test_create_production_loss_report_requires_amount_control_rows(tmp_path):
             date_to="2026-06-08",
             refresh_ifs=False,
         )
-

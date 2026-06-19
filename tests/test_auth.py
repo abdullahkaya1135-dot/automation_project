@@ -3,12 +3,12 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import (
+from app.core.config import Settings
+from app.core.security import (
     SESSION_COOKIE_NAME,
     create_session_cookie_value,
     verify_session_cookie_value,
 )
-from app.config import Settings
 from app.main import create_app
 
 PROTECTED_PAGE_ROUTES = ("/", "/process", "/auxiliary", "/amount-control", "/reports")

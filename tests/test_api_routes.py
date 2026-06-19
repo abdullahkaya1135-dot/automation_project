@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
 
-from app.config import Settings
-from app.database import create_session
+from app.core.config import Settings
+from app.core.database import create_session
 from app.integrations.ifs.client import IFSClientError
 from app.main import create_app
 from app.models import (
@@ -259,15 +259,15 @@ def client(monkeypatch, tmp_path) -> Generator[TestClient]:
         return _ifs_operations()
 
     monkeypatch.setattr(
-        "app.routers.bootstrap.fetch_pet_ongoing_operations",
+        "app.features.bootstrap.api.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     monkeypatch.setattr(
-        "app.services.cycle_report_service.fetch_pet_ongoing_operations",
+        "app.features.cycle_reports.service.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     monkeypatch.setattr(
-        "app.routers.ifs.fetch_pet_ongoing_operations",
+        "app.features.ifs.api.fetch_pet_ongoing_operations",
         fake_fetch_pet_ongoing_operations,
     )
     monkeypatch.setenv("EXCEL_PATH", str(workbook_path))
@@ -1061,7 +1061,7 @@ def test_ifs_stock_endpoint_returns_u1_hm02_stock(client, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_u1_hm02_stock", fake_fetch)
+    monkeypatch.setattr("app.features.ifs.api.fetch_u1_hm02_stock", fake_fetch)
 
     response = client.get("/api/ifs/u1-hm02-stock")
 
@@ -1108,7 +1108,10 @@ def test_ifs_operations_endpoint_returns_pet_ongoing_operations(client, monkeypa
             }
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
 
     response = client.get("/api/ifs/pet-ongoing-operations")
 
@@ -1143,7 +1146,10 @@ def test_ifs_whatsapp_status_message_endpoint_returns_copy_ready_message(
             {"PreferredResourceId": "210"},
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
 
     response = client.get("/api/ifs/whatsapp-status-message")
 
@@ -1173,7 +1179,10 @@ def test_ifs_whatsapp_status_message_endpoint_returns_ifs_error(
     async def fake_fetch(_settings):
         raise IFSClientError("IFS unavailable")
 
-    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
 
     response = client.get("/api/ifs/whatsapp-status-message")
 
@@ -1188,7 +1197,10 @@ def test_ifs_missing_production_starts_endpoint_lists_working_hall_3_4_missing_f
     async def fake_fetch(_settings):
         return [{"PreferredResourceId": "303"}]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
     context_id = _tour_context(client)
     for machine_code in ("302", "303", "101"):
         response = client.post(
@@ -1240,7 +1252,10 @@ def test_ifs_missing_production_starts_endpoint_returns_ifs_error(
     async def fake_fetch(_settings):
         raise IFSClientError("IFS unavailable")
 
-    monkeypatch.setattr("app.routers.ifs.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_pet_ongoing_operations",
+        fake_fetch,
+    )
 
     response = client.get(
         "/api/ifs/missing-production-starts",
@@ -1276,7 +1291,10 @@ def test_ifs_operation_materials_endpoint_returns_hm02_materials(client, monkeyp
             }
         ]
 
-    monkeypatch.setattr("app.routers.ifs.fetch_operation_hm02_materials", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_operation_hm02_materials",
+        fake_fetch,
+    )
 
     response = client.get(
         "/api/ifs/operation-hm02-materials",
@@ -1361,7 +1379,7 @@ def test_ifs_used_materials_endpoint_returns_used_hm02_set(client, monkeypatch):
             ],
         }
 
-    monkeypatch.setattr("app.routers.ifs.fetch_used_hm02_materials", fake_fetch)
+    monkeypatch.setattr("app.features.ifs.api.fetch_used_hm02_materials", fake_fetch)
 
     response = client.get("/api/ifs/used-hm02-materials")
 
@@ -1452,7 +1470,7 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
             ],
         }
 
-    monkeypatch.setattr("app.routers.ifs.find_u1_return_candidates", fake_find)
+    monkeypatch.setattr("app.features.ifs.api.find_u1_return_candidates", fake_find)
 
     response = client.get("/api/ifs/u1-return-candidates")
 
@@ -1628,7 +1646,9 @@ def test_bootstrap_can_load_shop_orders_from_ifs(client, monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("app.routers.bootstrap.fetch_pet_ongoing_operations", fake_fetch)
+    monkeypatch.setattr(
+        "app.features.bootstrap.api.fetch_pet_ongoing_operations", fake_fetch
+    )
 
     response = client.get("/api/bootstrap")
 
