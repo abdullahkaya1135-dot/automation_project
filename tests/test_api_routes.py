@@ -1037,6 +1037,30 @@ def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
         fake_fetch_actuals,
     )
 
+    async def fake_fetch_operation_history(
+        _settings,
+        *,
+        date_from_utc,
+        date_to_utc,
+    ):
+        assert date_from_utc.isoformat() == "2026-06-07T21:00:00+00:00"
+        assert date_to_utc.isoformat() == "2026-06-08T21:00:00+00:00"
+        return [
+            {
+                "TransactionId": "TX-100",
+                "TimeOfProduction": "2026-06-08T05:10:00Z",
+                "QtyComplete": "100",
+                "ResourceId": "101",
+                "OrderNo": "WO-1",
+                "PartNo": "PET-6",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.features.production_loss.service.fetch_shop_order_operation_history_rows",
+        fake_fetch_operation_history,
+    )
+
     response = client.post(
         "/api/production-loss-reports",
         json={

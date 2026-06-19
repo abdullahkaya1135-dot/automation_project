@@ -6,6 +6,24 @@ import {
   updateStatusPill,
 } from "./utils.js?v=20260619-frontend-cleanup";
 
+const PRODUCTION_LOSS_SHIFT_COLUMNS = [
+  {
+    label: "24.00-08.00",
+    prefix: "shift_2400_0800",
+    legacyActualKey: "shift_2400_0800_quantity",
+  },
+  {
+    label: "08.00-16.00",
+    prefix: "shift_0800_1600",
+    legacyActualKey: "shift_0800_1600_quantity",
+  },
+  {
+    label: "16.00-24.00",
+    prefix: "shift_1600_2400",
+    legacyActualKey: "shift_1600_2400_quantity",
+  },
+];
+
 export function renderEntryList(container, entries, emptyText) {
   if (!container) {
     return;
@@ -188,15 +206,15 @@ function renderProductionLossTable(rows) {
 
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
-  for (const label of [
+  const headers = [
     "Tarih",
     "Makine",
     "Is emri",
     "Urun",
     "Gr",
-    "V1",
-    "V2",
-    "V3",
+    ...PRODUCTION_LOSS_SHIFT_COLUMNS.map(
+      (shift) => `${shift.label} (Gercek / Optimum / Kayip)`,
+    ),
     "Toplam",
     "Aktif goz",
     "Cycle",
@@ -206,7 +224,8 @@ function renderProductionLossTable(rows) {
     "Brut kayip",
     "Mola/durus kaybi",
     "Uyari",
-  ]) {
+  ];
+  for (const label of headers) {
     const th = document.createElement("th");
     th.scope = "col";
     th.textContent = label;
@@ -222,9 +241,9 @@ function renderProductionLossTable(rows) {
     appendTableCell(tr, row.job_order, "mono-cell");
     appendTableCell(tr, row.product_description);
     appendTableCell(tr, row.gram);
-    appendTableCell(tr, row.shift_2400_0800_quantity);
-    appendTableCell(tr, row.shift_0800_1600_quantity);
-    appendTableCell(tr, row.shift_1600_2400_quantity);
+    for (const shift of PRODUCTION_LOSS_SHIFT_COLUMNS) {
+      appendShiftLossCell(tr, row, shift);
+    }
     appendTableCell(tr, row.daily_total_quantity);
     appendTableCell(tr, row.active_cavities);
     appendTableCell(tr, row.cycle_time_seconds);
@@ -251,6 +270,12 @@ function renderProductionLossSummary(payload) {
     ["Bitis", payload?.date_to],
     ["Satir", payload?.row_count],
     ["Uyari", payload?.warning_count],
+    [
+      "Etiket",
+      payload?.source_summary?.labels_refreshed ? "Yenilendi" : "Cache",
+    ],
+    ["Etiket kayit", payload?.source_summary?.label_event_count],
+    ["Etiket miktar", payload?.source_summary?.label_quantity_total],
     ["IFS", payload?.source_summary?.ifs_refreshed ? "Yenilendi" : "Cache"],
   ];
 
@@ -280,6 +305,13 @@ function renderProductionLossSummary(payload) {
     ifsError.className = "entry-meta error ifs-generated-at";
     ifsError.textContent = `IFS: ${payload.source_summary.ifs_error}`;
     summary.appendChild(ifsError);
+  }
+
+  if (payload?.source_summary?.label_ifs_error) {
+    const labelError = document.createElement("p");
+    labelError.className = "entry-meta error ifs-generated-at";
+    labelError.textContent = `Etiket/arsiv: ${payload.source_summary.label_ifs_error}`;
+    summary.appendChild(labelError);
   }
 
   return summary;
@@ -467,6 +499,68 @@ function appendTableCell(row, value, className) {
   }
   cell.textContent = displayValue(value);
   row.appendChild(cell);
+}
+
+function appendShiftLossCell(rowElement, reportRow, shift) {
+  const cell = document.createElement("td");
+  cell.className = "production-loss-shift-cell";
+
+  const metrics = [
+    [
+      "Gercek",
+      shiftMetricValue(reportRow, shift, "actual_quantity", shift.legacyActualKey),
+    ],
+    ["Optimum", shiftMetricValue(reportRow, shift, "optimum_quantity")],
+    ["Kayip", shiftMetricValue(reportRow, shift, "loss_quantity")],
+  ];
+
+  for (const [label, value] of metrics) {
+    const metric = document.createElement("span");
+    metric.className = "production-loss-shift-metric";
+
+    const metricLabel = document.createElement("span");
+    metricLabel.textContent = label;
+
+    const metricValue = document.createElement("strong");
+    metricValue.textContent = displayValue(value);
+
+    metric.append(metricLabel, metricValue);
+    cell.appendChild(metric);
+  }
+
+  rowElement.appendChild(cell);
+}
+
+function shiftMetricValue(reportRow, shift, metricKey, fallbackKey) {
+  const nestedShift = findNestedShiftResult(reportRow, shift);
+  return firstDisplayValue(
+    nestedShift?.[metricKey],
+    nestedShift?.[metricKey.replace("_quantity", "")],
+    reportRow?.[`${shift.prefix}_${metricKey}`],
+    fallbackKey ? reportRow?.[fallbackKey] : undefined,
+  );
+}
+
+function findNestedShiftResult(reportRow, shift) {
+  const shiftResults = Array.isArray(reportRow?.shift_results)
+    ? reportRow.shift_results
+    : Array.isArray(reportRow?.shifts)
+    ? reportRow.shifts
+    : [];
+
+  return shiftResults.find((item) => {
+    const label = item?.shift || item?.label || item?.name;
+    return label === shift.label || item?.prefix === shift.prefix;
+  });
+}
+
+function firstDisplayValue(...values) {
+  for (const value of values) {
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+  return null;
 }
 
 function renderEntryRow(entry) {

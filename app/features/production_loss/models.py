@@ -6,6 +6,7 @@ from ...models import (
     Machine,
     MachineBreakdown,
     ProductionLossIfsActual,
+    ProductionLossLabelEvent,
     ProductionLossReport,
     ProductionLossReportRow,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "Machine",
     "MachineBreakdown",
     "ProductionLossIfsActual",
+    "ProductionLossLabelEvent",
     "ProductionLossReport",
     "ProductionLossReportRow",
 ]

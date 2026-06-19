@@ -567,6 +567,30 @@ button:disabled {
   color: #172026;
 }
 
+.production-loss-shift-cell {
+  min-width: 150px;
+}
+
+.production-loss-shift-metric {
+  display: grid;
+  grid-template-columns: minmax(54px, auto) 1fr;
+  gap: 8px;
+  align-items: baseline;
+  line-height: 1.35;
+}
+
+.production-loss-shift-metric span {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.production-loss-shift-metric strong {
+  color: #172026;
+  font-weight: 800;
+  text-align: right;
+}
+
 .mono-cell {
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.82rem;

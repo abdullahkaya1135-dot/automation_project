@@ -21,6 +21,7 @@ from app.models import (
     MachineGroup,
     MachineGroupMachine,
     ProductionEngineer,
+    ProductionLossLabelEvent,
     TourContext,
 )
 
@@ -100,6 +101,10 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
             column["name"]
             for column in inspector.get_columns("production_loss_ifs_actuals")
         }
+        production_loss_label_event_columns = {
+            column["name"]
+            for column in inspector.get_columns("production_loss_label_events")
+        }
         amount_control_foreign_keys = inspector.get_foreign_keys(
             "amount_control_shifts"
         )
@@ -117,6 +122,16 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         production_loss_row_foreign_keys = inspector.get_foreign_keys(
             "production_loss_report_rows"
         )
+        production_loss_label_event_check_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints(
+                "production_loss_label_events"
+            )
+        }
+        production_loss_label_event_indexes = {
+            index["name"]
+            for index in inspector.get_indexes("production_loss_label_events")
+        }
         breakdown_check_constraints = {
             constraint["name"]
             for constraint in inspector.get_check_constraints("machine_breakdowns")
@@ -135,6 +150,7 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "production_loss_reports",
         "production_loss_report_rows",
         "production_loss_ifs_actuals",
+        "production_loss_label_events",
     }
     assert "machines_cache" not in table_names
     assert {f"col_{letter}" for letter in "abcdefghijklmnopqrstuvwxy"} <= entry_columns
@@ -252,8 +268,20 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "active_cavities",
         "cycle_time_seconds",
         "shift_2400_0800_quantity",
+        "shift_2400_0800_actual_quantity",
+        "shift_2400_0800_machine_minutes",
+        "shift_2400_0800_optimum_quantity",
+        "shift_2400_0800_loss_quantity",
         "shift_0800_1600_quantity",
+        "shift_0800_1600_actual_quantity",
+        "shift_0800_1600_machine_minutes",
+        "shift_0800_1600_optimum_quantity",
+        "shift_0800_1600_loss_quantity",
         "shift_1600_2400_quantity",
+        "shift_1600_2400_actual_quantity",
+        "shift_1600_2400_machine_minutes",
+        "shift_1600_2400_optimum_quantity",
+        "shift_1600_2400_loss_quantity",
         "daily_total_quantity",
         "net_machine_minutes",
         "gross_elapsed_minutes",
@@ -280,6 +308,29 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "raw_json",
         "source_updated_at",
     } <= production_loss_ifs_columns
+    assert {
+        "id",
+        "result_key",
+        "report_id",
+        "print_job_id",
+        "archive_exec_time",
+        "label_time",
+        "record_date",
+        "shift",
+        "machine_code",
+        "job_order",
+        "part_no",
+        "product_description",
+        "quantity",
+        "package_id",
+        "lot_batch_no",
+        "pallet_no",
+        "sequence_no",
+        "raw_xml",
+        "source_updated_at",
+        "created_at",
+        "updated_at",
+    } <= production_loss_label_event_columns
     assert {
         (
             tuple(foreign_key["constrained_columns"]),
@@ -340,6 +391,19 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         ),
         (("machine_id",), "machines", ("id",), "SET NULL"),
     }
+    assert {
+        "ck_production_loss_label_events_result_key",
+        "ck_production_loss_label_events_record_date",
+        "ck_production_loss_label_events_shift",
+        "ck_production_loss_label_events_machine_code",
+        "ck_production_loss_label_events_job_order",
+        "ck_production_loss_label_events_quantity",
+    } <= production_loss_label_event_check_constraints
+    assert {
+        "ux_production_loss_label_events_result_key",
+        "ix_production_loss_label_events_lookup",
+        "ix_production_loss_label_events_archive_time",
+    } <= production_loss_label_event_indexes
     assert {
         "ck_machine_breakdowns_produced_product",
         "ck_machine_breakdowns_stop_reason",
@@ -637,6 +701,125 @@ def test_init_db_migrates_existing_tables_for_offline_idempotency(tmp_path):
             assert {"client_request_id", "client_recorded_at"} <= columns
 
 
+def test_init_db_migrates_production_loss_shift_snapshot_columns(tmp_path):
+    sqlite_path = tmp_path / "process_entries.sqlite3"
+    connection = sqlite3.connect(sqlite_path)
+    try:
+        connection.execute(
+            "CREATE TABLE production_loss_reports ("
+            "id INTEGER PRIMARY KEY, "
+            "date_from VARCHAR(10) NOT NULL, "
+            "date_to VARCHAR(10) NOT NULL, "
+            "generated_at DATETIME NOT NULL, "
+            "row_count INTEGER NOT NULL, "
+            "warning_count INTEGER NOT NULL, "
+            "source_summary_json TEXT NOT NULL, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE production_loss_report_rows ("
+            "id INTEGER PRIMARY KEY, "
+            "report_id INTEGER NOT NULL, "
+            "record_date VARCHAR(10) NOT NULL, "
+            "machine_code VARCHAR(16) NOT NULL, "
+            "job_order TEXT NOT NULL, "
+            "shift_2400_0800_quantity INTEGER NOT NULL, "
+            "shift_0800_1600_quantity INTEGER NOT NULL, "
+            "shift_1600_2400_quantity INTEGER NOT NULL, "
+            "daily_total_quantity INTEGER NOT NULL, "
+            "local_breakdown_minutes INTEGER NOT NULL, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO production_loss_reports ("
+            "id, date_from, date_to, generated_at, row_count, warning_count, "
+            "source_summary_json, created_at, updated_at"
+            ") VALUES ("
+            "1, '2026-06-17', '2026-06-17', CURRENT_TIMESTAMP, 1, 0, '{}', "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO production_loss_report_rows ("
+            "id, report_id, record_date, machine_code, job_order, "
+            "shift_2400_0800_quantity, shift_0800_1600_quantity, "
+            "shift_1600_2400_quantity, daily_total_quantity, "
+            "local_breakdown_minutes, created_at, updated_at"
+            ") VALUES ("
+            "1, 1, '2026-06-17', '101', 'WO-1', 10, 20, 30, 60, 0, "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    settings = Settings(
+        excel_path="dummy.xlsx",
+        app_pin="1234",
+        sqlite_path=str(sqlite_path),
+    )
+
+    init_db(settings)
+    init_db(settings)
+
+    connection = sqlite3.connect(sqlite_path)
+    try:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(production_loss_report_rows)"
+            )
+        }
+        row = connection.execute(
+            "SELECT "
+            "shift_2400_0800_quantity, shift_2400_0800_actual_quantity, "
+            "shift_2400_0800_machine_minutes, "
+            "shift_2400_0800_optimum_quantity, shift_2400_0800_loss_quantity, "
+            "shift_0800_1600_quantity, shift_0800_1600_actual_quantity, "
+            "shift_0800_1600_machine_minutes, "
+            "shift_0800_1600_optimum_quantity, shift_0800_1600_loss_quantity, "
+            "shift_1600_2400_quantity, shift_1600_2400_actual_quantity, "
+            "shift_1600_2400_machine_minutes, "
+            "shift_1600_2400_optimum_quantity, shift_1600_2400_loss_quantity "
+            "FROM production_loss_report_rows WHERE id = 1"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    assert {
+        "shift_2400_0800_actual_quantity",
+        "shift_2400_0800_machine_minutes",
+        "shift_2400_0800_optimum_quantity",
+        "shift_2400_0800_loss_quantity",
+        "shift_0800_1600_actual_quantity",
+        "shift_0800_1600_machine_minutes",
+        "shift_0800_1600_optimum_quantity",
+        "shift_0800_1600_loss_quantity",
+        "shift_1600_2400_actual_quantity",
+        "shift_1600_2400_machine_minutes",
+        "shift_1600_2400_optimum_quantity",
+        "shift_1600_2400_loss_quantity",
+    } <= columns
+    assert row == (
+        10,
+        10,
+        None,
+        None,
+        None,
+        20,
+        20,
+        None,
+        None,
+        None,
+        30,
+        30,
+        None,
+        None,
+        None,
+    )
+
+
 def test_init_db_canonicalizes_legacy_entry_columns_once(tmp_path):
     sqlite_path = tmp_path / "process_entries.sqlite3"
     connection = sqlite3.connect(sqlite_path)
@@ -730,6 +913,46 @@ def test_init_db_backfills_entry_process_metadata(tmp_path):
         connection.close()
 
     assert row == ("2026-06-17", "101", "Barış Çetik", 1)
+
+
+def test_production_loss_label_event_persists(tmp_path):
+    settings = Settings(
+        excel_path="dummy.xlsx",
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+    )
+    init_db(settings)
+
+    with session_scope(settings) as session:
+        machine = session.query(Machine).filter_by(machine_code="101").one()
+        session.add(
+            ProductionLossLabelEvent(
+                result_key="label-row-1",
+                report_id="REPORT-1",
+                print_job_id="PRINT-1",
+                record_date="2026-06-17",
+                shift="08.00-16.00",
+                machine_code=machine.machine_code,
+                job_order="WO-1",
+                part_no="PET-35",
+                product_description="PET 28MM 35GR",
+                quantity=120,
+                package_id="PKG-1",
+                lot_batch_no="LOT-1",
+                raw_xml="<LabelId>label-row-1</LabelId>",
+            )
+        )
+
+    with create_session(settings) as session:
+        label_event = session.query(ProductionLossLabelEvent).one()
+        assert label_event.result_key == "label-row-1"
+        assert label_event.report_id == "REPORT-1"
+        assert label_event.machine_code == "101"
+        assert label_event.job_order == "WO-1"
+        assert label_event.shift == "08.00-16.00"
+        assert label_event.part_no == "PET-35"
+        assert label_event.quantity == 120
+        assert label_event.lot_batch_no == "LOT-1"
 
 
 def test_machine_breakdown_persists_with_machine_and_entry_links(tmp_path):

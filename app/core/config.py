@@ -28,6 +28,7 @@ DEFAULT_IFS_TOKEN_URL = (
 )
 DEFAULT_IFS_PART_PREFIX = "HM-02"
 DEFAULT_IFS_PART_PREFIXES = ("HM-02", "HM-03", "HM-04")
+DEFAULT_IFS_LABEL_REPORT_IDS = ("SIMSEK_PALET_ETIKETI_REP",)
 DEFAULT_PRODUCTION_PLANNING_DIR = "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP"
 DEFAULT_PRODUCTION_PLANNING_PATH = (
     "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP\\10.06.2026 "
@@ -63,6 +64,7 @@ class Settings:
     ifs_dispatch_filter_id: str = "PET"
     ifs_part_prefix: str = DEFAULT_IFS_PART_PREFIX
     ifs_part_prefixes: tuple[str, ...] = DEFAULT_IFS_PART_PREFIXES
+    ifs_label_report_ids: tuple[str, ...] = DEFAULT_IFS_LABEL_REPORT_IDS
     ifs_u1_location: str = "U1"
     production_planning_dir: str = ""
     production_planning_path: str = DEFAULT_PRODUCTION_PLANNING_PATH
@@ -210,6 +212,15 @@ def get_settings(*, validate: bool = True) -> Settings:
         or "PET",
         ifs_part_prefix=ifs_part_prefix,
         ifs_part_prefixes=ifs_part_prefixes,
+        ifs_label_report_ids=(
+            _csv_setting(
+                _string_setting(
+                    "IFS_LABEL_REPORT_IDS",
+                    ",".join(DEFAULT_IFS_LABEL_REPORT_IDS),
+                )
+            )
+            or DEFAULT_IFS_LABEL_REPORT_IDS
+        ),
         ifs_u1_location=_string_setting("IFS_U1_LOCATION", "U1") or "U1",
         production_planning_dir=_string_setting(
             "PRODUCTION_PLANNING_DIR",

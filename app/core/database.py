@@ -63,9 +63,28 @@ _ENTRY_SYNC_COLUMNS = {
     "submitted_at": "DATETIME",
     "synced_at": "DATETIME",
 }
+_PRODUCTION_LOSS_ROW_SHIFT_COLUMNS = {
+    "shift_2400_0800_actual_quantity": "INTEGER NOT NULL DEFAULT 0",
+    "shift_2400_0800_machine_minutes": "TEXT",
+    "shift_2400_0800_optimum_quantity": "TEXT",
+    "shift_2400_0800_loss_quantity": "TEXT",
+    "shift_0800_1600_actual_quantity": "INTEGER NOT NULL DEFAULT 0",
+    "shift_0800_1600_machine_minutes": "TEXT",
+    "shift_0800_1600_optimum_quantity": "TEXT",
+    "shift_0800_1600_loss_quantity": "TEXT",
+    "shift_1600_2400_actual_quantity": "INTEGER NOT NULL DEFAULT 0",
+    "shift_1600_2400_machine_minutes": "TEXT",
+    "shift_1600_2400_optimum_quantity": "TEXT",
+    "shift_1600_2400_loss_quantity": "TEXT",
+}
 _ENTRY_CANONICAL_FIELDS_MIGRATION = "entries_canonical_fields_v2"
 _MACHINE_BREAKDOWNS_AMOUNT_CONTROL_MIGRATION = (
     "machine_breakdowns_amount_control_shift_fk_v1"
+)
+_PRODUCTION_LOSS_SHIFT_QUANTITY_COLUMN_PAIRS = (
+    ("shift_2400_0800_actual_quantity", "shift_2400_0800_quantity"),
+    ("shift_0800_1600_actual_quantity", "shift_0800_1600_quantity"),
+    ("shift_1600_2400_actual_quantity", "shift_1600_2400_quantity"),
 )
 _PRODUCTION_ENGINEER_SEED_ROWS = tuple(
     {
@@ -372,6 +391,7 @@ def init_db(settings: Settings | None = None) -> None:
                 "ON machine_breakdowns (amount_control_shift_id)"
             )
         )
+        _migrate_production_loss_report_row_shift_snapshots(connection)
         _migrate_legacy_entry_fields_to_canonical(connection)
         _ensure_columns(connection, "entries", _ENTRY_NORMALIZED_COLUMNS)
         _ensure_columns(connection, "entries", _ENTRY_SYNC_COLUMNS)
@@ -517,6 +537,28 @@ def _migrate_machine_breakdowns_amount_control_shift(connection) -> None:
             )
         )
     _mark_migration_applied(connection, migration_name)
+
+
+def _migrate_production_loss_report_row_shift_snapshots(connection) -> None:
+    _ensure_columns(
+        connection,
+        "production_loss_report_rows",
+        _PRODUCTION_LOSS_ROW_SHIFT_COLUMNS,
+    )
+    columns = _table_columns(connection, "production_loss_report_rows")
+    for actual_column, compatibility_column in _PRODUCTION_LOSS_SHIFT_QUANTITY_COLUMN_PAIRS:
+        if actual_column not in columns or compatibility_column not in columns:
+            continue
+
+        connection.execute(
+            text(
+                f"UPDATE production_loss_report_rows "
+                f"SET {actual_column} = {compatibility_column} "
+                f"WHERE {actual_column} = 0 "
+                f"AND {compatibility_column} IS NOT NULL "
+                f"AND {compatibility_column} <> 0"
+            )
+        )
 
 
 def _seed_machines(connection) -> None:

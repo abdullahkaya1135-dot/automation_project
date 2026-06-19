@@ -468,6 +468,18 @@ class ProductionLossReportRow(Base):
             name="ck_production_loss_rows_shift_1600",
         ),
         CheckConstraint(
+            "shift_2400_0800_actual_quantity >= 0",
+            name="ck_production_loss_rows_shift_2400_actual",
+        ),
+        CheckConstraint(
+            "shift_0800_1600_actual_quantity >= 0",
+            name="ck_production_loss_rows_shift_0800_actual",
+        ),
+        CheckConstraint(
+            "shift_1600_2400_actual_quantity >= 0",
+            name="ck_production_loss_rows_shift_1600_actual",
+        ),
+        CheckConstraint(
             "daily_total_quantity >= 0",
             name="ck_production_loss_rows_daily_total",
         ),
@@ -521,6 +533,60 @@ class ProductionLossReportRow(Base):
         Integer,
         default=0,
         nullable=False,
+    )
+    shift_2400_0800_actual_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    shift_2400_0800_machine_minutes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_2400_0800_optimum_quantity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_2400_0800_loss_quantity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_0800_1600_actual_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    shift_0800_1600_machine_minutes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_0800_1600_optimum_quantity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_0800_1600_loss_quantity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_1600_2400_actual_quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    shift_1600_2400_machine_minutes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_1600_2400_optimum_quantity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    shift_1600_2400_loss_quantity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
     net_machine_minutes: Mapped[str | None] = mapped_column(Text, nullable=True)
     gross_elapsed_minutes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -592,6 +658,92 @@ class ProductionLossIfsActual(Base):
     scrap_quantity: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(64), default="ifs", nullable=False)
     raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+
+class ProductionLossLabelEvent(Base):
+    __tablename__ = "production_loss_label_events"
+    __table_args__ = (
+        CheckConstraint(
+            "trim(result_key) <> ''",
+            name="ck_production_loss_label_events_result_key",
+        ),
+        CheckConstraint(
+            "trim(record_date) <> ''",
+            name="ck_production_loss_label_events_record_date",
+        ),
+        CheckConstraint(
+            "shift IN ('24.00-08.00', '08.00-16.00', '16.00-24.00')",
+            name="ck_production_loss_label_events_shift",
+        ),
+        CheckConstraint(
+            "trim(machine_code) <> ''",
+            name="ck_production_loss_label_events_machine_code",
+        ),
+        CheckConstraint(
+            "trim(job_order) <> ''",
+            name="ck_production_loss_label_events_job_order",
+        ),
+        CheckConstraint(
+            "quantity >= 0",
+            name="ck_production_loss_label_events_quantity",
+        ),
+        Index(
+            "ux_production_loss_label_events_result_key",
+            "result_key",
+            unique=True,
+        ),
+        Index(
+            "ix_production_loss_label_events_lookup",
+            "record_date",
+            "machine_code",
+            "job_order",
+            "shift",
+        ),
+        Index(
+            "ix_production_loss_label_events_archive_time",
+            "archive_exec_time",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    result_key: Mapped[str] = mapped_column(Text, nullable=False)
+    report_id: Mapped[str] = mapped_column(Text, nullable=False)
+    print_job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archive_exec_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    label_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    record_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    shift: Mapped[str] = mapped_column(String(16), nullable=False)
+    machine_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    job_order: Mapped[str] = mapped_column(Text, nullable=False)
+    part_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    product_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    package_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lot_batch_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pallet_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sequence_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_xml: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=utc_now,

@@ -30,6 +30,7 @@ def create_report(
             date_from=payload.date_from,
             date_to=payload.date_to,
             refresh_ifs=payload.refresh_ifs,
+            refresh_labels=payload.refresh_labels,
         ).as_dict()
     except ProductionLossReportError as exc:
         raise HTTPException(

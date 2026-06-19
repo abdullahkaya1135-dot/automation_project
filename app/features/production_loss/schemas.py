@@ -7,6 +7,7 @@ class ProductionLossReportCreate(BaseModel):
     date_from: str = Field(..., min_length=10, max_length=10)
     date_to: str = Field(..., min_length=10, max_length=10)
     refresh_ifs: bool = True
+    refresh_labels: bool = True
 
 
 class ProductionLossReportSummaryResponse(BaseModel):

@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -30,7 +30,12 @@ from ...features.process_entries.normalization import (
     normalize_machine_code,
     normalize_process_date,
 )
-from ...integrations.ifs.client import fetch_shop_order_operation_actual_rows
+from ...integrations.ifs.client import (
+    fetch_inventory_part_descriptions,
+    fetch_label_archive_event_rows,
+    fetch_operation_history_rows,
+    fetch_shop_order_operation_actual_rows,
+)
 from ...services.text_normalization import (
     collapsed_whitespace_text as _clean_text,
 )
@@ -44,6 +49,7 @@ from .models import (
     Machine,
     MachineBreakdown,
     ProductionLossIfsActual,
+    ProductionLossLabelEvent,
     ProductionLossReport,
     ProductionLossReportRow,
 )
@@ -53,6 +59,26 @@ SHIFT_FIELD_BY_LABEL = {
     "08.00-16.00": "shift_0800_1600_quantity",
     "16.00-24.00": "shift_1600_2400_quantity",
 }
+SHIFT_ACTUAL_FIELD_BY_LABEL = {
+    "24.00-08.00": "shift_2400_0800_actual_quantity",
+    "08.00-16.00": "shift_0800_1600_actual_quantity",
+    "16.00-24.00": "shift_1600_2400_actual_quantity",
+}
+SHIFT_MACHINE_MINUTES_FIELD_BY_LABEL = {
+    "24.00-08.00": "shift_2400_0800_machine_minutes",
+    "08.00-16.00": "shift_0800_1600_machine_minutes",
+    "16.00-24.00": "shift_1600_2400_machine_minutes",
+}
+SHIFT_OPTIMUM_FIELD_BY_LABEL = {
+    "24.00-08.00": "shift_2400_0800_optimum_quantity",
+    "08.00-16.00": "shift_0800_1600_optimum_quantity",
+    "16.00-24.00": "shift_1600_2400_optimum_quantity",
+}
+SHIFT_LOSS_FIELD_BY_LABEL = {
+    "24.00-08.00": "shift_2400_0800_loss_quantity",
+    "08.00-16.00": "shift_0800_1600_loss_quantity",
+    "16.00-24.00": "shift_1600_2400_loss_quantity",
+}
 REPORT_HEADERS = (
     "Date",
     "Machine Name",
@@ -60,9 +86,18 @@ REPORT_HEADERS = (
     "Job Order",
     "Product",
     "Gr",
-    "24.00-08.00",
-    "08.00-16.00",
-    "16.00-24.00",
+    "24.00-08.00 Actual",
+    "24.00-08.00 Machine Minutes",
+    "24.00-08.00 Optimum",
+    "24.00-08.00 Loss",
+    "08.00-16.00 Actual",
+    "08.00-16.00 Machine Minutes",
+    "08.00-16.00 Optimum",
+    "08.00-16.00 Loss",
+    "16.00-24.00 Actual",
+    "16.00-24.00 Machine Minutes",
+    "16.00-24.00 Optimum",
+    "16.00-24.00 Loss",
     "Daily Total",
     "Active Cavities",
     "Cycle Time (s)",
@@ -122,6 +157,36 @@ COMPLETED_QTY_FIELDS = (
     "QtyReported",
 )
 SCRAP_QTY_FIELDS = ("ScrapQty", "QtyScrapped", "ScrappedQty")
+OPERATION_HISTORY_TIME_FIELDS = (
+    "TimeOfProduction",
+    "time_of_production",
+    "timeOfProduction",
+)
+OPERATION_HISTORY_MACHINE_FIELDS = (
+    "ResourceId",
+    "resource_id",
+    "PreferredResourceId",
+    "preferred_resource_id",
+)
+OPERATION_HISTORY_ORDER_FIELDS = (
+    "OrderNo",
+    "order_no",
+    "ShopOrderNo",
+    "shop_order_no",
+)
+OPERATION_HISTORY_PART_FIELDS = ("PartNo", "part_no")
+OPERATION_HISTORY_QUANTITY_FIELDS = ("QtyComplete", "qty_complete")
+OPERATION_HISTORY_TRANSACTION_FIELDS = (
+    "TransactionId",
+    "transaction_id",
+    "TransactionID",
+    "TransactionNo",
+    "transaction_no",
+    "HistorySeq",
+    "OperationHistoryId",
+    "ObjId",
+    "Objid",
+)
 GRAM_PATTERN = re.compile(r"(\d+(?:[,.]\d+)?)\s*GR\b", re.IGNORECASE)
 
 
@@ -129,21 +194,43 @@ class ProductionLossReportError(RuntimeError):
     """Raised when a production-loss report cannot be created."""
 
 
+async def fetch_shop_order_operation_history_rows(
+    settings: Settings,
+    *,
+    date_from_utc: datetime,
+    date_to_utc: datetime,
+) -> list[dict[str, Any]]:
+    return await fetch_operation_history_rows(
+        settings,
+        date_from_utc,
+        date_to_utc,
+    )
+
+
 @dataclass
 class ShiftAggregate:
     record_date: str
-    machine_id: int
+    machine_id: int | None
     machine_code: str
     job_order: str
     shift_quantities: dict[str, int] = field(
         default_factory=lambda: {shift: 0 for shift in shifts.SHIFT_OPTIONS}
     )
+    shift_breakdown_minutes: dict[str, int] = field(
+        default_factory=lambda: {shift: 0 for shift in shifts.SHIFT_OPTIONS}
+    )
     local_breakdown_minutes: int = 0
     product_hint: str | None = None
+    part_no_hint: str | None = None
+    machine_group_hint: str | None = None
+    label_event_count: int = 0
 
     @property
     def daily_total_quantity(self) -> int:
         return sum(self.shift_quantities.values())
+
+    def breakdown_minutes_for_shift(self, shift_label: str) -> int:
+        return self.shift_breakdown_minutes.get(shift_label, 0)
 
 
 @dataclass(frozen=True)
@@ -170,6 +257,42 @@ class IfsActual:
     completed_quantity: Decimal | None = None
     scrap_quantity: Decimal | None = None
     raw_rows: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class LabelProductionEvent:
+    result_key: str
+    report_id: str
+    record_date: str
+    shift: str
+    machine_code: str
+    job_order: str
+    quantity: int
+    label_time: datetime | None = None
+    archive_exec_time: datetime | None = None
+    print_job_id: str | None = None
+    part_no: str | None = None
+    product_description: str | None = None
+    package_id: str | None = None
+    lot_batch_no: str | None = None
+    pallet_no: str | None = None
+    sequence_no: str | None = None
+    raw_xml: str | None = None
+
+
+@dataclass(frozen=True)
+class OperationHistoryProductionEvent:
+    record_date: str
+    shift: str
+    machine_code: str
+    job_order: str
+    part_no: str | None
+    quantity: int
+    transaction_id: str
+    time_of_production: datetime
+    product_description: str | None = None
+    work_center_no: str | None = None
+    resource_description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -204,12 +327,18 @@ def create_production_loss_report(
     date_from: str,
     date_to: str,
     refresh_ifs: bool = True,
+    refresh_labels: bool = True,
 ) -> ProductionLossReportResult:
     start_date, end_date = _date_range(date_from, date_to)
-    aggregates = _read_shift_aggregates(settings, start_date, end_date)
+    aggregates, operation_history_summary = _load_operation_history_shift_aggregates(
+        settings,
+        start_date,
+        end_date,
+        refresh_operation_history=refresh_labels,
+    )
     if not aggregates:
         raise ProductionLossReportError(
-            "Secilen tarih araliginda miktar kontrol kaydi bulunamadi."
+            "Secilen tarih araliginda IFS operasyon gecmisi uretim kaydi bulunamadi."
         )
 
     order_numbers = sorted({aggregate.job_order for aggregate in aggregates})
@@ -221,6 +350,7 @@ def create_production_loss_report(
     )
     cycle_entries = _read_cycle_table(settings)
     row_models = _build_report_rows(
+        settings,
         aggregates,
         process_meta,
         ifs_actuals,
@@ -230,8 +360,10 @@ def create_production_loss_report(
     generated_at = datetime.now(UTC).replace(tzinfo=None)
     warning_count = sum(1 for row in row_models if _clean_text(row.warnings))
     source_summary = {
+        "quantity_source": "ifs-operation-history",
+        **operation_history_summary,
         **ifs_summary,
-        "amount_control_group_count": len(aggregates),
+        "operation_history_group_count": len(aggregates),
         "process_match_count": sum(
             1
             for aggregate in aggregates
@@ -358,6 +490,18 @@ def serialize_production_loss_row(row: ProductionLossReportRow) -> dict[str, Any
         "shift_2400_0800_quantity": row.shift_2400_0800_quantity,
         "shift_0800_1600_quantity": row.shift_0800_1600_quantity,
         "shift_1600_2400_quantity": row.shift_1600_2400_quantity,
+        "shift_2400_0800_actual_quantity": row.shift_2400_0800_actual_quantity,
+        "shift_2400_0800_machine_minutes": row.shift_2400_0800_machine_minutes,
+        "shift_2400_0800_optimum_quantity": row.shift_2400_0800_optimum_quantity,
+        "shift_2400_0800_loss_quantity": row.shift_2400_0800_loss_quantity,
+        "shift_0800_1600_actual_quantity": row.shift_0800_1600_actual_quantity,
+        "shift_0800_1600_machine_minutes": row.shift_0800_1600_machine_minutes,
+        "shift_0800_1600_optimum_quantity": row.shift_0800_1600_optimum_quantity,
+        "shift_0800_1600_loss_quantity": row.shift_0800_1600_loss_quantity,
+        "shift_1600_2400_actual_quantity": row.shift_1600_2400_actual_quantity,
+        "shift_1600_2400_machine_minutes": row.shift_1600_2400_machine_minutes,
+        "shift_1600_2400_optimum_quantity": row.shift_1600_2400_optimum_quantity,
+        "shift_1600_2400_loss_quantity": row.shift_1600_2400_loss_quantity,
         "daily_total_quantity": row.daily_total_quantity,
         "net_machine_minutes": row.net_machine_minutes,
         "gross_elapsed_minutes": row.gross_elapsed_minutes,
@@ -401,6 +545,7 @@ def normalize_ifs_actual_rows(rows: Sequence[Mapping[str, Any]]) -> list[IfsActu
 
 
 def _build_report_rows(
+    settings: Settings,
     aggregates: list[ShiftAggregate],
     process_meta: dict[tuple[str, str, str], ProcessMeta],
     ifs_actuals: dict[tuple[str, str | None], IfsActual],
@@ -421,16 +566,22 @@ def _build_report_rows(
         product_description = (
             actual.part_description
             if actual and actual.part_description
+            else aggregate.product_hint
+            if aggregate.product_hint
             else process.product
             if process and process.product
-            else aggregate.product_hint
+            else None
         )
         gram = _gram_from_product_description(product_description or "")
         neck, parsed_gram = parse_part_description(product_description or "")
         if gram is None and parsed_gram is not None:
             gram = parsed_gram
 
-        machine_name = actual.work_center_no if actual else None
+        machine_name = (
+            actual.work_center_no
+            if actual and actual.work_center_no
+            else aggregate.machine_group_hint
+        )
         cycle_time, cycle_warning = _cycle_time_for_row(
             cycle_entries,
             machine_group=machine_name,
@@ -445,27 +596,35 @@ def _build_report_rows(
         if active_cavities is None:
             warnings.append("Active cavity count not found")
 
-        net_minutes = actual.net_machine_minutes if actual else None
-        gross_minutes = (
-            _minutes_between(actual.actual_start_at, actual.actual_finish_at)
-            if actual
-            else None
-        )
         if actual is not None and actual.actual_start_at is None:
             warnings.append("IFS actual start not found")
         if actual is not None and actual.actual_finish_at is None:
             warnings.append("IFS actual finish not found")
-        if net_minutes is None:
-            warnings.append("IFS net machine time not found")
 
-        optimum_net = _optimum_quantity(net_minutes, cycle_time, active_cavities)
-        optimum_gross = _optimum_quantity(gross_minutes, cycle_time, active_cavities)
-        actual_quantity = Decimal(aggregate.daily_total_quantity)
-        loss_net = (
-            optimum_net - actual_quantity if optimum_net is not None else None
+        shift_calculations = _shift_calculations_for_row(
+            settings,
+            aggregate,
+            actual,
+            cycle_time,
+            active_cavities,
         )
-        loss_gross = (
-            optimum_gross - actual_quantity if optimum_gross is not None else None
+        total_shift_minutes = _sum_decimal_values(
+            item["machine_minutes"] for item in shift_calculations.values()
+        )
+        gross_minutes = _sum_decimal_values(
+            item["gross_minutes"] for item in shift_calculations.values()
+        )
+        optimum_net = _sum_decimal_values(
+            item["optimum"] for item in shift_calculations.values()
+        )
+        loss_net = _sum_decimal_values(
+            item["loss"] for item in shift_calculations.values()
+        )
+        optimum_gross = _sum_decimal_values(
+            item["gross_optimum"] for item in shift_calculations.values()
+        )
+        loss_gross = _sum_decimal_values(
+            item["gross_loss"] for item in shift_calculations.values()
         )
         break_loss = (
             loss_gross - loss_net
@@ -481,7 +640,7 @@ def _build_report_rows(
                 machine_code=aggregate.machine_code,
                 machine_name=machine_name,
                 job_order=aggregate.job_order,
-                product_no=actual.part_no if actual else None,
+                product_no=actual.part_no if actual and actual.part_no else aggregate.part_no_hint,
                 product_description=product_description,
                 gram=_decimal_text(gram),
                 active_cavities=_decimal_text(active_cavities),
@@ -489,8 +648,38 @@ def _build_report_rows(
                 shift_2400_0800_quantity=aggregate.shift_quantities["24.00-08.00"],
                 shift_0800_1600_quantity=aggregate.shift_quantities["08.00-16.00"],
                 shift_1600_2400_quantity=aggregate.shift_quantities["16.00-24.00"],
+                shift_2400_0800_actual_quantity=aggregate.shift_quantities["24.00-08.00"],
+                shift_2400_0800_machine_minutes=_decimal_text(
+                    shift_calculations["24.00-08.00"]["machine_minutes"]
+                ),
+                shift_2400_0800_optimum_quantity=_decimal_text(
+                    shift_calculations["24.00-08.00"]["optimum"]
+                ),
+                shift_2400_0800_loss_quantity=_decimal_text(
+                    shift_calculations["24.00-08.00"]["loss"]
+                ),
+                shift_0800_1600_actual_quantity=aggregate.shift_quantities["08.00-16.00"],
+                shift_0800_1600_machine_minutes=_decimal_text(
+                    shift_calculations["08.00-16.00"]["machine_minutes"]
+                ),
+                shift_0800_1600_optimum_quantity=_decimal_text(
+                    shift_calculations["08.00-16.00"]["optimum"]
+                ),
+                shift_0800_1600_loss_quantity=_decimal_text(
+                    shift_calculations["08.00-16.00"]["loss"]
+                ),
+                shift_1600_2400_actual_quantity=aggregate.shift_quantities["16.00-24.00"],
+                shift_1600_2400_machine_minutes=_decimal_text(
+                    shift_calculations["16.00-24.00"]["machine_minutes"]
+                ),
+                shift_1600_2400_optimum_quantity=_decimal_text(
+                    shift_calculations["16.00-24.00"]["optimum"]
+                ),
+                shift_1600_2400_loss_quantity=_decimal_text(
+                    shift_calculations["16.00-24.00"]["loss"]
+                ),
                 daily_total_quantity=aggregate.daily_total_quantity,
-                net_machine_minutes=_decimal_text(net_minutes),
+                net_machine_minutes=_decimal_text(total_shift_minutes),
                 gross_elapsed_minutes=_decimal_text(gross_minutes),
                 gross_start_at=actual.actual_start_at if actual else None,
                 gross_finish_at=actual.actual_finish_at if actual else None,
@@ -512,6 +701,638 @@ def _build_report_rows(
             row.job_order,
         ),
     )
+
+
+def _load_operation_history_shift_aggregates(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+    *,
+    refresh_operation_history: bool,
+) -> tuple[list[ShiftAggregate], dict[str, Any]]:
+    summary: dict[str, Any] = {
+        "operation_history_refreshed": False,
+        "operation_history_ifs_error": None,
+        "operation_history_row_count": 0,
+        "operation_history_event_count": 0,
+        "operation_history_quantity_total": 0,
+        "operation_history_parse_error_count": 0,
+        "operation_history_out_of_range_count": 0,
+        "operation_history_shift_group_count": 0,
+        "operation_history_product_description_count": 0,
+        "operation_history_product_description_error": None,
+    }
+    events: list[OperationHistoryProductionEvent] = []
+    if refresh_operation_history:
+        try:
+            date_from_utc, date_to_utc = _operation_history_window(
+                settings,
+                start_date,
+                end_date,
+            )
+            raw_rows = asyncio.run(
+                fetch_shop_order_operation_history_rows(
+                    settings,
+                    date_from_utc=date_from_utc,
+                    date_to_utc=date_to_utc,
+                )
+            )
+            product_descriptions: dict[str, str] = {}
+            part_numbers = sorted(
+                {
+                    part_no
+                    for row in raw_rows
+                    if (part_no := _first_text(row, OPERATION_HISTORY_PART_FIELDS))
+                }
+            )
+            if part_numbers:
+                try:
+                    product_descriptions = asyncio.run(
+                        fetch_inventory_part_descriptions(settings, part_numbers)
+                    )
+                    summary["operation_history_product_description_count"] = len(
+                        product_descriptions
+                    )
+                except Exception as exc:
+                    summary["operation_history_product_description_error"] = (
+                        str(exc) or exc.__class__.__name__
+                    )
+            events, parse_error_count, out_of_range_count = (
+                normalize_operation_history_rows(
+                    settings,
+                    raw_rows,
+                    start_date,
+                    end_date,
+                    product_descriptions=product_descriptions,
+                )
+            )
+            summary["operation_history_refreshed"] = True
+            summary["operation_history_row_count"] = len(raw_rows)
+            summary["operation_history_event_count"] = len(events)
+            summary["operation_history_quantity_total"] = sum(
+                event.quantity for event in events
+            )
+            summary["operation_history_parse_error_count"] = parse_error_count
+            summary["operation_history_out_of_range_count"] = out_of_range_count
+            summary["operation_history_shift_group_count"] = len(
+                _operation_history_shift_group_keys(events)
+            )
+        except Exception as exc:
+            summary["operation_history_ifs_error"] = str(exc) or exc.__class__.__name__
+
+    aggregates = _aggregates_from_operation_history_events(settings, events)
+    _apply_amount_control_breakdowns(settings, start_date, end_date, aggregates)
+    return (
+        sorted(
+            aggregates.values(),
+            key=lambda item: (
+                item.record_date,
+                _natural_machine_key(item.machine_code),
+                item.job_order,
+            ),
+        ),
+        summary,
+    )
+
+
+def _operation_history_window(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+) -> tuple[datetime, datetime]:
+    tzinfo = shifts.request_timezone(settings)
+    start_local = datetime.combine(start_date, time.min, tzinfo=tzinfo)
+    end_local = datetime.combine(
+        end_date + timedelta(days=1),
+        time.min,
+        tzinfo=tzinfo,
+    )
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
+
+
+def normalize_operation_history_rows(
+    settings: Settings,
+    rows: Sequence[Mapping[str, Any]],
+    start_date: Date,
+    end_date: Date,
+    *,
+    product_descriptions: Mapping[str, str] | None = None,
+) -> tuple[list[OperationHistoryProductionEvent], int, int]:
+    events: list[OperationHistoryProductionEvent] = []
+    seen_transactions: set[str] = set()
+    parse_error_count = 0
+    out_of_range_count = 0
+    for row in rows:
+        event = _operation_history_event_from_row(
+            settings,
+            row,
+            product_descriptions=product_descriptions or {},
+        )
+        if event is None:
+            parse_error_count += 1
+            continue
+        if event.transaction_id in seen_transactions:
+            continue
+        seen_transactions.add(event.transaction_id)
+        event_date = Date.fromisoformat(event.record_date)
+        if event_date < start_date or event_date > end_date:
+            out_of_range_count += 1
+            continue
+        events.append(event)
+    return events, parse_error_count, out_of_range_count
+
+
+def _operation_history_event_from_row(
+    settings: Settings,
+    row: Mapping[str, Any],
+    *,
+    product_descriptions: Mapping[str, str],
+) -> OperationHistoryProductionEvent | None:
+    time_of_production_utc = _first_datetime(row, OPERATION_HISTORY_TIME_FIELDS)
+    time_of_production = _stored_utc_to_local(settings, time_of_production_utc)
+    machine_code = normalize_machine_code(
+        _first_text(row, OPERATION_HISTORY_MACHINE_FIELDS)
+    )
+    job_order = _identifier(_first_value(row, OPERATION_HISTORY_ORDER_FIELDS))
+    part_no = _first_text(row, OPERATION_HISTORY_PART_FIELDS)
+    quantity = _int_decimal(_first_value(row, OPERATION_HISTORY_QUANTITY_FIELDS))
+    work_center_no = _first_text(row, ("WorkCenterNo", "work_center_no"))
+    resource_description = _first_text(
+        row,
+        ("ResourceDescription", "resource_description"),
+    )
+    if (
+        time_of_production is None
+        or machine_code is None
+        or not job_order
+        or not part_no
+        or quantity is None
+        or quantity <= 0
+    ):
+        return None
+
+    transaction_id = _identifier(
+        _first_value(row, OPERATION_HISTORY_TRANSACTION_FIELDS)
+    )
+    if not transaction_id:
+        transaction_id = "|".join(
+            (
+                job_order,
+                machine_code,
+                time_of_production.isoformat(timespec="seconds"),
+                str(quantity),
+                part_no or "",
+            )
+        )
+
+    return OperationHistoryProductionEvent(
+        record_date=time_of_production.date().isoformat(),
+        shift=shifts.shift_for_request_time(time_of_production),
+        machine_code=machine_code,
+        job_order=job_order,
+        part_no=part_no,
+        quantity=quantity,
+        transaction_id=transaction_id,
+        time_of_production=time_of_production,
+        product_description=_optional_text(product_descriptions.get(part_no)),
+        work_center_no=work_center_no,
+        resource_description=resource_description,
+    )
+
+
+def _operation_history_shift_group_keys(
+    events: Sequence[OperationHistoryProductionEvent],
+) -> set[tuple[str, str, str, str]]:
+    return {
+        (event.record_date, event.shift, event.machine_code, event.job_order)
+        for event in events
+    }
+
+
+def _aggregates_from_operation_history_events(
+    settings: Settings,
+    events: Sequence[OperationHistoryProductionEvent],
+) -> dict[tuple[str, str, str], ShiftAggregate]:
+    with create_session(settings) as session:
+        machines = session.scalars(select(Machine)).all()
+        machine_ids = {
+            normalize_machine_code(machine.machine_code): machine.id
+            for machine in machines
+        }
+
+    shift_quantities: dict[tuple[str, str, str, str], int] = defaultdict(int)
+    part_hints: dict[tuple[str, str, str], str] = {}
+    product_hints: dict[tuple[str, str, str], str] = {}
+    machine_group_hints: dict[tuple[str, str, str], str] = {}
+    event_counts: dict[tuple[str, str, str], int] = defaultdict(int)
+    for event in events:
+        aggregate_key = (event.record_date, event.machine_code, event.job_order)
+        shift_key = (
+            event.record_date,
+            event.shift,
+            event.machine_code,
+            event.job_order,
+        )
+        shift_quantities[shift_key] += event.quantity
+        event_counts[aggregate_key] += 1
+        if event.part_no and aggregate_key not in part_hints:
+            part_hints[aggregate_key] = event.part_no
+        if event.product_description and aggregate_key not in product_hints:
+            product_hints[aggregate_key] = event.product_description
+        machine_group_hint = event.work_center_no or event.resource_description
+        if machine_group_hint and aggregate_key not in machine_group_hints:
+            machine_group_hints[aggregate_key] = machine_group_hint
+
+    aggregates: dict[tuple[str, str, str], ShiftAggregate] = {}
+    for (record_date, shift, machine_code, job_order), quantity in shift_quantities.items():
+        aggregate_key = (record_date, machine_code, job_order)
+        aggregate = aggregates.setdefault(
+            aggregate_key,
+            ShiftAggregate(
+                record_date=record_date,
+                machine_id=machine_ids.get(machine_code),
+                machine_code=machine_code,
+                job_order=job_order,
+                product_hint=product_hints.get(aggregate_key),
+                part_no_hint=part_hints.get(aggregate_key),
+                machine_group_hint=machine_group_hints.get(aggregate_key),
+            ),
+        )
+        if shift in aggregate.shift_quantities:
+            aggregate.shift_quantities[shift] += quantity
+        aggregate.label_event_count = event_counts[aggregate_key]
+
+    return aggregates
+
+
+def _load_label_shift_aggregates(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+    *,
+    refresh_labels: bool,
+) -> tuple[list[ShiftAggregate], dict[str, Any]]:
+    summary: dict[str, Any] = {
+        "labels_refreshed": False,
+        "label_ifs_error": None,
+        "label_archive_count": 0,
+        "label_cached_count": 0,
+        "label_event_count": 0,
+        "label_quantity_total": 0,
+        "label_parse_error_count": 0,
+        "label_out_of_range_count": 0,
+    }
+    if refresh_labels:
+        try:
+            date_from_utc, date_to_utc = _label_archive_window(
+                settings,
+                start_date,
+                end_date,
+            )
+            raw_rows = asyncio.run(
+                fetch_label_archive_event_rows(
+                    settings,
+                    date_from_utc=date_from_utc,
+                    date_to_utc=date_to_utc,
+                    report_ids=settings.ifs_label_report_ids,
+                )
+            )
+            events, parse_error_count, out_of_range_count = _normalize_label_rows(
+                settings,
+                raw_rows,
+                start_date,
+                end_date,
+            )
+            _cache_label_events(settings, events)
+            summary["labels_refreshed"] = True
+            summary["label_archive_count"] = len(raw_rows)
+            summary["label_event_count"] = len(events)
+            summary["label_quantity_total"] = sum(event.quantity for event in events)
+            summary["label_parse_error_count"] = parse_error_count
+            summary["label_out_of_range_count"] = out_of_range_count
+        except Exception as exc:
+            summary["label_ifs_error"] = str(exc) or exc.__class__.__name__
+
+    cached_events = _read_cached_label_events(settings, start_date, end_date)
+    summary["label_cached_count"] = len(cached_events)
+    if not summary["label_event_count"]:
+        summary["label_event_count"] = len(cached_events)
+        summary["label_quantity_total"] = sum(event.quantity for event in cached_events)
+    aggregates = _aggregates_from_label_events(settings, cached_events)
+    _apply_amount_control_breakdowns(settings, start_date, end_date, aggregates)
+    return (
+        sorted(
+            aggregates.values(),
+            key=lambda item: (
+                item.record_date,
+                _natural_machine_key(item.machine_code),
+                item.job_order,
+            ),
+        ),
+        summary,
+    )
+
+
+def _label_archive_window(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+) -> tuple[datetime, datetime]:
+    tzinfo = shifts.request_timezone(settings)
+    start_local = datetime.combine(start_date, time.min, tzinfo=tzinfo)
+    end_local = datetime.combine(
+        end_date + timedelta(days=1),
+        time.min,
+        tzinfo=tzinfo,
+    )
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
+
+
+def _normalize_label_rows(
+    settings: Settings,
+    rows: Sequence[Mapping[str, Any]],
+    start_date: Date,
+    end_date: Date,
+) -> tuple[list[LabelProductionEvent], int, int]:
+    events: list[LabelProductionEvent] = []
+    parse_error_count = 0
+    out_of_range_count = 0
+    for row in rows:
+        event = _label_event_from_row(settings, row)
+        if event is None:
+            parse_error_count += 1
+            continue
+        event_date = _iso_date(event.record_date, "record_date")
+        if event_date < start_date or event_date > end_date:
+            out_of_range_count += 1
+            continue
+        events.append(event)
+    return events, parse_error_count, out_of_range_count
+
+
+def _label_event_from_row(
+    settings: Settings,
+    row: Mapping[str, Any],
+) -> LabelProductionEvent | None:
+    result_key = _identifier(row.get("ResultKey"))
+    report_id = _identifier(row.get("ReportId"))
+    label_time = _parse_label_time(settings, row.get("label_time"))
+    quantity = _int_decimal(row.get("quantity"))
+    machine_code = normalize_machine_code(row.get("machine_code"))
+    job_order = _identifier(row.get("job_order"))
+    if (
+        not result_key
+        or not report_id
+        or label_time is None
+        or quantity is None
+        or machine_code is None
+        or not job_order
+    ):
+        return None
+    return LabelProductionEvent(
+        result_key=result_key,
+        report_id=report_id,
+        print_job_id=_optional_text(row.get("PrintJobId")),
+        archive_exec_time=_datetime_value(row.get("ExecTime")),
+        label_time=label_time,
+        record_date=label_time.date().isoformat(),
+        shift=shifts.shift_for_request_time(label_time),
+        machine_code=machine_code,
+        job_order=job_order,
+        part_no=_optional_text(row.get("part_no")),
+        product_description=_optional_text(row.get("product_description")),
+        quantity=quantity,
+        package_id=_optional_text(row.get("package_id")),
+        lot_batch_no=_optional_text(row.get("lot_batch_no")),
+        pallet_no=_optional_text(row.get("pallet_no")),
+        sequence_no=_optional_text(row.get("sequence_no")),
+        raw_xml=_optional_text(row.get("raw_xml")),
+    )
+
+
+def _parse_label_time(settings: Settings, value: Any) -> datetime | None:
+    text = _clean_text(value)
+    if not text:
+        return None
+    for date_format in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+        try:
+            return datetime.strptime(text, date_format)
+        except ValueError:
+            continue
+    return _local_datetime_value(settings, text)
+
+
+def _local_datetime_value(settings: Settings, value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif value is None:
+        return None
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(shifts.request_timezone(settings)).replace(tzinfo=None)
+
+
+def _int_decimal(value: Any) -> int | None:
+    number = _decimal(value)
+    if number is None:
+        return None
+    return int(number)
+
+
+def _cache_label_events(
+    settings: Settings,
+    events: Sequence[LabelProductionEvent],
+) -> None:
+    if not events:
+        return
+    now = datetime.now(UTC).replace(tzinfo=None)
+    session = create_session(settings)
+    try:
+        for event in events:
+            existing = session.scalars(
+                select(ProductionLossLabelEvent).where(
+                    ProductionLossLabelEvent.result_key == event.result_key
+                )
+            ).first()
+            if existing is None:
+                existing = ProductionLossLabelEvent(result_key=event.result_key)
+                session.add(existing)
+            existing.report_id = event.report_id
+            existing.print_job_id = event.print_job_id
+            existing.archive_exec_time = event.archive_exec_time
+            existing.label_time = event.label_time
+            existing.record_date = event.record_date
+            existing.shift = event.shift
+            existing.machine_code = event.machine_code
+            existing.job_order = event.job_order
+            existing.part_no = event.part_no
+            existing.product_description = event.product_description
+            existing.quantity = event.quantity
+            existing.package_id = event.package_id
+            existing.lot_batch_no = event.lot_batch_no
+            existing.pallet_no = event.pallet_no
+            existing.sequence_no = event.sequence_no
+            existing.raw_xml = event.raw_xml
+            existing.source_updated_at = now
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _read_cached_label_events(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+) -> list[LabelProductionEvent]:
+    with create_session(settings) as session:
+        rows = session.scalars(
+            select(ProductionLossLabelEvent)
+            .where(ProductionLossLabelEvent.record_date >= start_date.isoformat())
+            .where(ProductionLossLabelEvent.record_date <= end_date.isoformat())
+            .order_by(
+                ProductionLossLabelEvent.record_date.asc(),
+                ProductionLossLabelEvent.machine_code.asc(),
+                ProductionLossLabelEvent.job_order.asc(),
+                ProductionLossLabelEvent.label_time.asc(),
+                ProductionLossLabelEvent.result_key.asc(),
+            )
+        ).all()
+        return [
+            LabelProductionEvent(
+                result_key=row.result_key,
+                report_id=row.report_id,
+                print_job_id=row.print_job_id,
+                archive_exec_time=row.archive_exec_time,
+                label_time=row.label_time,
+                record_date=row.record_date,
+                shift=row.shift,
+                machine_code=row.machine_code,
+                job_order=row.job_order,
+                part_no=row.part_no,
+                product_description=row.product_description,
+                quantity=row.quantity,
+                package_id=row.package_id,
+                lot_batch_no=row.lot_batch_no,
+                pallet_no=row.pallet_no,
+                sequence_no=row.sequence_no,
+                raw_xml=row.raw_xml,
+            )
+            for row in rows
+        ]
+
+
+def _aggregates_from_label_events(
+    settings: Settings,
+    events: Sequence[LabelProductionEvent],
+) -> dict[tuple[str, str, str], ShiftAggregate]:
+    with create_session(settings) as session:
+        machines = session.scalars(select(Machine)).all()
+        machine_ids = {
+            normalize_machine_code(machine.machine_code): machine.id
+            for machine in machines
+        }
+
+    aggregates: dict[tuple[str, str, str], ShiftAggregate] = {}
+    for event in events:
+        key = (event.record_date, event.machine_code, event.job_order)
+        aggregate = aggregates.setdefault(
+            key,
+            ShiftAggregate(
+                record_date=event.record_date,
+                machine_id=machine_ids.get(event.machine_code),
+                machine_code=event.machine_code,
+                job_order=event.job_order,
+                product_hint=event.product_description,
+                part_no_hint=event.part_no,
+            ),
+        )
+        if event.shift in aggregate.shift_quantities:
+            aggregate.shift_quantities[event.shift] += event.quantity
+        if aggregate.product_hint is None:
+            aggregate.product_hint = event.product_description
+        if aggregate.part_no_hint is None:
+            aggregate.part_no_hint = event.part_no
+        aggregate.label_event_count += 1
+
+    return aggregates
+
+
+def _apply_amount_control_breakdowns(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+    aggregates: dict[tuple[str, str, str], ShiftAggregate],
+) -> None:
+    if not aggregates:
+        return
+    tzinfo = shifts.request_timezone(settings)
+    with create_session(settings) as session:
+        rows = session.scalars(
+            select(AmountControlShift)
+            .options(
+                selectinload(AmountControlShift.machine),
+                selectinload(AmountControlShift.machine_breakdowns),
+            )
+            .join(AmountControlShift.machine)
+            .where(AmountControlShift.record_date >= start_date.isoformat())
+            .where(AmountControlShift.record_date <= end_date.isoformat())
+        ).all()
+
+    for amount_shift in rows:
+        machine_code = normalize_machine_code(amount_shift.machine.machine_code)
+        job_order = _identifier(amount_shift.job_order)
+        if machine_code is None or not job_order:
+            continue
+        aggregate = aggregates.get((amount_shift.record_date, machine_code, job_order))
+        if aggregate is None:
+            continue
+        for breakdown in amount_shift.machine_breakdowns:
+            for shift_label, minutes in _breakdown_minutes_by_shift(
+                amount_shift.record_date,
+                amount_shift.shift,
+                breakdown,
+                tzinfo,
+            ).items():
+                if shift_label in aggregate.shift_breakdown_minutes:
+                    aggregate.shift_breakdown_minutes[shift_label] += minutes
+                    aggregate.local_breakdown_minutes += minutes
+
+
+def _breakdown_minutes_by_shift(
+    record_date: str,
+    fallback_shift: str,
+    breakdown: MachineBreakdown,
+    tzinfo: Any,
+) -> dict[str, int]:
+    duration = int(breakdown.duration_minutes or 0)
+    if duration <= 0:
+        return {}
+
+    stopped = _stored_utc_to_local_timezone(breakdown.stopped_at, tzinfo)
+    resumed = _stored_utc_to_local_timezone(breakdown.resumed_at, tzinfo)
+    if stopped is None or resumed is None or resumed <= stopped:
+        return {fallback_shift: duration} if fallback_shift in shifts.SHIFT_OPTIONS else {}
+
+    minutes_by_shift: dict[str, int] = {}
+    for shift_label in shifts.SHIFT_OPTIONS:
+        start, finish = _shift_window_for_date(record_date, shift_label)
+        overlap = _overlap_minutes(stopped, resumed, start, finish)
+        minutes = int(overlap) if overlap is not None else 0
+        if minutes > 0:
+            minutes_by_shift[shift_label] = minutes
+    return minutes_by_shift or {fallback_shift: duration}
 
 
 def _read_shift_aggregates(
@@ -799,6 +1620,124 @@ def _optimum_quantity(
     return (minutes * Decimal(60) / cycle_seconds) * active_cavities
 
 
+def _sum_decimal_values(values: Iterable[Decimal | None]) -> Decimal | None:
+    total: Decimal | None = None
+    for value in values:
+        if value is None:
+            continue
+        total = value if total is None else total + value
+    return total
+
+
+def _shift_calculations_for_row(
+    settings: Settings,
+    aggregate: ShiftAggregate,
+    actual: IfsActual | None,
+    cycle_time: Decimal | None,
+    active_cavities: Decimal | None,
+) -> dict[str, dict[str, Decimal | None]]:
+    calculations: dict[str, dict[str, Decimal | None]] = {}
+    for shift_label in shifts.SHIFT_OPTIONS:
+        gross_minutes = _shift_gross_minutes(settings, aggregate, actual, shift_label)
+        breakdown = Decimal(aggregate.breakdown_minutes_for_shift(shift_label))
+        minutes = (
+            max(gross_minutes - min(breakdown, gross_minutes), Decimal("0"))
+            if gross_minutes is not None
+            else None
+        )
+        optimum = _optimum_quantity(minutes, cycle_time, active_cavities)
+        gross_optimum = _optimum_quantity(gross_minutes, cycle_time, active_cavities)
+        actual_quantity = Decimal(aggregate.shift_quantities.get(shift_label, 0))
+        loss = optimum - actual_quantity if optimum is not None else None
+        gross_loss = (
+            gross_optimum - actual_quantity if gross_optimum is not None else None
+        )
+        calculations[shift_label] = {
+            "gross_minutes": gross_minutes,
+            "machine_minutes": minutes,
+            "optimum": optimum,
+            "loss": loss,
+            "gross_optimum": gross_optimum,
+            "gross_loss": gross_loss,
+        }
+    return calculations
+
+
+def _shift_gross_minutes(
+    settings: Settings,
+    aggregate: ShiftAggregate,
+    actual: IfsActual | None,
+    shift_label: str,
+) -> Decimal | None:
+    if actual is None or actual.actual_start_at is None or actual.actual_finish_at is None:
+        return None
+    actual_start = _stored_utc_to_local(settings, actual.actual_start_at)
+    actual_finish = _stored_utc_to_local(settings, actual.actual_finish_at)
+    if actual_start is None or actual_finish is None or actual_finish < actual_start:
+        return None
+    start, finish = _shift_window(settings, aggregate.record_date, shift_label)
+    return _overlap_minutes(actual_start, actual_finish, start, finish)
+
+
+def _stored_utc_to_local(settings: Settings, value: datetime | None) -> datetime | None:
+    return _stored_utc_to_local_timezone(value, shifts.request_timezone(settings))
+
+
+def _stored_utc_to_local_timezone(
+    value: datetime | None,
+    tzinfo: Any,
+) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(tzinfo).replace(tzinfo=None)
+    return value.replace(tzinfo=UTC).astimezone(tzinfo).replace(tzinfo=None)
+
+
+def _overlap_minutes(
+    start: datetime,
+    finish: datetime,
+    window_start: datetime,
+    window_finish: datetime,
+) -> Decimal:
+    overlap_start = max(start, window_start)
+    overlap_finish = min(finish, window_finish)
+    if overlap_finish <= overlap_start:
+        return Decimal("0")
+    return Decimal(str((overlap_finish - overlap_start).total_seconds())) / Decimal(60)
+
+
+def _shift_window(
+    settings: Settings,
+    record_date: str,
+    shift_label: str,
+) -> tuple[datetime, datetime]:
+    return _shift_window_for_date(record_date, shift_label)
+
+
+def _shift_window_for_date(
+    record_date: str,
+    shift_label: str,
+) -> tuple[datetime, datetime]:
+    date_value = Date.fromisoformat(record_date)
+    if shift_label == "24.00-08.00":
+        start_time = time(0, 0)
+        end_time = time(8, 0)
+        end_date = date_value
+    elif shift_label == "08.00-16.00":
+        start_time = time(8, 0)
+        end_time = time(16, 0)
+        end_date = date_value
+    else:
+        start_time = time(16, 0)
+        end_time = time(0, 0)
+        end_date = date_value + timedelta(days=1)
+
+    start = datetime.combine(date_value, start_time)
+    finish = datetime.combine(end_date, end_time)
+    return start, finish
+
+
 def _write_workbook(output_path: Path, rows: Sequence[ProductionLossReportRow]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
@@ -816,8 +1755,17 @@ def _write_workbook(output_path: Path, rows: Sequence[ProductionLossReportRow]) 
                 row.product_description,
                 _excel_decimal(row.gram),
                 row.shift_2400_0800_quantity,
+                _excel_decimal(row.shift_2400_0800_machine_minutes),
+                _excel_decimal(row.shift_2400_0800_optimum_quantity),
+                _excel_decimal(row.shift_2400_0800_loss_quantity),
                 row.shift_0800_1600_quantity,
+                _excel_decimal(row.shift_0800_1600_machine_minutes),
+                _excel_decimal(row.shift_0800_1600_optimum_quantity),
+                _excel_decimal(row.shift_0800_1600_loss_quantity),
                 row.shift_1600_2400_quantity,
+                _excel_decimal(row.shift_1600_2400_machine_minutes),
+                _excel_decimal(row.shift_1600_2400_optimum_quantity),
+                _excel_decimal(row.shift_1600_2400_loss_quantity),
                 row.daily_total_quantity,
                 _excel_decimal(row.active_cavities),
                 _excel_decimal(row.cycle_time_seconds),

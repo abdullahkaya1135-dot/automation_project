@@ -1,9 +1,13 @@
 import asyncio
+import base64
+import binascii
 import logging
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime, time, timedelta
+from datetime import date as Date
 from typing import Any
 from urllib.parse import quote, urlencode
+from xml.etree import ElementTree
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -18,6 +22,43 @@ logger = logging.getLogger(__name__)
 
 PROJECTION_ROOT_PATH = "/main/ifsapplications/projection/v1"
 PLANNING_IFS_CONCURRENCY = 8
+LABEL_ARCHIVE_CONCURRENCY = 6
+SIMSEK_PALET_ETIKETI_REPORT_ID = "SIMSEK_PALET_ETIKETI_REP"
+DEFAULT_LABEL_REPORT_IDS = (SIMSEK_PALET_ETIKETI_REPORT_ID,)
+DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES = ("MM-PET",)
+ARCHIVE_SELECT_FIELDS = (
+    "ResultKey",
+    "ReportId",
+    "Notes",
+    "ExecTime",
+    "Sender",
+    "Owner",
+    "Printed",
+    "Title",
+    "ReportMode",
+)
+ARCHIVE_DOCUMENT_SELECT_FIELDS = (
+    "ResultKey",
+    "Id",
+    "ReportTitle",
+    "PrintJobId",
+    "FileName",
+    "FileNameExt",
+    "Notes",
+    "TimeZone",
+)
+SIMSEK_LABEL_XML_FIELDS = {
+    "IS_EMRI_NO": "job_order",
+    "PAKET_ID": "package_id",
+    "LOT_BATCH_NO": "lot_batch_no",
+    "ENVANTER_KODU": "part_no",
+    "ENVANTER_ADI": "product_description",
+    "PALET_NO": "pallet_no",
+    "SIRA_NO": "sequence_no",
+    "IC_ADEDI": "quantity",
+    "TARIH": "label_time",
+    "RESOURCE_ID": "machine_code",
+}
 STOCK_SELECT_FIELDS = (
     "Contract",
     "PartNo",
@@ -110,6 +151,32 @@ MATERIAL_FIELD_MAP = {
     "SoPartNo": "produced_part_no",
     "Cf_Tercihedilenkaynak": "machine",
 }
+OPERATION_HISTORY_SELECT_FIELDS = (
+    "TransactionId",
+    "OrderNo",
+    "ReleaseNo",
+    "SequenceNo",
+    "OperationNo",
+    "Contract",
+    "WorkCenterNo",
+    "ResourceId",
+    "ResourceDescription",
+    "PartNo",
+    "DateApplied",
+    "TransactionDate",
+    "Dated",
+    "TimeOfProduction",
+    "QtyComplete",
+    "QtyScrapped",
+    "TransactionCode",
+    "OperStatusCode",
+    "OrderType",
+)
+INVENTORY_PART_SELECT_FIELDS = (
+    "Contract",
+    "PartNo",
+    "Description",
+)
 
 
 class IFSConfigurationError(RuntimeError):
@@ -480,6 +547,631 @@ async def _get_all(
         next_params = None
 
     return rows
+
+
+async def _post_json_action(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    endpoint_category: str,
+    headers: Mapping[str, str],
+    json_body: Mapping[str, Any],
+    retries: int = 2,
+) -> dict[str, Any]:
+    request_headers = {**dict(headers), "Content-Type": "application/json"}
+    for attempt in range(retries + 1):
+        response = await client.post(url, headers=request_headers, json=json_body)
+        if response.status_code < 500 or attempt == retries:
+            break
+        await asyncio.sleep(0.25 * (attempt + 1))
+
+    _raise_for_ifs_status(response, endpoint_category=endpoint_category)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise IFSClientError(
+            f"IFS {endpoint_category} response was not valid JSON",
+            endpoint_category=endpoint_category,
+        ) from exc
+    if not isinstance(payload, dict):
+        raise IFSClientError(
+            f"IFS {endpoint_category} response JSON was not an object",
+            endpoint_category=endpoint_category,
+        )
+    return payload
+
+
+async def _get_bytes_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    endpoint_category: str,
+    headers: Mapping[str, str],
+    retries: int = 2,
+) -> bytes:
+    for attempt in range(retries + 1):
+        response = await client.get(url, headers=headers)
+        if response.status_code < 500 or attempt == retries:
+            break
+        await asyncio.sleep(0.25 * (attempt + 1))
+
+    _raise_for_ifs_status(response, endpoint_category=endpoint_category)
+    return response.content
+
+
+def _decode_odata_binary(value: Any, *, endpoint_category: str) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if not isinstance(value, str):
+        raise IFSClientError(
+            f"IFS {endpoint_category} FileData was not a string",
+            endpoint_category=endpoint_category,
+        )
+
+    text = value.strip()
+    if not text:
+        return b""
+    if text.lstrip().startswith("<"):
+        return text.encode("utf-8")
+
+    padding = "=" * (-len(text) % 4)
+    candidates = (
+        text + padding,
+        text.replace("-", "+").replace("_", "/") + padding,
+    )
+    for candidate in candidates:
+        try:
+            return base64.b64decode(candidate, validate=True)
+        except binascii.Error:
+            continue
+
+    return text.encode("utf-8")
+
+
+def _decode_xml_bytes(content: bytes) -> str:
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            return content.decode("utf-16")
+        except UnicodeDecodeError:
+            return content.decode("iso-8859-9")
+
+
+async def _get_file_data_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    endpoint_category: str,
+    headers: Mapping[str, str],
+    retries: int = 2,
+) -> bytes:
+    for attempt in range(retries + 1):
+        response = await client.get(url, headers=headers)
+        if response.status_code < 500 or attempt == retries:
+            break
+        await asyncio.sleep(0.25 * (attempt + 1))
+
+    _raise_for_ifs_status(response, endpoint_category=endpoint_category)
+
+    content_type = response.headers.get("content-type", "")
+    if "json" not in content_type.lower() and not response.content.lstrip().startswith(
+        b"{"
+    ):
+        return response.content
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise IFSClientError(
+            f"IFS {endpoint_category} response was not valid JSON",
+            endpoint_category=endpoint_category,
+        ) from exc
+    if not isinstance(payload, dict):
+        raise IFSClientError(
+            f"IFS {endpoint_category} response JSON was not an object",
+            endpoint_category=endpoint_category,
+        )
+    file_data = payload.get("value", payload.get("FileData"))
+    return _decode_odata_binary(file_data, endpoint_category=endpoint_category)
+
+
+def _odata_datetime_utc(value: datetime) -> str:
+    parsed = value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    parsed = parsed.astimezone(UTC)
+    return parsed.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _label_report_filter(report_ids: Sequence[str]) -> str:
+    cleaned = [
+        report_id
+        for value in report_ids
+        if (report_id := str(value or "").strip())
+    ]
+    if not cleaned:
+        cleaned = list(DEFAULT_LABEL_REPORT_IDS)
+    clauses = [f"ReportId eq {_odata_string(report_id)}" for report_id in cleaned]
+    return clauses[0] if len(clauses) == 1 else "(" + " or ".join(clauses) + ")"
+
+
+def _archive_time_filter(
+    date_from_utc: datetime,
+    date_to_utc: datetime,
+    report_ids: Sequence[str],
+) -> str:
+    return (
+        f"{_label_report_filter(report_ids)} "
+        f"and ExecTime ge {_odata_datetime_utc(date_from_utc)} "
+        f"and ExecTime lt {_odata_datetime_utc(date_to_utc)}"
+    )
+
+
+def _operation_history_product_prefix_filter(product_prefixes: Sequence[str]) -> str:
+    cleaned = tuple(
+        dict.fromkeys(
+            prefix
+            for value in product_prefixes
+            if (prefix := str(value or "").strip())
+        )
+    )
+    prefixes = cleaned or DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES
+    clauses = [f"startswith(PartNo,{_odata_string(prefix)})" for prefix in prefixes]
+    return clauses[0] if len(clauses) == 1 else "(" + " or ".join(clauses) + ")"
+
+
+def _operation_history_bound(value: Any, field_name: str) -> tuple[datetime, bool]:
+    if isinstance(value, datetime):
+        return value, False
+    if isinstance(value, Date):
+        return datetime.combine(value, time.min), True
+
+    text = str(value or "").strip()
+    if not text:
+        raise IFSClientError(f"{field_name} is required for operation history")
+    try:
+        if "T" in text or ":" in text:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")), False
+        return datetime.combine(Date.fromisoformat(text), time.min), True
+    except ValueError as exc:
+        raise IFSClientError(
+            f"{field_name} must be an ISO date or datetime for operation history"
+        ) from exc
+
+
+def _settings_timezone(settings: Settings) -> Any:
+    try:
+        return ZoneInfo(settings.timezone)
+    except ZoneInfoNotFoundError:
+        return UTC
+
+
+def _operation_history_time_window(
+    settings: Settings,
+    date_from: Any,
+    date_to: Any,
+    *,
+    padding_days: int,
+) -> tuple[datetime, datetime]:
+    tzinfo = _settings_timezone(settings)
+    start, _start_date_only = _operation_history_bound(date_from, "date_from")
+    end, end_date_only = _operation_history_bound(date_to, "date_to")
+    if end_date_only:
+        end = end + timedelta(days=1)
+
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=tzinfo)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=tzinfo)
+
+    padding = timedelta(days=max(padding_days, 0))
+    start_utc = start.astimezone(UTC) - padding
+    end_utc = end.astimezone(UTC) + padding
+    if end_utc <= start_utc:
+        raise IFSClientError("date_to must be after date_from for operation history")
+    return start_utc, end_utc
+
+
+def _operation_history_filter(
+    settings: Settings,
+    date_from: Any,
+    date_to: Any,
+    product_prefixes: Sequence[str],
+    *,
+    window_padding_days: int,
+) -> str:
+    start_utc, end_utc = _operation_history_time_window(
+        settings,
+        date_from,
+        date_to,
+        padding_days=window_padding_days,
+    )
+    return (
+        f"Contract eq {_odata_string(settings.ifs_contract)} "
+        f"and {_operation_history_product_prefix_filter(product_prefixes)} "
+        "and ResourceId ne null and ResourceId ne '' "
+        "and OrderNo ne null and OrderNo ne '' "
+        "and QtyComplete gt 0 "
+        f"and TimeOfProduction ge {_odata_datetime_utc(start_utc)} "
+        f"and TimeOfProduction lt {_odata_datetime_utc(end_utc)}"
+    )
+
+
+def _part_no_equals_filter(part_numbers: Sequence[str]) -> str:
+    cleaned = [
+        part_no
+        for value in part_numbers
+        if (part_no := str(value or "").strip())
+    ]
+    clauses = [f"PartNo eq {_odata_string(part_no)}" for part_no in cleaned]
+    if not clauses:
+        return ""
+    return clauses[0] if len(clauses) == 1 else "(" + " or ".join(clauses) + ")"
+
+
+def _batched(values: Sequence[str], size: int) -> list[list[str]]:
+    if size < 1:
+        raise IFSClientError("batch_size must be positive for inventory part lookup")
+    return [list(values[index:index + size]) for index in range(0, len(values), size)]
+
+
+def _odata_count_value(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return None
+    return count if count >= 0 else None
+
+
+async def _get_paged_by_top_skip(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    endpoint_category: str,
+    headers: Mapping[str, str],
+    params: Mapping[str, Any],
+    page_size: int,
+    dedupe_field: str,
+) -> list[dict[str, Any]]:
+    if page_size < 1:
+        raise IFSClientError("page_size must be positive for operation history")
+
+    rows: list[dict[str, Any]] = []
+    seen_values: set[str] = set()
+    fetched_count = 0
+    total_count: int | None = None
+    skip = 0
+
+    while True:
+        payload = await _get_json_with_retry(
+            client,
+            url,
+            endpoint_category=endpoint_category,
+            headers=headers,
+            params={
+                **dict(params),
+                "$top": str(page_size),
+                "$skip": str(skip),
+            },
+        )
+        value = payload.get("value", [])
+        if not isinstance(value, list):
+            raise IFSClientError(
+                f"IFS {endpoint_category} response did not include a value list",
+                endpoint_category=endpoint_category,
+            )
+
+        page_rows = [row for row in value if isinstance(row, dict)]
+        for row in page_rows:
+            dedupe_value = _identity_value(row.get(dedupe_field))
+            if dedupe_value:
+                if dedupe_value in seen_values:
+                    continue
+                seen_values.add(dedupe_value)
+            rows.append(dict(row))
+
+        fetched_count += len(value)
+        if total_count is None:
+            total_count = _odata_count_value(payload.get("@odata.count"))
+        if len(value) < page_size:
+            break
+        if total_count is not None and fetched_count >= total_count:
+            break
+        skip += page_size
+
+    return rows
+
+
+async def fetch_report_archive_label_rows(
+    settings: Settings,
+    *,
+    date_from_utc: datetime,
+    date_to_utc: datetime,
+    report_ids: Sequence[str] = DEFAULT_LABEL_REPORT_IDS,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch label report archive rows for a UTC half-open time window."""
+
+    _require_settings(settings, (("ifs_base_url", "IFS_BASE_URL"),))
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(settings, "ReportArchive.svc/ArchiveSet")
+        return await _get_all(
+            http_client,
+            url,
+            endpoint_category="report-archive-labels",
+            headers=headers,
+            params={
+                "$filter": _archive_time_filter(
+                    date_from_utc,
+                    date_to_utc,
+                    report_ids,
+                ),
+                "$select": ",".join(ARCHIVE_SELECT_FIELDS),
+                "$orderby": "ExecTime asc,ResultKey asc",
+                "$top": "1000",
+            },
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_simsek_palet_etiketi_archive_rows(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch ReportArchive rows for SIMSEK_PALET_ETIKETI_REP."""
+
+    _require_settings(settings, (("ifs_base_url", "IFS_BASE_URL"),))
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(settings, "ReportArchive.svc/ArchiveSet")
+        return await _get_all(
+            http_client,
+            url,
+            endpoint_category="simsek-palet-etiketi-archive-rows",
+            headers=headers,
+            params={
+                "$filter": (
+                    f"ReportId eq {_odata_string(SIMSEK_PALET_ETIKETI_REPORT_ID)}"
+                ),
+                "$select": ",".join(ARCHIVE_SELECT_FIELDS),
+                "$top": "1000",
+            },
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_archive_document_rows(
+    settings: Settings,
+    result_key: Any,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch archive document metadata for a result key."""
+
+    _require_settings(settings, (("ifs_base_url", "IFS_BASE_URL"),))
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(settings, "ReportArchive.svc/ArchiveDocumentSet")
+        return await _get_all(
+            http_client,
+            url,
+            endpoint_category="report-archive-documents",
+            headers=headers,
+            params={
+                "$filter": f"ResultKey eq {result_key}",
+                "$select": ",".join(ARCHIVE_DOCUMENT_SELECT_FIELDS),
+                "$top": "1000",
+            },
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_report_archive_xml(
+    settings: Settings,
+    result_key: Any,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+) -> str:
+    """Read report XML from ReportArchive GetXml + XmlVirtualset FileData."""
+
+    _require_settings(settings, (("ifs_base_url", "IFS_BASE_URL"),))
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        action_url = _projection_url(settings, "ReportArchive.svc/GetXml")
+        payload = await _post_json_action(
+            http_client,
+            action_url,
+            endpoint_category="report-archive-get-xml",
+            headers=headers,
+            json_body={"ResultKey": result_key},
+        )
+        objkey = str(payload.get("value") or "").strip()
+        if not objkey:
+            raise IFSClientError(
+                "IFS report-archive-get-xml response did not include value",
+                endpoint_category="report-archive-get-xml",
+            )
+        file_url = _projection_url(
+            settings,
+            f"ReportArchive.svc/XmlVirtualset(Objkey={_odata_key_string(objkey)})/FileData",
+        )
+        content = await _get_file_data_with_retry(
+            http_client,
+            file_url,
+            endpoint_category="report-archive-xml-file",
+            headers=headers,
+        )
+        return _decode_xml_bytes(content)
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+def _archive_result_key(row: Mapping[str, Any]) -> Any:
+    result_key = row.get("ResultKey")
+    if result_key is None or str(result_key).strip() == "":
+        raise IFSClientError("ReportArchive ArchiveSet row did not include ResultKey")
+    return result_key
+
+
+def _xml_local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    if ":" in tag:
+        return tag.rsplit(":", 1)[-1]
+    return tag
+
+
+def parse_simsek_pallet_label_xml(xml_text: bytes | str) -> dict[str, str | None]:
+    """Parse the confirmed SIMSEK_PALET_ETIKETI_REP XML payload."""
+
+    if isinstance(xml_text, bytes):
+        xml_text = _decode_xml_bytes(xml_text)
+
+    try:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError as exc:
+        raise IFSClientError(
+            "IFS label XML was not valid XML",
+            endpoint_category="label-archive-xml-parse",
+        ) from exc
+
+    values: dict[str, str | None] = {
+        output_name: None for output_name in SIMSEK_LABEL_XML_FIELDS.values()
+    }
+    for element in root.iter():
+        name = _xml_local_name(element.tag).upper()
+        if name not in SIMSEK_LABEL_XML_FIELDS:
+            continue
+        text = "".join(element.itertext()).strip()
+        values[SIMSEK_LABEL_XML_FIELDS[name]] = text or None
+
+    return values
+
+
+def parse_simsek_palet_etiketi_rep_xml(
+    xml_text: bytes | str,
+) -> dict[str, str | None]:
+    return parse_simsek_pallet_label_xml(xml_text)
+
+
+async def fetch_simsek_palet_etiketi_archive_labels(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    concurrency: int = LABEL_ARCHIVE_CONCURRENCY,
+) -> list[dict[str, str | None]]:
+    """Fetch SIMSEK_PALET_ETIKETI_REP archives and parse their XML label fields."""
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        archive_rows = await fetch_simsek_palet_etiketi_archive_rows(
+            settings,
+            client=http_client,
+            access_token=token,
+        )
+
+        async def parse_row(row: Mapping[str, Any]) -> dict[str, str | None]:
+            xml_text = await fetch_report_archive_xml(
+                settings,
+                _archive_result_key(row),
+                client=http_client,
+                access_token=token,
+            )
+            return parse_simsek_palet_etiketi_rep_xml(xml_text)
+
+        return await _gather_limited(
+            archive_rows,
+            parse_row,
+            concurrency=concurrency,
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_label_archive_event_rows(
+    settings: Settings,
+    *,
+    date_from_utc: datetime,
+    date_to_utc: datetime,
+    report_ids: Sequence[str] = DEFAULT_LABEL_REPORT_IDS,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    concurrency: int = LABEL_ARCHIVE_CONCURRENCY,
+) -> list[dict[str, Any]]:
+    """Fetch archive rows and attach parsed label XML fields."""
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        archive_rows = await fetch_report_archive_label_rows(
+            settings,
+            date_from_utc=date_from_utc,
+            date_to_utc=date_to_utc,
+            report_ids=report_ids,
+            client=http_client,
+            access_token=token,
+        )
+
+        async def enrich(row: Mapping[str, Any]) -> dict[str, Any]:
+            result_key = row.get("ResultKey")
+            event = dict(row)
+            xml_text = await fetch_report_archive_xml(
+                settings,
+                result_key,
+                client=http_client,
+                access_token=token,
+            )
+            event["raw_xml"] = xml_text
+            event.update(parse_simsek_pallet_label_xml(xml_text))
+            return event
+
+        return await _gather_limited(
+            archive_rows,
+            enrich,
+            concurrency=concurrency,
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
 
 
 async def fetch_u1_hm02_stock(
@@ -853,6 +1545,133 @@ async def fetch_shop_order_operation_actual_rows(
         return _deduplicated_operations(
             [operation for group in operation_groups for operation in group]
         )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_operation_history_rows(
+    settings: Settings,
+    date_from: Any,
+    date_to: Any,
+    product_prefixes: Sequence[str] = DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    page_size: int = 1000,
+    window_padding_days: int = 1,
+) -> list[dict[str, Any]]:
+    """Fetch production operation history rows for caller-side local filtering."""
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(
+            settings,
+            "ShopFloorWorkbenchHandling.svc/Reference_OperationHistory",
+        )
+        params = {
+            "$filter": _operation_history_filter(
+                settings,
+                date_from,
+                date_to,
+                product_prefixes,
+                window_padding_days=window_padding_days,
+            ),
+            "$select": ",".join(OPERATION_HISTORY_SELECT_FIELDS),
+            "$orderby": "TimeOfProduction asc,TransactionId asc",
+            "$count": "true",
+        }
+        return await _get_paged_by_top_skip(
+            http_client,
+            url,
+            endpoint_category="production-loss-operation-history",
+            headers=headers,
+            params=params,
+            page_size=page_size,
+            dedupe_field="TransactionId",
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_inventory_part_descriptions(
+    settings: Settings,
+    part_numbers: Sequence[str],
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    page_size: int = 1000,
+    batch_size: int = 50,
+) -> dict[str, str]:
+    """Fetch InventoryPart descriptions keyed by PartNo."""
+
+    cleaned_part_numbers = list(
+        dict.fromkeys(
+            part_no
+            for value in part_numbers
+            if (part_no := str(value or "").strip())
+        )
+    )
+    if not cleaned_part_numbers:
+        return {}
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(
+            settings,
+            "InventoryPartInStockHandling.svc/Reference_InventoryPart",
+        )
+        descriptions: dict[str, str] = {}
+        for batch in _batched(cleaned_part_numbers, batch_size):
+            part_filter = _part_no_equals_filter(batch)
+            if not part_filter:
+                continue
+            rows = await _get_paged_by_top_skip(
+                http_client,
+                url,
+                endpoint_category="inventory-part-descriptions",
+                headers=headers,
+                params={
+                    "$filter": (
+                        f"Contract eq {_odata_string(settings.ifs_contract)} "
+                        f"and {part_filter}"
+                    ),
+                    "$select": ",".join(INVENTORY_PART_SELECT_FIELDS),
+                    "$orderby": "PartNo asc",
+                    "$count": "true",
+                },
+                page_size=page_size,
+                dedupe_field="PartNo",
+            )
+            for row in rows:
+                part_no = str(row.get("PartNo") or "").strip()
+                description = str(row.get("Description") or "").strip()
+                if part_no and description:
+                    descriptions[part_no] = description
+        return descriptions
     finally:
         if close_client:
             await http_client.aclose()

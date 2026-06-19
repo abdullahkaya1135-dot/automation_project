@@ -11,6 +11,8 @@ import app.integrations.ifs.client as ifs_client
 from app.core.config import Settings
 from app.integrations.ifs.client import (
     IFSClientError,
+    fetch_inventory_part_descriptions,
+    fetch_operation_history_rows,
     fetch_operation_hm02_materials,
     fetch_pet_ongoing_operations,
     fetch_planning_used_hm02_materials,
@@ -524,6 +526,167 @@ def test_fetch_operation_hm02_materials_requires_operation_key_fields():
 
     with pytest.raises(IFSClientError, match="SequenceNo"):
         asyncio.run(run())
+
+
+def test_fetch_operation_history_rows_filters_and_pages_by_skip_count():
+    requests: list[httpx.Request] = []
+    settings = Settings(
+        ifs_base_url="https://ifs.example.com",
+        timezone="Europe/Istanbul",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer test-token"
+        if request.url.params["$skip"] == "0":
+            return httpx.Response(
+                200,
+                json={
+                    "@odata.count": 3,
+                    "value": [
+                        {
+                            "TransactionId": "T1",
+                            "OrderNo": "WO-1",
+                            "ResourceId": "174",
+                            "PartNo": "MM-PET001",
+                            "QtyComplete": 10,
+                            "TimeOfProduction": "2026-06-08T08:15:00Z",
+                        },
+                        {
+                            "TransactionId": "T2",
+                            "OrderNo": "WO-2",
+                            "ResourceId": "175",
+                            "PartNo": "MM-PET002",
+                            "QtyComplete": 20,
+                            "TimeOfProduction": "2026-06-08T09:15:00Z",
+                        },
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "@odata.count": 3,
+                "value": [
+                    {
+                        "TransactionId": "T2",
+                        "OrderNo": "WO-2",
+                        "ResourceId": "175",
+                        "PartNo": "MM-PET002",
+                        "QtyComplete": 20,
+                        "TimeOfProduction": "2026-06-08T09:15:00Z",
+                    },
+                    {
+                        "TransactionId": "T3",
+                        "OrderNo": "WO-3",
+                        "ResourceId": "176",
+                        "PartNo": "MM-PET003",
+                        "QtyComplete": 30,
+                        "TimeOfProduction": "2026-06-08T10:15:00Z",
+                    },
+                ],
+            },
+        )
+
+    async def run() -> list[dict]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_operation_history_rows(
+                settings,
+                "2026-06-08",
+                "2026-06-08",
+                ("MM-PET", "MM-PREFORM"),
+                client=client,
+                access_token="test-token",
+                page_size=2,
+            )
+
+    rows = asyncio.run(run())
+
+    assert [row["TransactionId"] for row in rows] == ["T1", "T2", "T3"]
+    assert len(requests) == 2
+    assert requests[0].url.path.endswith(
+        "/ShopFloorWorkbenchHandling.svc/Reference_OperationHistory"
+    )
+    assert requests[0].url.params["$filter"] == (
+        "Contract eq 'S01' "
+        "and (startswith(PartNo,'MM-PET') or startswith(PartNo,'MM-PREFORM')) "
+        "and ResourceId ne null and ResourceId ne '' "
+        "and OrderNo ne null and OrderNo ne '' "
+        "and QtyComplete gt 0 "
+        "and TimeOfProduction ge 2026-06-06T21:00:00Z "
+        "and TimeOfProduction lt 2026-06-09T21:00:00Z"
+    )
+    assert requests[0].url.params["$select"] == (
+        "TransactionId,OrderNo,ReleaseNo,SequenceNo,OperationNo,Contract,"
+        "WorkCenterNo,ResourceId,ResourceDescription,PartNo,DateApplied,"
+        "TransactionDate,Dated,TimeOfProduction,QtyComplete,QtyScrapped,"
+        "TransactionCode,OperStatusCode,OrderType"
+    )
+    assert requests[0].url.params["$orderby"] == (
+        "TimeOfProduction asc,TransactionId asc"
+    )
+    assert requests[0].url.params["$count"] == "true"
+    assert requests[0].url.params["$top"] == "2"
+    assert requests[0].url.params["$skip"] == "0"
+    assert requests[1].url.params["$top"] == "2"
+    assert requests[1].url.params["$skip"] == "2"
+
+
+def test_fetch_inventory_part_descriptions_queries_reference_inventory_part():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer test-token"
+        return httpx.Response(
+            200,
+            json={
+                "@odata.count": 2,
+                "value": [
+                    {
+                        "Contract": "S01",
+                        "PartNo": "MM-PET001",
+                        "Description": "PET 28MM 35GR",
+                    },
+                    {
+                        "Contract": "S01",
+                        "PartNo": "MM-PET002",
+                        "Description": "PET 30MM 40GR",
+                    },
+                ],
+            },
+        )
+
+    async def run() -> dict[str, str]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_inventory_part_descriptions(
+                settings,
+                ["MM-PET001", "MM-PET002", "MM-PET001"],
+                client=client,
+                access_token="test-token",
+                page_size=1000,
+            )
+
+    descriptions = asyncio.run(run())
+
+    assert descriptions == {
+        "MM-PET001": "PET 28MM 35GR",
+        "MM-PET002": "PET 30MM 40GR",
+    }
+    assert len(requests) == 1
+    assert requests[0].url.path.endswith(
+        "/InventoryPartInStockHandling.svc/Reference_InventoryPart"
+    )
+    assert requests[0].url.params["$filter"] == (
+        "Contract eq 'S01' and "
+        "(PartNo eq 'MM-PET001' or PartNo eq 'MM-PET002')"
+    )
+    assert requests[0].url.params["$select"] == "Contract,PartNo,Description"
+    assert requests[0].url.params["$orderby"] == "PartNo asc"
+    assert requests[0].url.params["$count"] == "true"
+    assert requests[0].url.params["$top"] == "1000"
+    assert requests[0].url.params["$skip"] == "0"
 
 
 def test_used_hm02_part_numbers_deduplicates_and_ignores_blank_values():

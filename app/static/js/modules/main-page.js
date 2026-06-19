@@ -811,10 +811,18 @@ async function handleCreateProductionLossReport(event) {
     date_from: cleanRequired(formData.get("date_from")),
     date_to: cleanRequired(formData.get("date_to")),
     refresh_ifs: formData.get("refresh_ifs") === "on",
+    refresh_labels: true,
   };
 
-  setMessage(message, "Production Loss raporu olusturuluyor...", "");
-  renderLoading(container, "Miktar, cevrim ve IFS zamanlari hesaplaniyor...");
+  setMessage(
+    message,
+    "Production Loss raporu etiket/arsiv miktarlariyla olusturuluyor...",
+    "",
+  );
+  renderLoading(
+    container,
+    "Etiket/arsiv miktarlari, miktar kontrolu, cevrim ve IFS zamanlari hesaplaniyor...",
+  );
   setButtonBusy(button, true, "Olusturuluyor");
 
   try {
@@ -828,7 +836,7 @@ async function handleCreateProductionLossReport(event) {
       : "";
     setMessage(
       message,
-      `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} satir.${warningText}`,
+      `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} satir. Etiket/arsiv miktarlari dahil.${warningText}`,
       payload.warning_count ? "warning" : "success",
     );
   } catch (error) {
