@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from openpyxl.worksheet.worksheet import Worksheet
+
 INVALID_BACKUP_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]+')
 
 
@@ -41,6 +43,29 @@ def normalize_header(value: Any) -> str:
     normalized = text.translate(translation)
     normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
     return re.sub(r"\s+", " ", normalized).strip()
+
+
+def merged_cell_values(worksheet: Worksheet) -> dict[tuple[int, int], Any]:
+    merged_values: dict[tuple[int, int], Any] = {}
+    for merged_range in worksheet.merged_cells.ranges:
+        min_column, min_row, max_column, max_row = merged_range.bounds
+        value = worksheet.cell(min_row, min_column).value
+        for row_index in range(min_row, max_row + 1):
+            for column_index in range(min_column, max_column + 1):
+                merged_values[(row_index, column_index)] = value
+    return merged_values
+
+
+def merged_value(
+    worksheet: Worksheet,
+    merged_values: dict[tuple[int, int], Any],
+    row_index: int,
+    column_index: int,
+) -> Any:
+    value = worksheet.cell(row_index, column_index).value
+    if value is not None:
+        return value
+    return merged_values.get((row_index, column_index))
 
 
 def backup_filename(source_path: Path, fallback_stem: str) -> str:

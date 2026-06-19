@@ -3,7 +3,7 @@
 > Historical note: This audit captures the repository state on 2026-06-11.
 > Several findings mention pre-migration module paths and file sizes that are no
 > longer current after the first-batch feature/module split. Keep this report as
-> historical context; use [../README.md](../README.md) for current layout and
+> historical context; use [../../README.md](../../README.md) for current layout and
 > operation guidance.
 
 Date: 2026-06-11

@@ -13,14 +13,25 @@ app/
   features/      Business features with their API, domain, schema, and service code
   integrations/  External system clients such as IFS
   web/           Page routing; static assets and templates still live under app/static and app/templates
-  services/      Shared workbook/browser-facing helpers used by feature services
+  services/      Shared adapters/helpers used by multiple feature packages
   domain/        Shared request/date helpers used across features
   static/        Browser CSS, JavaScript modules, manifest, and service worker
   templates/     Page templates and shared partials
-docs/            Historical plans, implementation notes, and audit reports
+docs/            Current docs index and IFS integration guide
+  archive/       Historical plans, implementation notes, audits, and exports
 scripts/         Local operations and acceptance-check scripts
 tests/           Automated pytest coverage
 ```
+
+`app/services/` is reserved for stable cross-feature adapters and helpers such
+as workbook IO, the serialized Excel write lock, workbook utility functions, and
+IFS shop-order source shaping. Feature-specific orchestration, schemas, and
+business workflow code should stay under `app/features/`.
+
+## Documentation
+
+Use [docs/README.md](docs/README.md) for the current documentation index and
+historical archive links.
 
 ## Setup
 

@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Integer, cast, func, select
@@ -11,6 +10,7 @@ from ...services.excel_service import (
     append_entries_to_workbook,
     append_entry_to_workbook,
 )
+from ..serialization import timestamp as _timestamp
 from .fields import ENTRY_FIELD_NAMES
 from .models import (
     SYNC_STATUS_FAILED_EXCEL,
@@ -23,12 +23,6 @@ from .models import (
 from .normalization import normalize_process_date
 
 UNSYNCED_STATUSES = (SYNC_STATUS_PENDING_EXCEL, SYNC_STATUS_FAILED_EXCEL)
-
-
-def _timestamp(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds") + "Z"
 
 
 def entry_payload(entry: Entry) -> dict[str, Any]:

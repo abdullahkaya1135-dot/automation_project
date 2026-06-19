@@ -1,16 +1,10 @@
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..serialization import timestamp as _timestamp
 from .models import AmountControlShift, Machine, MachineBreakdown
-
-
-def _timestamp(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds") + "Z"
 
 
 def machine_options(session: Session) -> list[dict[str, Any]]:

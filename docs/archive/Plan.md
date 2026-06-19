@@ -2,7 +2,7 @@ Mobile Process Data Entry MVP Plan
 
 > Historical note: This original MVP planning artifact predates the current
 > module layout and later IFS/auxiliary-system features. Use
-> [../README.md](../README.md) for current setup and operation details.
+> [../../README.md](../../README.md) for current setup and operation details.
 
 Summary
 Build a local FastAPI web app in the empty Process Project workspace. The app

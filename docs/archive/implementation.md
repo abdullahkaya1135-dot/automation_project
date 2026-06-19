@@ -2,7 +2,7 @@
 
 > Historical note: This original MVP plan predates the first-batch module
 > migration to `app/core`, `app/features`, `app/domain`, and `app/integrations`.
-> Use [README.md](../README.md) for current setup and module layout.
+> Use [README.md](../../README.md) for current setup and module layout.
 
 ## 1. Confirm Local Prerequisites
 

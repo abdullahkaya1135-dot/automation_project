@@ -31,6 +31,7 @@ from ...features.process_entries.normalization import (
     normalize_process_date,
 )
 from ...integrations.ifs.client import fetch_shop_order_operation_actual_rows
+from ..serialization import timestamp as _timestamp
 from .models import (
     AmountControlShift,
     Entry,
@@ -1095,12 +1096,6 @@ def _excel_decimal(value: str | None) -> float | int | None:
     return float(number)
 
 
-def _timestamp(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds") + "Z"
-
-
 def _json_object(value: str | None) -> dict[str, Any]:
     if not value:
         return {}
@@ -1128,4 +1123,3 @@ def _natural_machine_key(value: str) -> tuple[int, str]:
         return (0, f"{int(value):08d}")
     except (TypeError, ValueError):
         return (1, str(value))
-

@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -7,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ...core.config import Settings
 from ...core.database import commit_session, create_session
+from ..serialization import timestamp as _timestamp
 from .models import (
     SYNC_STATUS_FAILED_EXCEL,
     SYNC_STATUS_PENDING_EXCEL,
@@ -23,12 +23,6 @@ AUXILIARY_UNSYNCED_STATUSES = (
     SYNC_STATUS_PENDING_EXCEL,
     SYNC_STATUS_FAILED_EXCEL,
 )
-
-
-def _timestamp(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds") + "Z"
 
 
 def submission_payload(submission: AuxiliarySystemsSubmission) -> dict[str, Any]:

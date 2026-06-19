@@ -10,7 +10,6 @@ from typing import Any
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import Integer, cast, select
 
 from ...core.config import Settings
@@ -20,6 +19,7 @@ from ...services.shop_order_source import (
     ShopOrderOption,
     shop_order_options_from_ifs_operations,
 )
+from ...services.workbook_utils import merged_cell_values, merged_value
 from .models import Entry, MachineCycleTableRow
 
 REPORT_HEADERS = (
@@ -249,29 +249,6 @@ def _matching_shop_order(
     return None, "HTML makine eşleşmesi bulunamadı"
 
 
-def _merged_cell_values(worksheet: Worksheet) -> dict[tuple[int, int], Any]:
-    merged_values: dict[tuple[int, int], Any] = {}
-    for merged_range in worksheet.merged_cells.ranges:
-        min_column, min_row, max_column, max_row = merged_range.bounds
-        value = worksheet.cell(min_row, min_column).value
-        for row_index in range(min_row, max_row + 1):
-            for column_index in range(min_column, max_column + 1):
-                merged_values[(row_index, column_index)] = value
-    return merged_values
-
-
-def _merged_value(
-    worksheet: Worksheet,
-    merged_values: dict[tuple[int, int], Any],
-    row_index: int,
-    column_index: int,
-) -> Any:
-    value = worksheet.cell(row_index, column_index).value
-    if value is not None:
-        return value
-    return merged_values.get((row_index, column_index))
-
-
 def _read_cycle_table(settings: Settings) -> dict[tuple[str, Decimal, Decimal], list[CycleTableEntry]]:
     database_entries = _read_cycle_table_from_database(settings)
     if database_entries:
@@ -348,18 +325,18 @@ def _read_cycle_table_from_workbook(settings: Settings) -> dict[tuple[str, Decim
 
     try:
         worksheet = workbook.worksheets[0]
-        merged_values = _merged_cell_values(worksheet)
+        merged_values = merged_cell_values(worksheet)
         current_machine_no = ""
         current_group = ""
         current_neck: Decimal | None = None
         entries: dict[tuple[str, Decimal, Decimal], list[CycleTableEntry]] = defaultdict(list)
 
         for row_index in range(2, worksheet.max_row + 1):
-            machine_no_value = _merged_value(worksheet, merged_values, row_index, 1)
-            group_value = _merged_value(worksheet, merged_values, row_index, 2)
-            neck_value = _merged_value(worksheet, merged_values, row_index, 3)
-            gram_value = _merged_value(worksheet, merged_values, row_index, 4)
-            cycle_value = _merged_value(worksheet, merged_values, row_index, 7)
+            machine_no_value = merged_value(worksheet, merged_values, row_index, 1)
+            group_value = merged_value(worksheet, merged_values, row_index, 2)
+            neck_value = merged_value(worksheet, merged_values, row_index, 3)
+            gram_value = merged_value(worksheet, merged_values, row_index, 4)
+            cycle_value = merged_value(worksheet, merged_values, row_index, 7)
 
             machine_no = _identifier(machine_no_value)
             previous_machine_no = current_machine_no

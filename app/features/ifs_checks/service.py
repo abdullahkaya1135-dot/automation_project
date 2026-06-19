@@ -15,6 +15,7 @@ from ...features.process_entries.normalization import (
     normalize_process_date,
 )
 from ...models import Entry, Machine
+from ..serialization import timestamp as _timestamp
 
 RESPONSIBLE_HALL_NUMBERS = (3, 4)
 
@@ -334,9 +335,3 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = " ".join(str(value).strip().split())
     return text or None
-
-
-def _timestamp(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds") + "Z"
