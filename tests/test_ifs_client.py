@@ -608,28 +608,71 @@ def test_fetch_operation_history_rows_filters_and_pages_by_skip_count():
         "/ShopFloorWorkbenchHandling.svc/Reference_OperationHistory"
     )
     assert requests[0].url.params["$filter"] == (
-        "Contract eq 'S01' "
-        "and (startswith(PartNo,'MM-PET') or startswith(PartNo,'MM-PREFORM')) "
-        "and ResourceId ne null and ResourceId ne '' "
-        "and OrderNo ne null and OrderNo ne '' "
-        "and QtyComplete gt 0 "
-        "and TimeOfProduction ge 2026-06-06T21:00:00Z "
-        "and TimeOfProduction lt 2026-06-09T21:00:00Z"
+        "contains(Contract,'S01') "
+        "and startswith(cast(DateApplied,Edm.String),'2026-06') "
+        "and (startswith(PartNo,'MM-PET') or startswith(PartNo,'MM-PREFORM'))"
     )
+    assert "TimeOfProduction ge" not in requests[0].url.params["$filter"]
+    assert "QtyComplete gt" not in requests[0].url.params["$filter"]
+    assert "OrderNo ne" not in requests[0].url.params["$filter"]
+    assert "ResourceId ne" not in requests[0].url.params["$filter"]
     assert requests[0].url.params["$select"] == (
         "TransactionId,OrderNo,ReleaseNo,SequenceNo,OperationNo,Contract,"
         "WorkCenterNo,ResourceId,ResourceDescription,PartNo,DateApplied,"
         "TransactionDate,Dated,TimeOfProduction,QtyComplete,QtyScrapped,"
         "TransactionCode,OperStatusCode,OrderType"
     )
-    assert requests[0].url.params["$orderby"] == (
-        "TimeOfProduction asc,TransactionId asc"
-    )
+    assert requests[0].url.params["$orderby"] == "TransactionId asc"
     assert requests[0].url.params["$count"] == "true"
     assert requests[0].url.params["$top"] == "2"
     assert requests[0].url.params["$skip"] == "0"
     assert requests[1].url.params["$top"] == "2"
     assert requests[1].url.params["$skip"] == "2"
+
+
+def test_fetch_operation_history_rows_requests_each_date_applied_month_bucket():
+    requests: list[httpx.Request] = []
+    settings = Settings(
+        ifs_base_url="https://ifs.example.com",
+        timezone="Europe/Istanbul",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        filter_text = request.url.params["$filter"]
+        if "'2026-05'" in filter_text:
+            rows = [
+                {"TransactionId": "MAY-1", "PartNo": "MM-PET001"},
+                {"TransactionId": "DUP-1", "PartNo": "MM-PET001"},
+            ]
+        elif "'2026-06'" in filter_text:
+            rows = [
+                {"TransactionId": "DUP-1", "PartNo": "MM-PET001"},
+                {"TransactionId": "JUN-1", "PartNo": "MM-PET001"},
+            ]
+        else:
+            rows = []
+        return httpx.Response(200, json={"@odata.count": len(rows), "value": rows})
+
+    async def run() -> list[dict]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_operation_history_rows(
+                settings,
+                "2026-05-31",
+                "2026-06-01",
+                ("MM-PET",),
+                client=client,
+                access_token="test-token",
+                page_size=10,
+            )
+
+    rows = asyncio.run(run())
+
+    filters = [request.url.params["$filter"] for request in requests]
+    assert len(requests) == 2
+    assert any("startswith(cast(DateApplied,Edm.String),'2026-05')" in item for item in filters)
+    assert any("startswith(cast(DateApplied,Edm.String),'2026-06')" in item for item in filters)
+    assert [row["TransactionId"] for row in rows] == ["MAY-1", "DUP-1", "JUN-1"]
 
 
 def test_fetch_inventory_part_descriptions_queries_reference_inventory_part():

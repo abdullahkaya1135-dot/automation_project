@@ -316,3 +316,36 @@ def test_create_production_loss_report_requires_operation_history_rows(tmp_path)
             refresh_ifs=False,
             refresh_labels=False,
         )
+
+
+def test_create_production_loss_report_preserves_operation_history_fetch_error(
+    tmp_path,
+    monkeypatch,
+):
+    settings = _settings(tmp_path)
+    init_db(settings)
+
+    async def fake_fetch_operation_history(
+        _settings,
+        *,
+        date_from_utc,
+        date_to_utc,
+    ):
+        raise RuntimeError("IFS operation history unavailable")
+
+    monkeypatch.setattr(
+        "app.features.production_loss.service.fetch_shop_order_operation_history_rows",
+        fake_fetch_operation_history,
+    )
+
+    with pytest.raises(ProductionLossReportError) as exc_info:
+        create_production_loss_report(
+            settings,
+            date_from="2026-06-08",
+            date_to="2026-06-08",
+            refresh_ifs=False,
+        )
+
+    message = str(exc_info.value)
+    assert "IFS operasyon gecmisi alinamadi" in message
+    assert "IFS operation history unavailable" in message

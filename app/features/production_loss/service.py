@@ -338,7 +338,7 @@ def create_production_loss_report(
     )
     if not aggregates:
         raise ProductionLossReportError(
-            "Secilen tarih araliginda IFS operasyon gecmisi uretim kaydi bulunamadi."
+            _operation_history_empty_report_message(operation_history_summary)
         )
 
     order_numbers = sorted({aggregate.job_order for aggregate in aggregates})
@@ -793,6 +793,14 @@ def _load_operation_history_shift_aggregates(
         ),
         summary,
     )
+
+
+def _operation_history_empty_report_message(summary: Mapping[str, Any]) -> str:
+    message = "Secilen tarih araliginda IFS operasyon gecmisi uretim kaydi bulunamadi."
+    ifs_error = _optional_text(summary.get("operation_history_ifs_error"))
+    if ifs_error:
+        return f"{message} IFS operasyon gecmisi alinamadi: {ifs_error}"
+    return message
 
 
 def _operation_history_window(

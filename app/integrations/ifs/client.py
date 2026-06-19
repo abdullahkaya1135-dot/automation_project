@@ -777,27 +777,43 @@ def _operation_history_time_window(
 
 def _operation_history_filter(
     settings: Settings,
+    month_prefix: str,
+    product_prefixes: Sequence[str],
+) -> str:
+    return (
+        f"contains(Contract,{_odata_string(settings.ifs_contract)}) "
+        f"and startswith(cast(DateApplied,Edm.String),{_odata_string(month_prefix)}) "
+        f"and {_operation_history_product_prefix_filter(product_prefixes)}"
+    )
+
+
+def _operation_history_month_prefixes(
+    settings: Settings,
     date_from: Any,
     date_to: Any,
-    product_prefixes: Sequence[str],
     *,
-    window_padding_days: int,
-) -> str:
+    padding_days: int,
+) -> tuple[str, ...]:
     start_utc, end_utc = _operation_history_time_window(
         settings,
         date_from,
         date_to,
-        padding_days=window_padding_days,
+        padding_days=padding_days,
     )
-    return (
-        f"Contract eq {_odata_string(settings.ifs_contract)} "
-        f"and {_operation_history_product_prefix_filter(product_prefixes)} "
-        "and ResourceId ne null and ResourceId ne '' "
-        "and OrderNo ne null and OrderNo ne '' "
-        "and QtyComplete gt 0 "
-        f"and TimeOfProduction ge {_odata_datetime_utc(start_utc)} "
-        f"and TimeOfProduction lt {_odata_datetime_utc(end_utc)}"
-    )
+    tzinfo = _settings_timezone(settings)
+    end_inclusive = end_utc - timedelta(microseconds=1)
+    start_date = start_utc.astimezone(tzinfo).date()
+    end_date = end_inclusive.astimezone(tzinfo).date()
+    current = Date(start_date.year, start_date.month, 1)
+    last = Date(end_date.year, end_date.month, 1)
+    prefixes: list[str] = []
+    while current <= last:
+        prefixes.append(current.strftime("%Y-%m"))
+        if current.month == 12:
+            current = Date(current.year + 1, 1, 1)
+        else:
+            current = Date(current.year, current.month + 1, 1)
+    return tuple(prefixes)
 
 
 def _part_no_equals_filter(part_numbers: Sequence[str]) -> str:
@@ -837,12 +853,13 @@ async def _get_paged_by_top_skip(
     params: Mapping[str, Any],
     page_size: int,
     dedupe_field: str,
+    seen_values: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     if page_size < 1:
         raise IFSClientError("page_size must be positive for operation history")
 
     rows: list[dict[str, Any]] = []
-    seen_values: set[str] = set()
+    seen = seen_values if seen_values is not None else set()
     fetched_count = 0
     total_count: int | None = None
     skip = 0
@@ -870,9 +887,9 @@ async def _get_paged_by_top_skip(
         for row in page_rows:
             dedupe_value = _identity_value(row.get(dedupe_field))
             if dedupe_value:
-                if dedupe_value in seen_values:
+                if dedupe_value in seen:
                     continue
-                seen_values.add(dedupe_value)
+                seen.add(dedupe_value)
             rows.append(dict(row))
 
         fetched_count += len(value)
@@ -1558,10 +1575,15 @@ async def fetch_operation_history_rows(
     *,
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
-    page_size: int = 1000,
+    page_size: int = 5000,
     window_padding_days: int = 1,
 ) -> list[dict[str, Any]]:
-    """Fetch production operation history rows for caller-side local filtering."""
+    """Fetch production operation history rows for caller-side local filtering.
+
+    Reference_OperationHistory has been observed rejecting exact comparison
+    filters in this IFS environment, so this fetches DateApplied month buckets
+    and leaves exact TimeOfProduction filtering to the report service.
+    """
 
     _require_settings(
         settings,
@@ -1580,27 +1602,36 @@ async def fetch_operation_history_rows(
             settings,
             "ShopFloorWorkbenchHandling.svc/Reference_OperationHistory",
         )
-        params = {
-            "$filter": _operation_history_filter(
-                settings,
-                date_from,
-                date_to,
-                product_prefixes,
-                window_padding_days=window_padding_days,
-            ),
-            "$select": ",".join(OPERATION_HISTORY_SELECT_FIELDS),
-            "$orderby": "TimeOfProduction asc,TransactionId asc",
-            "$count": "true",
-        }
-        return await _get_paged_by_top_skip(
-            http_client,
-            url,
-            endpoint_category="production-loss-operation-history",
-            headers=headers,
-            params=params,
-            page_size=page_size,
-            dedupe_field="TransactionId",
-        )
+        rows: list[dict[str, Any]] = []
+        seen_transaction_ids: set[str] = set()
+        for month_prefix in _operation_history_month_prefixes(
+            settings,
+            date_from,
+            date_to,
+            padding_days=window_padding_days,
+        ):
+            rows.extend(
+                await _get_paged_by_top_skip(
+                    http_client,
+                    url,
+                    endpoint_category="production-loss-operation-history",
+                    headers=headers,
+                    params={
+                        "$filter": _operation_history_filter(
+                            settings,
+                            month_prefix,
+                            product_prefixes,
+                        ),
+                        "$select": ",".join(OPERATION_HISTORY_SELECT_FIELDS),
+                        "$orderby": "TransactionId asc",
+                        "$count": "true",
+                    },
+                    page_size=page_size,
+                    dedupe_field="TransactionId",
+                    seen_values=seen_transaction_ids,
+                )
+            )
+        return rows
     finally:
         if close_client:
             await http_client.aclose()
