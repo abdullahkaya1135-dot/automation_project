@@ -19,7 +19,6 @@ export const ENTRY_PAYLOAD_FIELDS = [
   "col_f",
   "col_g",
   "col_h",
-  "col_i",
   "col_j",
   "col_k",
   "col_l",

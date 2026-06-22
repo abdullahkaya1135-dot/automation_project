@@ -125,6 +125,7 @@ IFS_DISPATCH_FILTER_ID=PET
 IFS_PART_PREFIXES=HM-02,HM-03,HM-04
 IFS_PART_PREFIX=HM-02
 IFS_U1_LOCATION=U1
+IFS_PRODUCTION_LOSS_QUERY_START_DATE=2026-06-01
 ```
 
 Confirm the exact client ID spelling and case in `IAM Clients`. If the IFS
@@ -604,7 +605,6 @@ Implemented authenticated routes:
 ```text
 GET /api/ifs/u1-hm02-stock
 GET /api/ifs/pet-ongoing-operations
-GET /api/ifs/operation-hm02-materials
 GET /api/ifs/used-hm02-materials
 GET /api/ifs/u1-return-candidates
 GET /api/ifs/missing-production-starts

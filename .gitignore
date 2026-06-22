@@ -28,5 +28,7 @@ data/backups/*.xlsx
 data/ifs-experiments/
 /data/reports/
 /reports/
+outputs/**/node_modules/
+outputs/**/~$*.xlsx
 local-certs/
 phone-test/

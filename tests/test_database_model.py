@@ -70,24 +70,20 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
             column["name"] for column in inspector.get_columns("machine_groups")
         }
         machine_group_machine_columns = {
-            column["name"]
-            for column in inspector.get_columns("machine_group_machines")
+            column["name"] for column in inspector.get_columns("machine_group_machines")
         }
         production_engineer_columns = {
-            column["name"]
-            for column in inspector.get_columns("production_engineers")
+            column["name"] for column in inspector.get_columns("production_engineers")
         }
         cycle_table_columns = {
             column["name"]
             for column in inspector.get_columns("machine_cycle_table_rows")
         }
         breakdown_columns = {
-            column["name"]
-            for column in inspector.get_columns("machine_breakdowns")
+            column["name"] for column in inspector.get_columns("machine_breakdowns")
         }
         amount_control_columns = {
-            column["name"]
-            for column in inspector.get_columns("amount_control_shifts")
+            column["name"] for column in inspector.get_columns("amount_control_shifts")
         }
         production_loss_report_columns = {
             column["name"]
@@ -110,13 +106,10 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         )
         amount_control_check_constraints = {
             constraint["name"]
-            for constraint in inspector.get_check_constraints(
-                "amount_control_shifts"
-            )
+            for constraint in inspector.get_check_constraints("amount_control_shifts")
         }
         amount_control_indexes = {
-            index["name"]
-            for index in inspector.get_indexes("amount_control_shifts")
+            index["name"] for index in inspector.get_indexes("amount_control_shifts")
         }
         breakdown_foreign_keys = inspector.get_foreign_keys("machine_breakdowns")
         production_loss_row_foreign_keys = inspector.get_foreign_keys(
@@ -262,6 +255,7 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "machine_code",
         "machine_name",
         "job_order",
+        "lot_batch_no",
         "product_no",
         "product_description",
         "gram",
@@ -671,8 +665,7 @@ def test_init_db_migrates_existing_tables_for_offline_idempotency(tmp_path):
             "created_at DATETIME)"
         )
         connection.execute(
-            "CREATE TABLE amount_control_shifts ("
-            "id INTEGER PRIMARY KEY)"
+            "CREATE TABLE amount_control_shifts (id INTEGER PRIMARY KEY)"
         )
         connection.commit()
     finally:
@@ -694,10 +687,7 @@ def test_init_db_migrates_existing_tables_for_offline_idempotency(tmp_path):
             "auxiliary_systems_submissions",
             "amount_control_shifts",
         ):
-            columns = {
-                column["name"]
-                for column in inspector.get_columns(table_name)
-            }
+            columns = {column["name"] for column in inspector.get_columns(table_name)}
             assert {"client_request_id", "client_recorded_at"} <= columns
 
 
@@ -788,6 +778,7 @@ def test_init_db_migrates_production_loss_shift_snapshot_columns(tmp_path):
         connection.close()
 
     assert {
+        "lot_batch_no",
         "shift_2400_0800_actual_quantity",
         "shift_2400_0800_machine_minutes",
         "shift_2400_0800_optimum_quantity",
@@ -1064,10 +1055,30 @@ def test_amount_control_shift_enforces_business_rules(tmp_path):
         )
 
     invalid_rows = [
-        {"job_order": "", "shift": "08.00-16.00", "worker_names": "Operator One", "produced_quantity": 1},
-        {"job_order": "WO-2", "shift": "00.00-08.00", "worker_names": "Operator One", "produced_quantity": 1},
-        {"job_order": "WO-2", "shift": "08.00-16.00", "worker_names": " ", "produced_quantity": 1},
-        {"job_order": "WO-2", "shift": "08.00-16.00", "worker_names": "Operator One", "produced_quantity": -1},
+        {
+            "job_order": "",
+            "shift": "08.00-16.00",
+            "worker_names": "Operator One",
+            "produced_quantity": 1,
+        },
+        {
+            "job_order": "WO-2",
+            "shift": "00.00-08.00",
+            "worker_names": "Operator One",
+            "produced_quantity": 1,
+        },
+        {
+            "job_order": "WO-2",
+            "shift": "08.00-16.00",
+            "worker_names": " ",
+            "produced_quantity": 1,
+        },
+        {
+            "job_order": "WO-2",
+            "shift": "08.00-16.00",
+            "worker_names": "Operator One",
+            "produced_quantity": -1,
+        },
     ]
     for row in invalid_rows:
         with pytest.raises(DatabaseCommitError), session_scope(settings) as session:
@@ -1254,8 +1265,7 @@ def test_init_db_migrates_machine_breakdowns_amount_control_link(tmp_path):
     with create_session(settings) as session:
         inspector = inspect(session.get_bind())
         columns = {
-            column["name"]
-            for column in inspector.get_columns("machine_breakdowns")
+            column["name"] for column in inspector.get_columns("machine_breakdowns")
         }
         foreign_keys = inspector.get_foreign_keys("machine_breakdowns")
         breakdown = session.query(MachineBreakdown).one()

@@ -41,7 +41,7 @@ def _entry(
     )
 
 
-def test_missing_production_starts_lists_hall_3_4_working_machines_absent_from_ifs(
+def test_missing_production_starts_lists_ifs_combinations_absent_from_database(
     tmp_path,
 ):
     settings = _settings(tmp_path)
@@ -52,14 +52,14 @@ def test_missing_production_starts_lists_hall_3_4_working_machines_absent_from_i
                 _entry(
                     "302",
                     cycle_time="12,5",
-                    work_order="WO-OLD",
+                    work_order="WO-302",
                     product="Product Old",
                     submitted_at=datetime(2026, 6, 8, 9, 0),
                 ),
                 _entry(
                     "302",
                     cycle_time="13,4",
-                    work_order="WO-NEW",
+                    work_order="WO-302",
                     product="Product New",
                     submitted_at=datetime(2026, 6, 8, 10, 30),
                 ),
@@ -74,23 +74,33 @@ def test_missing_production_starts_lists_hall_3_4_working_machines_absent_from_i
     summary = missing_production_starts_from_operations(
         settings,
         "2026-06-08",
-        [{"PreferredResourceId": "M-303"}],
+        [
+            {"PreferredResourceId": "M-302", "OrderNo": "WO-302"},
+            {"PreferredResourceId": "M-303", "OrderNo": "WO-303"},
+            {
+                "PreferredResourceId": "M-302",
+                "OrderNo": "WO-MISSING",
+                "PartNoDesc": "Missing Product",
+            },
+        ],
     )
 
-    assert summary.working_machine_count == 2
-    assert summary.active_ifs_machine_count == 1
+    assert summary.working_machine_count == 3
+    assert summary.process_combination_count == 3
+    assert summary.active_ifs_machine_count == 2
+    assert summary.active_ifs_combination_count == 3
     assert summary.missing_count == 1
     assert [row.machine_code for row in summary.machines] == ["302"]
     row = summary.machines[0]
     assert row.hall_number == 3
-    assert row.latest_work_order == "WO-NEW"
-    assert row.latest_product == "Product New"
-    assert row.latest_cycle_time == "13,4"
-    assert row.latest_submitted_at == datetime(2026, 6, 8, 10, 30)
-    assert row.entry_count == 2
+    assert row.latest_work_order == "WO-MISSING"
+    assert row.latest_product == "Missing Product"
+    assert row.latest_cycle_time is None
+    assert row.latest_submitted_at is None
+    assert row.entry_count == 0
 
 
-def test_missing_production_starts_returns_empty_when_working_machine_exists_in_ifs(
+def test_missing_production_starts_returns_empty_when_ifs_combination_exists_in_database(
     tmp_path,
 ):
     settings = _settings(tmp_path)
@@ -102,13 +112,57 @@ def test_missing_production_starts_returns_empty_when_working_machine_exists_in_
     summary = missing_production_starts_from_operations(
         settings,
         "08.06.2026",
-        [{"PreferredResourceId": "401"}],
+        [{"PreferredResourceId": "401", "OrderNo": "WO-401"}],
     )
 
     assert summary.process_date == "2026-06-08"
     assert summary.working_machine_count == 1
+    assert summary.process_combination_count == 1
+    assert summary.active_ifs_machine_count == 1
+    assert summary.active_ifs_combination_count == 1
     assert summary.missing_count == 0
     assert summary.machines == []
+
+
+def test_missing_production_starts_compares_machine_and_work_order_combination(
+    tmp_path,
+):
+    settings = _settings(tmp_path)
+    init_db(settings)
+    with create_session(settings) as session:
+        session.add_all(
+            [
+                _entry(
+                    "302",
+                    cycle_time="12,5",
+                    work_order=" 2615.0 ",
+                    product="Active Product",
+                    submitted_at=datetime(2026, 6, 8, 8, 30),
+                ),
+            ]
+        )
+        session.commit()
+
+    summary = missing_production_starts_from_operations(
+        settings,
+        "2026-06-08",
+        [
+            {"PreferredResourceId": "M-302", "OrderNo": "2615"},
+            {"PreferredResourceId": "M-302", "OrderNo": "2616"},
+        ],
+    )
+
+    assert summary.working_machine_count == 1
+    assert summary.process_combination_count == 1
+    assert summary.active_ifs_machine_count == 1
+    assert summary.active_ifs_combination_count == 2
+    assert summary.missing_count == 1
+    assert [row.machine_code for row in summary.machines] == ["302"]
+    row = summary.machines[0]
+    assert row.latest_work_order == "2616"
+    assert row.latest_product is None
+    assert row.latest_cycle_time is None
+    assert row.entry_count == 0
 
 
 def test_whatsapp_status_message_uses_hall_order_and_ifs_active_machines(tmp_path):
@@ -121,6 +175,7 @@ def test_whatsapp_status_message_uses_hall_order_and_ifs_active_machines(tmp_pat
             {"PreferredResourceId": "302"},
             {"PreferredResourceId": "M-210"},
         ],
+        hall_numbers=(3, 4),
     )
 
     assert summary.hall_numbers == (3, 4)

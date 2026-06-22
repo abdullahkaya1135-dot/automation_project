@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,7 +21,8 @@ from ...services.text_normalization import (
 )
 from ..serialization import timestamp as _timestamp
 
-RESPONSIBLE_HALL_NUMBERS = (3, 4)
+RESPONSIBLE_HALL_NUMBERS = (1, 2, 3, 4)
+_NUMERIC_IDENTIFIER_PATTERN = re.compile(r"\d+[,.]0+")
 
 
 @dataclass(frozen=True)
@@ -31,7 +33,7 @@ class MissingProductionStartRow:
     display_order: int
     latest_work_order: str | None
     latest_product: str | None
-    latest_cycle_time: str
+    latest_cycle_time: str | None
     latest_submitted_at: datetime | None
     entry_count: int
 
@@ -56,6 +58,8 @@ class MissingProductionStartSummary:
     active_ifs_machine_count: int
     missing_count: int
     machines: list[MissingProductionStartRow]
+    active_ifs_combination_count: int
+    process_combination_count: int
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +67,8 @@ class MissingProductionStartSummary:
             "hall_numbers": list(self.hall_numbers),
             "working_machine_count": self.working_machine_count,
             "active_ifs_machine_count": self.active_ifs_machine_count,
+            "active_ifs_combination_count": self.active_ifs_combination_count,
+            "process_combination_count": self.process_combination_count,
             "missing_count": self.missing_count,
             "machines": [row.as_dict() for row in self.machines],
         }
@@ -127,23 +133,32 @@ def missing_production_starts_from_operations(
     hall_numbers: tuple[int, ...] = RESPONSIBLE_HALL_NUMBERS,
 ) -> MissingProductionStartSummary:
     normalized_date = normalize_process_date(process_date) or process_date
-    active_machine_codes = _active_machine_codes(operations)
-    working_machines = _working_machines_by_cycle_time(
+    active_machine_order_rows = _active_machine_order_rows(
+        settings,
+        operations,
+        hall_numbers=hall_numbers,
+    )
+    active_machine_codes = _machine_codes_from_rows(active_machine_order_rows)
+    process_combinations = _working_machines_by_cycle_time(
         settings,
         normalized_date,
         hall_numbers=hall_numbers,
     )
+    process_combination_keys = _machine_order_keys_from_rows(process_combinations)
     missing_machines = [
-        machine
-        for machine in working_machines
-        if normalize_machine_code(machine.machine_code) not in active_machine_codes
+        row
+        for row in active_machine_order_rows
+        if _machine_order_key(row.machine_code, row.latest_work_order)
+        not in process_combination_keys
     ]
 
     return MissingProductionStartSummary(
         process_date=normalized_date,
         hall_numbers=hall_numbers,
-        working_machine_count=len(working_machines),
+        working_machine_count=len(process_combinations),
         active_ifs_machine_count=len(active_machine_codes),
+        active_ifs_combination_count=len(active_machine_order_rows),
+        process_combination_count=len(process_combinations),
         missing_count=len(missing_machines),
         machines=missing_machines,
     )
@@ -179,6 +194,101 @@ def _active_machine_codes(operations: Sequence[Mapping[str, Any]]) -> set[str]:
             machine_code := normalize_machine_code(operation.get("PreferredResourceId"))
         )
     }
+
+
+def _active_machine_order_rows(
+    settings: Settings,
+    operations: Sequence[Mapping[str, Any]],
+    *,
+    hall_numbers: tuple[int, ...],
+) -> list[MissingProductionStartRow]:
+    with create_session(settings) as session:
+        machines = session.scalars(
+            select(Machine)
+            .where(Machine.hall_number.in_(hall_numbers))
+            .order_by(
+                Machine.hall_number.asc(),
+                Machine.display_order.asc(),
+                Machine.machine_code.asc(),
+            )
+        ).all()
+
+    machines_by_code = {
+        normalized_code: machine
+        for machine in machines
+        if (normalized_code := normalize_machine_code(machine.machine_code)) is not None
+    }
+    rows: list[MissingProductionStartRow] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for operation in operations:
+        machine_code = normalize_machine_code(operation.get("PreferredResourceId"))
+        order_no = _normalize_order_no(operation.get("OrderNo"))
+        if machine_code is None or order_no is None:
+            continue
+
+        machine = machines_by_code.get(machine_code)
+        if machine is None:
+            continue
+
+        key = (machine_code, order_no)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        rows.append(
+            MissingProductionStartRow(
+                machine_code=machine.machine_code,
+                hall_number=machine.hall_number,
+                hall_name=machine.hall_name,
+                display_order=machine.display_order,
+                latest_work_order=order_no,
+                latest_product=_operation_product_text(operation),
+                latest_cycle_time=None,
+                latest_submitted_at=None,
+                entry_count=0,
+            )
+        )
+
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.hall_number,
+            row.display_order,
+            row.machine_code,
+            row.latest_work_order or "",
+        ),
+    )
+
+
+def _machine_order_key(
+    machine_code: Any,
+    order_no: Any,
+) -> tuple[str | None, str | None]:
+    return (normalize_machine_code(machine_code), _normalize_order_no(order_no))
+
+
+def _machine_order_keys_from_rows(
+    rows: Sequence[MissingProductionStartRow],
+) -> set[tuple[str | None, str | None]]:
+    return {
+        _machine_order_key(row.machine_code, row.latest_work_order)
+        for row in rows
+    }
+
+
+def _machine_codes_from_rows(rows: Sequence[MissingProductionStartRow]) -> set[str]:
+    return {
+        machine_code
+        for row in rows
+        if (machine_code := normalize_machine_code(row.machine_code)) is not None
+    }
+
+
+def _operation_product_text(operation: Mapping[str, Any]) -> str | None:
+    return (
+        _optional_text(operation.get("PartNoDesc"))
+        or _optional_text(operation.get("part_description"))
+        or _optional_text(operation.get("PartNo"))
+    )
 
 
 def _responsible_machine_statuses(
@@ -251,9 +361,9 @@ def _working_machines_by_cycle_time(
     *,
     hall_numbers: tuple[int, ...],
 ) -> list[MissingProductionStartRow]:
-    latest_by_machine: dict[str, MissingProductionStartRow] = {}
-    latest_sort_keys: dict[str, tuple[datetime, int]] = {}
-    entry_counts: dict[str, int] = {}
+    latest_by_combination: dict[tuple[str, str | None], MissingProductionStartRow] = {}
+    latest_sort_keys: dict[tuple[str, str | None], tuple[datetime, int]] = {}
+    entry_counts: dict[tuple[str, str | None], int] = {}
 
     with create_session(settings) as session:
         session_rows = session.execute(
@@ -278,29 +388,33 @@ def _working_machines_by_cycle_time(
         if machine_code is None:
             continue
 
-        entry_counts[machine_code] = entry_counts.get(machine_code, 0) + 1
+        work_order = _normalize_order_no(entry.col_h)
+        if work_order is None:
+            continue
+        key = (machine_code, work_order)
+        entry_counts[key] = entry_counts.get(key, 0) + 1
         submitted_at = entry.submitted_at or entry.created_at
         sort_key = (submitted_at or datetime.min, int(entry.id or 0))
 
-        existing_key = latest_sort_keys.get(machine_code)
+        existing_key = latest_sort_keys.get(key)
         if existing_key is not None and sort_key <= existing_key:
             continue
 
-        latest_sort_keys[machine_code] = sort_key
-        latest_by_machine[machine_code] = MissingProductionStartRow(
+        latest_sort_keys[key] = sort_key
+        latest_by_combination[key] = MissingProductionStartRow(
             machine_code=machine.machine_code,
             hall_number=machine.hall_number,
             hall_name=machine.hall_name,
             display_order=machine.display_order,
-            latest_work_order=_optional_text(entry.col_h),
+            latest_work_order=work_order,
             latest_product=_optional_text(entry.col_g),
             latest_cycle_time=cycle_time,
             latest_submitted_at=submitted_at,
-            entry_count=entry_counts[machine_code],
+            entry_count=entry_counts[key],
         )
 
     report_rows: list[MissingProductionStartRow] = []
-    for machine_code, row in latest_by_machine.items():
+    for key, row in latest_by_combination.items():
         report_rows.append(
             MissingProductionStartRow(
                 machine_code=row.machine_code,
@@ -311,13 +425,27 @@ def _working_machines_by_cycle_time(
                 latest_product=row.latest_product,
                 latest_cycle_time=row.latest_cycle_time,
                 latest_submitted_at=row.latest_submitted_at,
-                entry_count=entry_counts[machine_code],
+                entry_count=entry_counts[key],
             )
         )
     return sorted(
         report_rows,
-        key=lambda row: (row.hall_number, row.display_order, row.machine_code),
+        key=lambda row: (
+            row.hall_number,
+            row.display_order,
+            row.machine_code,
+            row.latest_work_order or "",
+        ),
     )
+
+
+def _normalize_order_no(value: Any) -> str | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    if _NUMERIC_IDENTIFIER_PATTERN.fullmatch(text):
+        return text.split(".", 1)[0].split(",", 1)[0]
+    return text
 
 
 def _valid_cycle_time_text(value: Any) -> str | None:

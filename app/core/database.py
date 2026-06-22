@@ -47,10 +47,7 @@ _OFFLINE_IDEMPOTENCY_COLUMNS = {
         "client_recorded_at": "DATETIME",
     },
 }
-_ENTRY_COLUMNS = {
-    f"col_{letter}": "TEXT"
-    for letter in "abcdefghijklmnopqrstuvwxy"
-}
+_ENTRY_COLUMNS = {f"col_{letter}": "TEXT" for letter in "abcdefghijklmnopqrstuvwxy"}
 _ENTRY_NORMALIZED_COLUMNS = {
     "process_date": "VARCHAR(10)",
     "machine_code": "VARCHAR(16)",
@@ -64,6 +61,7 @@ _ENTRY_SYNC_COLUMNS = {
     "synced_at": "DATETIME",
 }
 _PRODUCTION_LOSS_ROW_SHIFT_COLUMNS = {
+    "lot_batch_no": "TEXT",
     "shift_2400_0800_actual_quantity": "INTEGER NOT NULL DEFAULT 0",
     "shift_2400_0800_machine_minutes": "TEXT",
     "shift_2400_0800_optimum_quantity": "TEXT",
@@ -424,10 +422,7 @@ def _ensure_columns(connection, table_name: str, columns: dict[str, str]) -> Non
     for column_name, column_type in columns.items():
         if column_name not in existing_columns:
             connection.execute(
-                text(
-                    f"ALTER TABLE {table_name} "
-                    f"ADD COLUMN {column_name} {column_type}"
-                )
+                text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
             )
 
 
@@ -480,7 +475,9 @@ def _migrate_machine_breakdowns_amount_control_shift(connection) -> None:
         _mark_migration_applied(connection, migration_name)
         return
 
-    connection.execute(text("ALTER TABLE machine_breakdowns RENAME TO machine_breakdowns_old"))
+    connection.execute(
+        text("ALTER TABLE machine_breakdowns RENAME TO machine_breakdowns_old")
+    )
     connection.execute(
         text(
             "CREATE TABLE machine_breakdowns ("
@@ -546,7 +543,10 @@ def _migrate_production_loss_report_row_shift_snapshots(connection) -> None:
         _PRODUCTION_LOSS_ROW_SHIFT_COLUMNS,
     )
     columns = _table_columns(connection, "production_loss_report_rows")
-    for actual_column, compatibility_column in _PRODUCTION_LOSS_SHIFT_QUANTITY_COLUMN_PAIRS:
+    for (
+        actual_column,
+        compatibility_column,
+    ) in _PRODUCTION_LOSS_SHIFT_QUANTITY_COLUMN_PAIRS:
         if actual_column not in columns or compatibility_column not in columns:
             continue
 

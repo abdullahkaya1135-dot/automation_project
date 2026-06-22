@@ -509,6 +509,7 @@ class ProductionLossReportRow(Base):
     machine_code: Mapped[str] = mapped_column(String(16), nullable=False)
     machine_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     job_order: Mapped[str] = mapped_column(Text, nullable=False)
+    lot_batch_no: Mapped[str | None] = mapped_column(Text, nullable=True)
     product_no: Mapped[str | None] = mapped_column(Text, nullable=True)
     product_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     gram: Mapped[str | None] = mapped_column(Text, nullable=True)

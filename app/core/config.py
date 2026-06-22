@@ -28,11 +28,12 @@ DEFAULT_IFS_TOKEN_URL = (
 )
 DEFAULT_IFS_PART_PREFIX = "HM-02"
 DEFAULT_IFS_PART_PREFIXES = ("HM-02", "HM-03", "HM-04")
+DEFAULT_IFS_LABEL_PART_PREFIXES = ("MM",)
 DEFAULT_IFS_LABEL_REPORT_IDS = ("SIMSEK_PALET_ETIKETI_REP",)
+DEFAULT_IFS_PRODUCTION_LOSS_QUERY_START_DATE = "2026-06-01"
 DEFAULT_PRODUCTION_PLANNING_DIR = "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP"
 DEFAULT_PRODUCTION_PLANNING_PATH = (
-    "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP\\10.06.2026 "
-    "\u00c7\u0130ZELGE 2.xlsx"
+    "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP\\10.06.2026 \u00c7\u0130ZELGE 2.xlsx"
 )
 
 
@@ -64,8 +65,12 @@ class Settings:
     ifs_dispatch_filter_id: str = "PET"
     ifs_part_prefix: str = DEFAULT_IFS_PART_PREFIX
     ifs_part_prefixes: tuple[str, ...] = DEFAULT_IFS_PART_PREFIXES
+    ifs_label_part_prefixes: tuple[str, ...] = DEFAULT_IFS_LABEL_PART_PREFIXES
     ifs_label_report_ids: tuple[str, ...] = DEFAULT_IFS_LABEL_REPORT_IDS
     ifs_u1_location: str = "U1"
+    ifs_production_loss_query_start_date: str = (
+        DEFAULT_IFS_PRODUCTION_LOSS_QUERY_START_DATE
+    )
     production_planning_dir: str = ""
     production_planning_path: str = DEFAULT_PRODUCTION_PLANNING_PATH
 
@@ -119,9 +124,7 @@ def _string_setting(name: str, default: str = "") -> str:
 def _csv_setting(value: str) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
-            item
-            for raw_item in value.split(",")
-            if (item := raw_item.strip())
+            item for raw_item in value.split(",") if (item := raw_item.strip())
         )
     )
 
@@ -212,6 +215,15 @@ def get_settings(*, validate: bool = True) -> Settings:
         or "PET",
         ifs_part_prefix=ifs_part_prefix,
         ifs_part_prefixes=ifs_part_prefixes,
+        ifs_label_part_prefixes=(
+            _csv_setting(
+                _string_setting(
+                    "IFS_LABEL_PART_PREFIXES",
+                    ",".join(DEFAULT_IFS_LABEL_PART_PREFIXES),
+                )
+            )
+            or DEFAULT_IFS_LABEL_PART_PREFIXES
+        ),
         ifs_label_report_ids=(
             _csv_setting(
                 _string_setting(
@@ -222,6 +234,13 @@ def get_settings(*, validate: bool = True) -> Settings:
             or DEFAULT_IFS_LABEL_REPORT_IDS
         ),
         ifs_u1_location=_string_setting("IFS_U1_LOCATION", "U1") or "U1",
+        ifs_production_loss_query_start_date=(
+            _string_setting(
+                "IFS_PRODUCTION_LOSS_QUERY_START_DATE",
+                DEFAULT_IFS_PRODUCTION_LOSS_QUERY_START_DATE,
+            )
+            or DEFAULT_IFS_PRODUCTION_LOSS_QUERY_START_DATE
+        ),
         production_planning_dir=_string_setting(
             "PRODUCTION_PLANNING_DIR",
             DEFAULT_PRODUCTION_PLANNING_DIR,

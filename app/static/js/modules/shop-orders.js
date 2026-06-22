@@ -1,10 +1,8 @@
-import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
 import {
   cleanOptional,
   compareOptionText,
   formatTimestamp,
   setInputValue,
-  setMessage,
   updateStatusPill,
   uniqueSorted,
 } from "./utils.js?v=20260619-frontend-cleanup";
@@ -13,35 +11,16 @@ let shopOrderPairs = [];
 
 export function initializeShopOrderDropdowns() {
   const machineSelect = document.querySelector("#machine-select");
-  const workOrderSelect = document.querySelector("#work-order");
-  if (!machineSelect || !workOrderSelect) {
+  const workOrderInput = document.querySelector("#work-order");
+  if (!machineSelect || !workOrderInput) {
     return;
   }
 
   machineSelect.addEventListener("change", () => {
     const machine = machineSelect.value;
-    populateWorkOrderSelect(workOrderSelect.value, machine);
-    const matchingOrders = orderOptionsForMachine(machine);
-    if (!workOrderSelect.value && matchingOrders.length === 1) {
-      workOrderSelect.value = matchingOrders[0].key;
-    }
+    populateWorkOrderSelect(machine);
     applyMachineSection(machine);
-    void applySelectedOperationDetails();
-  });
-
-  workOrderSelect.addEventListener("change", () => {
-    const option = selectedShopOrderOption();
-    if (!option) {
-      clearOperationPrefills();
-      return;
-    }
-
-    if (machineSelect.value !== option.resourceId) {
-      machineSelect.value = option.resourceId;
-      populateWorkOrderSelect(option.key, machineSelect.value);
-    }
-    applyMachineSection(machineSelect.value);
-    void applySelectedOperationDetails();
+    applySelectedOperationDetails();
   });
 
   applyMachineSection(machineSelect.value);
@@ -52,17 +31,15 @@ export function updateShopOrderOptions(source) {
   updateShopOrderSourceStatus(source, shopOrderPairs.length);
 
   const machineSelect = document.querySelector("#machine-select");
-  const workOrderSelect = document.querySelector("#work-order");
-  if (!machineSelect || !workOrderSelect) {
+  const workOrderInput = document.querySelector("#work-order");
+  if (!machineSelect || !workOrderInput) {
     return;
   }
 
   const previousMachine = machineSelect.value;
-  const previousWorkOrder = workOrderSelect.value;
-
   if (!shopOrderPairs.length) {
     setSelectOptions(machineSelect, [], "Makine listesi bulunamadı", "");
-    setSelectOptions(workOrderSelect, [], "İş emri listesi bulunamadı", "");
+    setWorkOrderInput(workOrderInput, "", "");
     setShopOrderSelectsEnabled(false);
     clearOperationPrefills();
     applyMachineSection("");
@@ -70,10 +47,10 @@ export function updateShopOrderOptions(source) {
   }
 
   populateMachineSelect(previousMachine);
-  populateWorkOrderSelect(previousWorkOrder, machineSelect.value);
+  populateWorkOrderSelect(machineSelect.value);
   setShopOrderSelectsEnabled(true);
   applyMachineSection(machineSelect.value);
-  void applySelectedOperationDetails();
+  applySelectedOperationDetails();
 }
 
 export function resetShopOrderDropdowns() {
@@ -81,17 +58,17 @@ export function resetShopOrderDropdowns() {
     return;
   }
   populateMachineSelect("");
-  populateWorkOrderSelect("", "");
+  populateWorkOrderSelect("");
   clearOperationPrefills();
   applyMachineSection("");
 }
 
 export function selectedShopOrderOption() {
-  const workOrderSelect = document.querySelector("#work-order");
-  if (!workOrderSelect || !workOrderSelect.value) {
+  const selectedKey = selectedWorkOrderKey();
+  if (!selectedKey) {
     return null;
   }
-  return shopOrderPairs.find((pair) => pair.key === workOrderSelect.value) || null;
+  return shopOrderPairs.find((pair) => pair.key === selectedKey) || null;
 }
 
 function normalizeShopOrderPairs(options) {
@@ -188,22 +165,56 @@ function populateMachineSelect(selectedValue) {
   );
 }
 
-function populateWorkOrderSelect(selectedValue, machine) {
-  const workOrderSelect = document.querySelector("#work-order");
-  if (!workOrderSelect) {
+function populateWorkOrderSelect(machine) {
+  const workOrderInput = document.querySelector("#work-order");
+  if (!workOrderInput) {
     return;
   }
   const orders = orderOptionsForMachine(machine);
-  setSelectOptionObjects(workOrderSelect, orders, "İş emri seçin", selectedValue);
+  setWorkOrderOption(workOrderInput, orders);
 }
 
 function setShopOrderSelectsEnabled(enabled) {
-  for (const selector of ["#machine-select", "#work-order"]) {
-    const select = document.querySelector(selector);
-    if (select) {
-      select.disabled = !enabled;
-    }
+  const machineSelect = document.querySelector("#machine-select");
+  if (machineSelect) {
+    machineSelect.disabled = !enabled;
   }
+
+  const workOrderInput = document.querySelector("#work-order");
+  if (workOrderInput) {
+    workOrderInput.disabled = !enabled;
+    workOrderInput.readOnly = true;
+  }
+}
+
+function selectedWorkOrderKey() {
+  const workOrderInput = document.querySelector("#work-order");
+  return workOrderInput?.dataset.optionKey || "";
+}
+
+function setWorkOrderInput(input, optionKey, label) {
+  input.dataset.optionKey = optionKey;
+  input.value = label;
+}
+
+function workOrderLabel(option, orders) {
+  const duplicateCount = orders.filter((value) => (
+    value.resourceId === option.resourceId && value.orderNo === option.orderNo
+  )).length;
+  if (duplicateCount > 1 && option.operationNo) {
+    return `${option.orderNo} / Op ${option.operationNo}`;
+  }
+  return option.orderNo;
+}
+
+function setWorkOrderOption(input, orders) {
+  if (orders.length !== 1) {
+    setWorkOrderInput(input, "", "");
+    return;
+  }
+
+  const option = orders[0];
+  setWorkOrderInput(input, option.key, workOrderLabel(option, orders));
 }
 
 function setSelectOptions(select, values, placeholder, selectedValue) {
@@ -213,28 +224,8 @@ function setSelectOptions(select, values, placeholder, selectedValue) {
   select.value = values.includes(selectedValue) ? selectedValue : "";
 }
 
-function setSelectOptionObjects(select, values, placeholder, selectedValue) {
-  const placeholderOption = new Option(placeholder, "");
-  const duplicateCounts = values.reduce((counts, option) => {
-    const countKey = `${option.resourceId}\u0000${option.orderNo}`;
-    counts.set(countKey, (counts.get(countKey) || 0) + 1);
-    return counts;
-  }, new Map());
-  const options = values.map((value) => {
-    const countKey = `${value.resourceId}\u0000${value.orderNo}`;
-    const label = duplicateCounts.get(countKey) > 1 && value.operationNo
-      ? `${value.orderNo} / Op ${value.operationNo}`
-      : value.orderNo;
-    return new Option(label, value.key);
-  });
-  select.replaceChildren(placeholderOption, ...options);
-  select.value = values.some((value) => value.key === selectedValue)
-    ? selectedValue
-    : "";
-}
-
 function orderOptionsForMachine(machine) {
-  return shopOrderPairs.filter((pair) => !machine || pair.resourceId === machine);
+  return machine ? shopOrderPairs.filter((pair) => pair.resourceId === machine) : [];
 }
 
 function machineSection(machine) {
@@ -269,8 +260,6 @@ function applyMachineSection(machine) {
 
 function clearOperationPrefills() {
   setInputValue("#product-name", "");
-  setInputValue("#raw-material", "");
-  setMaterialOptions([]);
 }
 
 function productTextForOption(option) {
@@ -283,7 +272,7 @@ function productTextForOption(option) {
   return [option.partNo, option.partDescription].filter(Boolean).join(" - ");
 }
 
-async function applySelectedOperationDetails() {
+function applySelectedOperationDetails() {
   const option = selectedShopOrderOption();
   if (!option) {
     clearOperationPrefills();
@@ -291,50 +280,4 @@ async function applySelectedOperationDetails() {
   }
 
   setInputValue("#product-name", productTextForOption(option));
-  await prefillRawMaterial(option);
-}
-
-async function prefillRawMaterial(option) {
-  const rawMaterialInput = document.querySelector("#raw-material");
-  if (!rawMaterialInput || !option || !option.operationNo) {
-    setMaterialOptions([]);
-    return;
-  }
-  rawMaterialInput.value = "";
-
-  const query = new URLSearchParams({
-    order_no: option.orderNo,
-    release_no: option.releaseNo || "*",
-    sequence_no: option.sequenceNo || "*",
-    operation_no: String(option.operationNo),
-  });
-
-  try {
-    const payload = await apiJson(`/api/ifs/operation-hm02-materials?${query}`);
-    const partNumbers = uniqueSorted(
-      (Array.isArray(payload.materials) ? payload.materials : [])
-        .map((material) => cleanOptional(material.part_no)),
-    );
-    setMaterialOptions(partNumbers);
-    if (partNumbers.length === 1) {
-      rawMaterialInput.value = partNumbers[0];
-    }
-  } catch (error) {
-    setMaterialOptions([]);
-    setMessage(
-      document.querySelector("#entry-message"),
-      `Hammadde otomatik alınamadı; elle girebilirsiniz. ${error.message}`,
-      "warning",
-    );
-  }
-}
-
-function setMaterialOptions(partNumbers) {
-  const dataList = document.querySelector("#raw-material-options");
-  if (!dataList) {
-    return;
-  }
-  dataList.replaceChildren(
-    ...partNumbers.map((partNumber) => new Option(partNumber, partNumber)),
-  );
 }

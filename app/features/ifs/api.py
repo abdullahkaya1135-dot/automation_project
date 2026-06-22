@@ -7,7 +7,6 @@ from ...domain.request_settings import settings_from_request
 from ...integrations.ifs.client import (
     IFSClientError,
     IFSConfigurationError,
-    fetch_operation_hm02_materials,
     fetch_pet_ongoing_operations,
     fetch_u1_hm02_stock,
     fetch_used_hm02_materials,
@@ -100,32 +99,6 @@ async def ifs_whatsapp_status_message(request: Request) -> dict[str, Any]:
         raise _ifs_http_exception(exc) from exc
 
     return whatsapp_status_message_from_operations(settings, rows).as_dict()
-
-
-@router.get("/operation-hm02-materials")
-async def ifs_operation_hm02_materials(
-    request: Request,
-    order_no: str = Query(..., min_length=1),
-    operation_no: int = Query(...),
-    release_no: str = Query("*", min_length=1),
-    sequence_no: str = Query("*", min_length=1),
-) -> dict[str, Any]:
-    settings = settings_from_request(request)
-    operation = {
-        "OrderNo": order_no,
-        "ReleaseNo": release_no,
-        "SequenceNo": sequence_no,
-        "OperationNo": operation_no,
-    }
-    try:
-        rows = await fetch_operation_hm02_materials(settings, operation)
-    except (IFSConfigurationError, IFSClientError) as exc:
-        raise _ifs_http_exception(exc) from exc
-
-    return {
-        "material_count": len(rows),
-        "materials": [serialize_material_row(row) for row in rows],
-    }
 
 
 @router.get("/used-hm02-materials")

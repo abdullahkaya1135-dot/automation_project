@@ -4,6 +4,7 @@ Current:
 
 - [Project README](../README.md) - current setup, operation, and module layout.
 - [IFS Integration Implementation Guide](IFS_INTEGRATION_IMPLEMENTATION.md) - current IFS Cloud API integration guide.
+- [IFS Label-Based Production-Loss Workflow](IFS_LABEL_BASED_PRODUCTION_LOSS_WORKFLOW.md) - label-count production model, IFS endpoint candidates, and warehouse extraction design.
 
 Historical archive:
 

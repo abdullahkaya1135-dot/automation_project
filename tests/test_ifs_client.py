@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import date as Date
 from urllib.parse import unquote
 
 import httpx
@@ -16,6 +17,8 @@ from app.integrations.ifs.client import (
     fetch_operation_hm02_materials,
     fetch_pet_ongoing_operations,
     fetch_planning_used_hm02_materials,
+    fetch_production_label_stock_rows,
+    fetch_shop_order_operation_actual_rows,
     fetch_shop_order_operations,
     fetch_u1_hm02_stock,
     fetch_used_hm02_materials,
@@ -67,22 +70,14 @@ def test_get_settings_accepts_new_prefix_list_and_custom_legacy_prefix(
 
     assert settings.ifs_part_prefix == "HM-99"
     assert settings.ifs_part_prefixes == ("HM-03", "HM-04")
-    assert not [
-        record
-        for record in caplog.records
-        if record.name == "app.core.config"
-    ]
+    assert not [record for record in caplog.records if record.name == "app.core.config"]
 
     caplog.clear()
     monkeypatch.delenv("IFS_PART_PREFIXES", raising=False)
     settings = config.get_settings(validate=False)
 
     assert settings.ifs_part_prefixes == ("HM-99",)
-    records = [
-        record
-        for record in caplog.records
-        if record.name == "app.core.config"
-    ]
+    records = [record for record in caplog.records if record.name == "app.core.config"]
     assert len(records) == 1
     assert records[0].legacy_setting == "IFS_PART_PREFIX"
     assert records[0].replacement_setting == "IFS_PART_PREFIXES"
@@ -306,9 +301,18 @@ def test_fetch_pet_ongoing_operations_uses_dispatch_filter_and_follows_next_link
     )
     assert "Contract='S01'" in first_path
     assert "DispListFilterId='PET'" in first_path
-    assert "Selection=IfsApp.ShopFloorWorkbenchHandling.DisListFilterSelection'Ongoing'" in first_path
-    assert "DispatchRule=IfsApp.ShopFloorWorkbenchHandling.DispatchRule'AsScheduled'" in first_path
-    assert "WorkCenterCode=IfsApp.ShopFloorWorkbenchHandling.WorkCenterCodeShopFloor'InternalWorkCenter'" in first_path
+    assert (
+        "Selection=IfsApp.ShopFloorWorkbenchHandling.DisListFilterSelection'Ongoing'"
+        in first_path
+    )
+    assert (
+        "DispatchRule=IfsApp.ShopFloorWorkbenchHandling.DispatchRule'AsScheduled'"
+        in first_path
+    )
+    assert (
+        "WorkCenterCode=IfsApp.ShopFloorWorkbenchHandling.WorkCenterCodeShopFloor'InternalWorkCenter'"
+        in first_path
+    )
     assert "CompanyId='C01'" in first_path
     assert requests[0].url.params["$select"] == (
         "OrderNo,ReleaseNo,SequenceNo,OperationNo,Contract,WorkCenterNo,"
@@ -376,7 +380,10 @@ def test_fetch_shop_order_operations_uses_shop_order_filter():
     ]
     assert len(requests) == 1
     path = unquote(requests[0].url.raw_path.decode()).split("?", 1)[0]
-    assert "FilterBy=IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy'ShopOrder'" in path
+    assert (
+        "FilterBy=IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy'ShopOrder'"
+        in path
+    )
     assert "DispListFilterId=null" in path
     assert "Selection=null" in path
     assert "OrderNo='2579'" in path
@@ -385,6 +392,68 @@ def test_fetch_shop_order_operations_uses_shop_order_filter():
     assert requests[0].url.params["$select"] == (
         "OrderNo,ReleaseNo,SequenceNo,OperationNo,Contract,WorkCenterNo,"
         "PartNo,PartNoDesc,PreferredResourceId,OperationNoDesc,RemainingQty"
+    )
+    assert requests[0].url.params["$top"] == "1000"
+
+
+def test_fetch_shop_order_operation_actual_rows_uses_production_loss_query_projection():
+    requests: list[httpx.Request] = []
+    settings = Settings(
+        ifs_base_url="https://ifs.example.com",
+        ifs_production_loss_query_start_date="2026-06-01",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "OrderNo": "2579",
+                        "PartDescription": "PET 28MM 35GR",
+                        "RealStart": "2026-06-10T12:16:05Z",
+                        "RealFinished": "2026-06-16T21:33:30Z",
+                        "RealMachRunTime": 120,
+                        "InterruptionTime": 5,
+                    },
+                    {
+                        "OrderNo": "2580",
+                        "PartDescription": "PET 24MM 29GR",
+                        "RealStart": "2026-06-11T12:16:05Z",
+                        "RealFinished": None,
+                        "RealMachRunTime": 60,
+                        "InterruptionTime": 0,
+                    }
+                ]
+            },
+        )
+
+    async def run() -> list[dict]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_shop_order_operation_actual_rows(
+                settings,
+                ["2579", "", "0", "2579", "2580"],
+                client=client,
+                access_token="test-token",
+            )
+
+    rows = asyncio.run(run())
+
+    assert [row["OrderNo"] for row in rows] == ["2579", "2580"]
+    assert len(requests) == 1
+    first_path = unquote(requests[0].url.raw_path.decode()).split("?", 1)[0]
+    assert first_path.endswith(
+        "/main/ifsapplications/projection/v1/"
+        "QueryProjectionPRODUCTIONLOSS.svc/PRODUCTIONLOSSSet"
+    )
+    assert requests[0].url.params["$filter"] == (
+        "RealStart ge 2026-06-01T00:00:00Z and "
+        "(OrderNo eq '2579' or OrderNo eq '2580')"
+    )
+    assert requests[0].url.params["$select"] == (
+        "OrderNo,PartDescription,RealStart,RealFinished,"
+        "RealMachRunTime,InterruptionTime"
     )
     assert requests[0].url.params["$top"] == "1000"
 
@@ -516,7 +585,9 @@ def test_fetch_operation_hm02_materials_requires_operation_key_fields():
     settings = Settings(ifs_base_url="https://ifs.example.com")
 
     async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200))
+        ) as client:
             await fetch_operation_hm02_materials(
                 settings,
                 {"OrderNo": "2615", "ReleaseNo": "*", "OperationNo": 10},
@@ -630,6 +701,82 @@ def test_fetch_operation_history_rows_filters_and_pages_by_skip_count():
     assert requests[1].url.params["$skip"] == "2"
 
 
+def test_fetch_production_label_stock_rows_uses_stock_journey_query():
+    requests: list[httpx.Request] = []
+    settings = Settings(
+        ifs_base_url="https://ifs.example.com",
+        ifs_label_part_prefixes=("MM", "PM"),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer test-token"
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "@odata.count": 3,
+                    "value": [
+                        {"ObjId": "OBJ-1", "HandlingUnitId": "HU-1"},
+                        {"ObjId": "OBJ-2", "HandlingUnitId": "HU-2"},
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "@odata.count": 3,
+                "value": [
+                    {"ObjId": "OBJ-2", "HandlingUnitId": "HU-2-DUP"},
+                    {"ObjId": "OBJ-3", "HandlingUnitId": "HU-3"},
+                ],
+            },
+        )
+
+    async def run() -> list[dict]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_production_label_stock_rows(
+                settings,
+                date_from=Date(2026, 6, 8),
+                date_to=Date(2026, 6, 9),
+                client=client,
+                access_token="test-token",
+                page_size=2,
+            )
+
+    rows = asyncio.run(run())
+
+    assert [row["ObjId"] for row in rows] == ["OBJ-1", "OBJ-2", "OBJ-3"]
+    assert len(requests) == 2
+    assert requests[0].url.path.endswith(
+        "/InventoryPartInStockHandling.svc/InventoryPartInStockSet"
+    )
+    assert requests[0].url.params["$filter"] == (
+        "Contract eq 'S01' "
+        "and (startswith(PartNo,'MM') or startswith(PartNo,'PM')) "
+        "and ReceiptDate ge 2026-06-08T00:00:00Z "
+        "and ReceiptDate lt 2026-06-10T00:00:00Z"
+    )
+    assert requests[0].url.params["use-timezone-filter"] == "false"
+    assert requests[0].url.params["$select"] == (
+        "Contract,PartNo,PartNoDesc,LocationNo,LotBatchNo,SerialNo,QtyOnhand,"
+        "CatchQtyOnhand,UnifiedOnHandQty,AvailableQty,UoM,LastCountDate,"
+        "LocationType,ReceiptDate,HandlingUnitId,"
+        "HandlingUnitTypeDesc,LocationDescription,Cf_Palet_Ici_Miktar,ObjId"
+    )
+    assert "LastActivityDate" not in requests[0].url.params["$select"]
+    assert requests[0].url.params["$orderby"] == (
+        "ReceiptDate asc,HandlingUnitId asc,LocationNo asc"
+    )
+    assert "LastActivityDate" not in requests[0].url.params["$filter"]
+    assert "LastActivityDate" not in requests[0].url.params["$orderby"]
+    assert requests[0].url.params["$count"] == "true"
+    assert requests[0].url.params["$top"] == "2"
+    assert requests[0].url.params["$skip"] == "0"
+    assert requests[1].url.params["$top"] == "2"
+    assert requests[1].url.params["$skip"] == "2"
+
+
 def test_fetch_operation_history_rows_requests_each_date_applied_month_bucket():
     requests: list[httpx.Request] = []
     settings = Settings(
@@ -670,8 +817,12 @@ def test_fetch_operation_history_rows_requests_each_date_applied_month_bucket():
 
     filters = [request.url.params["$filter"] for request in requests]
     assert len(requests) == 2
-    assert any("startswith(cast(DateApplied,Edm.String),'2026-05')" in item for item in filters)
-    assert any("startswith(cast(DateApplied,Edm.String),'2026-06')" in item for item in filters)
+    assert any(
+        "startswith(cast(DateApplied,Edm.String),'2026-05')" in item for item in filters
+    )
+    assert any(
+        "startswith(cast(DateApplied,Edm.String),'2026-06')" in item for item in filters
+    )
     assert [row["TransactionId"] for row in rows] == ["MAY-1", "DUP-1", "JUN-1"]
 
 
@@ -722,8 +873,7 @@ def test_fetch_inventory_part_descriptions_queries_reference_inventory_part():
         "/InventoryPartInStockHandling.svc/Reference_InventoryPart"
     )
     assert requests[0].url.params["$filter"] == (
-        "Contract eq 'S01' and "
-        "(PartNo eq 'MM-PET001' or PartNo eq 'MM-PET002')"
+        "Contract eq 'S01' and (PartNo eq 'MM-PET001' or PartNo eq 'MM-PET002')"
     )
     assert requests[0].url.params["$select"] == "Contract,PartNo,Description"
     assert requests[0].url.params["$orderby"] == "PartNo asc"

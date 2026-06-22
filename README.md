@@ -89,6 +89,7 @@ IFS_CLIENT_ID=your-ifs-client-id
 IFS_USERNAME=your-ifs-user
 IFS_PASSWORD=your-ifs-password
 IFS_PART_PREFIXES=HM-02,HM-03,HM-04
+IFS_PRODUCTION_LOSS_QUERY_START_DATE=2026-06-01
 PRODUCTION_PLANNING_DIR=\\fileserver\GENEL\URETIM GUNLUK TAKIP
 PRODUCTION_PLANNING_PATH=\\fileserver\GENEL\URETIM GUNLUK TAKIP\GG.AA.YYYY ÇİZELGE 1.xlsx
 ```
@@ -190,8 +191,8 @@ When the operator selects a date on the reports page and clicks `Excel'e aktar`,
 the app appends that day's pending columns `A:Y` to the configured worksheet in
 one workbook open/save cycle. Tour context values fill columns `A:E`; machine
 entry fields now use canonical Excel letters (`F:Y`) so product is `G`, work
-order is `H`, raw material is `I`, shared process values continue through `N`,
-and oven and mold temperatures are `X:Y`.
+order is `H`, legacy column `I` remains unused, shared process values start at
+`J`, and oven and mold temperatures are `X:Y`.
 
 The machine code controls which section-only columns are written. Machines with
 `1xx` codes plus `271` write first-section fields `O:Q` and leave `R:W` blank.
@@ -233,6 +234,12 @@ overrides when the list is not set.
 IFS authentication uses the password grant to obtain a bearer token. Keep
 `IFS_USERNAME`, `IFS_PASSWORD`, `IFS_CLIENT_ID`, and optional `IFS_CLIENT_SECRET`
 in local `.env` only.
+
+Production-loss timing uses
+`QueryProjectionPRODUCTIONLOSS.svc/PRODUCTIONLOSSSet` with only
+`OrderNo`, `PartDescription`, `RealStart`, `RealFinished`,
+`RealMachRunTime`, and `InterruptionTime`. The lower bound is controlled by
+`IFS_PRODUCTION_LOSS_QUERY_START_DATE`.
 
 ## Backups
 

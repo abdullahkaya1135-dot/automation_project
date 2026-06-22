@@ -26,6 +26,7 @@ LABEL_ARCHIVE_CONCURRENCY = 6
 SIMSEK_PALET_ETIKETI_REPORT_ID = "SIMSEK_PALET_ETIKETI_REP"
 DEFAULT_LABEL_REPORT_IDS = (SIMSEK_PALET_ETIKETI_REPORT_ID,)
 DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES = ("MM-PET",)
+DEFAULT_LABEL_STOCK_PART_PREFIXES = ("MM",)
 ARCHIVE_SELECT_FIELDS = (
     "ResultKey",
     "ReportId",
@@ -91,6 +92,27 @@ STOCK_FIELD_MAP = {
     "ActivitySeq": "activity_seq",
     "HandlingUnitId": "handling_unit_id",
 }
+PRODUCTION_LABEL_STOCK_SELECT_FIELDS = (
+    "Contract",
+    "PartNo",
+    "PartNoDesc",
+    "LocationNo",
+    "LotBatchNo",
+    "SerialNo",
+    "QtyOnhand",
+    "CatchQtyOnhand",
+    "UnifiedOnHandQty",
+    "AvailableQty",
+    "UoM",
+    "LastCountDate",
+    "LocationType",
+    "ReceiptDate",
+    "HandlingUnitId",
+    "HandlingUnitTypeDesc",
+    "LocationDescription",
+    "Cf_Palet_Ici_Miktar",
+    "ObjId",
+)
 OPERATION_SELECT_FIELDS = (
     "OrderNo",
     "ReleaseNo",
@@ -103,6 +125,31 @@ OPERATION_SELECT_FIELDS = (
     "PreferredResourceId",
     "OperationNoDesc",
     "RemainingQty",
+)
+OPERATION_STATISTICS_SELECT_FIELDS = (
+    "OrderNo",
+    "ReleaseNo",
+    "SequenceNo",
+    "OperationNo",
+    "PartNo",
+    "Contract",
+    "WorkCenterNo",
+    "PlanStart",
+    "RealStart",
+    "PlanFinished",
+    "RealFinished",
+    "Delay",
+    "InterruptionTime",
+    "PercentInterruptionTime",
+    "ManualOperationQty",
+)
+PRODUCTION_LOSS_QUERY_SELECT_FIELDS = (
+    "OrderNo",
+    "PartDescription",
+    "RealStart",
+    "RealFinished",
+    "RealMachRunTime",
+    "InterruptionTime",
 )
 OPERATION_FIELD_MAP = {
     "OrderNo": "order_no",
@@ -265,6 +312,26 @@ def _part_no_prefix_filter(settings: Settings) -> str:
     return "(" + " or ".join(clauses) + ")"
 
 
+def _label_stock_part_prefixes(settings: Settings) -> tuple[str, ...]:
+    prefixes = tuple(
+        dict.fromkeys(
+            prefix
+            for value in getattr(
+                settings,
+                "ifs_label_part_prefixes",
+                DEFAULT_LABEL_STOCK_PART_PREFIXES,
+            )
+            if (prefix := str(value or "").strip())
+        )
+    )
+    return prefixes or DEFAULT_LABEL_STOCK_PART_PREFIXES
+
+
+def _part_no_prefix_filter_for_prefixes(prefixes: Sequence[str]) -> str:
+    clauses = [f"startswith(PartNo,{_odata_string(prefix)})" for prefix in prefixes]
+    return clauses[0] if len(clauses) == 1 else "(" + " or ".join(clauses) + ")"
+
+
 def _odata_key_string(value: str) -> str:
     escaped = value.replace("'", "''")
     return f"'{quote(escaped, safe='')}'"
@@ -275,8 +342,7 @@ def _pet_operations_path(settings: Settings) -> str:
         ("Contract", _odata_string(settings.ifs_contract)),
         (
             "FilterBy",
-            "IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy"
-            "'PredefinedFilter'",
+            "IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy'PredefinedFilter'",
         ),
         ("DispListFilterId", _odata_string(settings.ifs_dispatch_filter_id)),
         (
@@ -327,8 +393,7 @@ def _shop_order_operations_path(settings: Settings, order_no: str) -> str:
         ("Contract", _odata_string(settings.ifs_contract)),
         (
             "FilterBy",
-            "IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy"
-            "'ShopOrder'",
+            "IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy'ShopOrder'",
         ),
         ("DispListFilterId", "null"),
         ("Selection", "null"),
@@ -686,11 +751,13 @@ def _odata_datetime_utc(value: datetime) -> str:
     return parsed.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _odata_date_midnight_as_z(value: Date) -> str:
+    return f"{value.isoformat()}T00:00:00Z"
+
+
 def _label_report_filter(report_ids: Sequence[str]) -> str:
     cleaned = [
-        report_id
-        for value in report_ids
-        if (report_id := str(value or "").strip())
+        report_id for value in report_ids if (report_id := str(value or "").strip())
     ]
     if not cleaned:
         cleaned = list(DEFAULT_LABEL_REPORT_IDS)
@@ -713,9 +780,7 @@ def _archive_time_filter(
 def _operation_history_product_prefix_filter(product_prefixes: Sequence[str]) -> str:
     cleaned = tuple(
         dict.fromkeys(
-            prefix
-            for value in product_prefixes
-            if (prefix := str(value or "").strip())
+            prefix for value in product_prefixes if (prefix := str(value or "").strip())
         )
     )
     prefixes = cleaned or DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES
@@ -787,6 +852,44 @@ def _operation_history_filter(
     )
 
 
+def _operation_statistics_order_filter(order_no: str) -> str:
+    return f"OrderNo eq {_odata_string(order_no)}"
+
+
+def _production_loss_query_start(settings: Settings) -> Date:
+    raw_value = str(
+        getattr(settings, "ifs_production_loss_query_start_date", "") or ""
+    ).strip()
+    if not raw_value:
+        raw_value = "2026-06-01"
+    try:
+        return Date.fromisoformat(raw_value)
+    except ValueError as exc:
+        raise IFSClientError(
+            "IFS_PRODUCTION_LOSS_QUERY_START_DATE must be an ISO date"
+        ) from exc
+
+
+def _order_no_equals_filter(order_numbers: Sequence[str]) -> str:
+    cleaned = [
+        order_no for value in order_numbers if (order_no := str(value or "").strip())
+    ]
+    clauses = [f"OrderNo eq {_odata_string(order_no)}" for order_no in cleaned]
+    if not clauses:
+        return ""
+    return clauses[0] if len(clauses) == 1 else "(" + " or ".join(clauses) + ")"
+
+
+def _production_loss_query_filter(
+    settings: Settings,
+    order_numbers: Sequence[str],
+) -> str:
+    start_date = _production_loss_query_start(settings)
+    order_filter = _order_no_equals_filter(order_numbers)
+    start_filter = f"RealStart ge {_odata_date_midnight_as_z(start_date)}"
+    return f"{start_filter} and {order_filter}" if order_filter else start_filter
+
+
 def _operation_history_month_prefixes(
     settings: Settings,
     date_from: Any,
@@ -818,9 +921,7 @@ def _operation_history_month_prefixes(
 
 def _part_no_equals_filter(part_numbers: Sequence[str]) -> str:
     cleaned = [
-        part_no
-        for value in part_numbers
-        if (part_no := str(value or "").strip())
+        part_no for value in part_numbers if (part_no := str(value or "").strip())
     ]
     clauses = [f"PartNo eq {_odata_string(part_no)}" for part_no in cleaned]
     if not clauses:
@@ -831,7 +932,7 @@ def _part_no_equals_filter(part_numbers: Sequence[str]) -> str:
 def _batched(values: Sequence[str], size: int) -> list[list[str]]:
     if size < 1:
         raise IFSClientError("batch_size must be positive for inventory part lookup")
-    return [list(values[index:index + size]) for index in range(0, len(values), size)]
+    return [list(values[index : index + size]) for index in range(0, len(values), size)]
 
 
 def _odata_count_value(value: Any) -> int | None:
@@ -839,7 +940,7 @@ def _odata_count_value(value: Any) -> int | None:
         return None
     try:
         count = int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return count if count >= 0 else None
 
@@ -1240,6 +1341,63 @@ async def fetch_u1_hm02_stock(
             await http_client.aclose()
 
 
+async def fetch_production_label_stock_rows(
+    settings: Settings,
+    *,
+    date_from: Date,
+    date_to: Date,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    page_size: int = 5000,
+) -> list[dict[str, Any]]:
+    """Fetch inventory in-stock journey rows used as production label evidence."""
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(
+            settings,
+            "InventoryPartInStockHandling.svc/InventoryPartInStockSet",
+        )
+        date_to_exclusive = date_to + timedelta(days=1)
+        part_filter = _part_no_prefix_filter_for_prefixes(
+            _label_stock_part_prefixes(settings)
+        )
+        return await _get_paged_by_top_skip(
+            http_client,
+            url,
+            endpoint_category="production-label-stock",
+            headers=headers,
+            params={
+                "$filter": (
+                    f"Contract eq {_odata_string(settings.ifs_contract)} "
+                    f"and {part_filter} "
+                    f"and ReceiptDate ge {_odata_date_midnight_as_z(date_from)} "
+                    f"and ReceiptDate lt {_odata_date_midnight_as_z(date_to_exclusive)}"
+                ),
+                "use-timezone-filter": "false",
+                "$select": ",".join(PRODUCTION_LABEL_STOCK_SELECT_FIELDS),
+                "$orderby": "ReceiptDate asc,HandlingUnitId asc,LocationNo asc",
+                "$count": "true",
+            },
+            page_size=page_size,
+            dedupe_field="ObjId",
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
 async def fetch_pet_ongoing_operations(
     settings: Settings,
     *,
@@ -1291,9 +1449,7 @@ async def fetch_operation_hm02_materials(
 
     _require_settings(
         settings,
-        (
-            ("ifs_base_url", "IFS_BASE_URL"),
-        ),
+        (("ifs_base_url", "IFS_BASE_URL"),),
     )
 
     close_client = client is None
@@ -1515,11 +1671,7 @@ async def fetch_shop_order_operation_actual_rows(
     access_token: str | None = None,
     concurrency: int = PLANNING_IFS_CONCURRENCY,
 ) -> list[dict[str, Any]]:
-    """Fetch full shop-order operation rows for production-loss actual timing.
-
-    The production-loss report intentionally avoids a restrictive $select because
-    IFS actual timing field names vary between versions and projections.
-    """
+    """Fetch realized production-loss timing rows for requested order numbers."""
 
     cleaned_order_numbers = list(
         dict.fromkeys(
@@ -1544,23 +1696,38 @@ async def fetch_shop_order_operation_actual_rows(
         token = access_token or await obtain_access_token(settings, client=http_client)
         headers = {"Authorization": f"Bearer {token}"}
 
-        async def fetch_order(order_no: str) -> list[dict[str, Any]]:
-            url = _projection_url(settings, _shop_order_operations_path(settings, order_no))
+        async def fetch_order_batch(order_batch: Sequence[str]) -> list[dict[str, Any]]:
+            url = _projection_url(
+                settings,
+                "QueryProjectionPRODUCTIONLOSS.svc/PRODUCTIONLOSSSet",
+            )
             return await _get_all(
                 http_client,
                 url,
-                endpoint_category="production-loss-operation-actuals",
+                endpoint_category="production-loss-query-projection",
                 headers=headers,
-                params={"$top": "1000"},
+                params={
+                    "$filter": _production_loss_query_filter(settings, order_batch),
+                    "$select": ",".join(PRODUCTION_LOSS_QUERY_SELECT_FIELDS),
+                    "$top": "1000",
+                },
             )
 
-        operation_groups = await _gather_limited(
-            cleaned_order_numbers,
-            fetch_order,
+        row_groups = await _gather_limited(
+            _batched(cleaned_order_numbers, 50),
+            fetch_order_batch,
             concurrency=concurrency,
         )
-        return _deduplicated_operations(
-            [operation for group in operation_groups for operation in group]
+        return _deduplicated_rows(
+            [row for group in row_groups for row in group],
+            (
+                "OrderNo",
+                "PartDescription",
+                "RealStart",
+                "RealFinished",
+                "RealMachRunTime",
+                "InterruptionTime",
+            ),
         )
     finally:
         if close_client:
@@ -1650,9 +1817,7 @@ async def fetch_inventory_part_descriptions(
 
     cleaned_part_numbers = list(
         dict.fromkeys(
-            part_no
-            for value in part_numbers
-            if (part_no := str(value or "").strip())
+            part_no for value in part_numbers if (part_no := str(value or "").strip())
         )
     )
     if not cleaned_part_numbers:
@@ -1745,11 +1910,7 @@ async def fetch_planning_used_hm02_materials(
             concurrency=concurrency,
         )
         operations = _deduplicated_operations(
-            [
-                operation
-                for group in operation_groups
-                for operation in group
-            ]
+            [operation for group in operation_groups for operation in group]
         )
         used_materials = await _fetch_hm02_materials_for_operations(
             settings,

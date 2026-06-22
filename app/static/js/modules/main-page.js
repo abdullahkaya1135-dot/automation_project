@@ -834,9 +834,12 @@ async function handleCreateProductionLossReport(event) {
     const warningText = payload.warning_count
       ? ` ${payload.warning_count} uyari var.`
       : "";
+    const cycleSkipText = payload?.source_summary?.realized_cycle_skip_message
+      ? ` ${payload.source_summary.realized_cycle_skip_message}`
+      : "";
     setMessage(
       message,
-      `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} satir. Etiket/arsiv miktarlari dahil.${warningText}`,
+      `Rapor olusturuldu: ${payload.output_path}. ${payload.row_count} satir. Etiket/arsiv miktarlari dahil.${warningText}${cycleSkipText}`,
       payload.warning_count ? "warning" : "success",
     );
   } catch (error) {
@@ -925,7 +928,7 @@ async function loadMissingProductionStarts(button = null) {
 
   const displayDate = dateForDisplay(processDate);
   setMessage(message, `${displayDate} icin IFS baslatma kontrolu calisiyor...`, "");
-  renderLoading(container, "IFS operasyonlari ve girilen cevrimler karsilastiriliyor...");
+  renderLoading(container, "IFS operasyonlari ve DB kayitlari karsilastiriliyor...");
   setButtonBusy(button, true, "Kontrol ediliyor");
 
   try {
@@ -935,7 +938,7 @@ async function loadMissingProductionStarts(button = null) {
     if (payload.missing_count) {
       setMessage(
         message,
-        `${displayDate} icin ${payload.missing_count} makine IFS'te baslatilmamis gorunuyor.`,
+        `${displayDate} icin ${payload.missing_count} makine/is emri DB'de eksik gorunuyor.`,
         "warning",
       );
     } else {

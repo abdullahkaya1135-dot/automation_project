@@ -210,10 +210,11 @@ function renderProductionLossTable(rows) {
     "Tarih",
     "Makine",
     "Is emri",
+    "Lot/Parti",
     "Urun",
     "Gr",
     ...PRODUCTION_LOSS_SHIFT_COLUMNS.map(
-      (shift) => `${shift.label} (Gercek / Optimum / Kayip)`,
+      (shift) => `${shift.label} (Gercek / Beklenen / Kayip)`,
     ),
     "Toplam",
     "Aktif goz",
@@ -239,6 +240,7 @@ function renderProductionLossTable(rows) {
     appendTableCell(tr, row.record_date);
     appendTableCell(tr, `${displayValue(row.machine_name)} / ${displayValue(row.machine_code)}`);
     appendTableCell(tr, row.job_order, "mono-cell");
+    appendTableCell(tr, row.lot_batch_no, "mono-cell");
     appendTableCell(tr, row.product_description);
     appendTableCell(tr, row.gram);
     for (const shift of PRODUCTION_LOSS_SHIFT_COLUMNS) {
@@ -277,6 +279,7 @@ function renderProductionLossSummary(payload) {
     ["Etiket kayit", payload?.source_summary?.label_event_count],
     ["Etiket miktar", payload?.source_summary?.label_quantity_total],
     ["IFS", payload?.source_summary?.ifs_refreshed ? "Yenilendi" : "Cache"],
+    ["Cevrim atlanan", payload?.source_summary?.realized_cycle_skipped_count],
   ];
 
   for (const [label, value] of items) {
@@ -312,6 +315,13 @@ function renderProductionLossSummary(payload) {
     labelError.className = "entry-meta error ifs-generated-at";
     labelError.textContent = `Etiket/arsiv: ${payload.source_summary.label_ifs_error}`;
     summary.appendChild(labelError);
+  }
+
+  if (payload?.source_summary?.realized_cycle_skip_message) {
+    const cycleSkip = document.createElement("p");
+    cycleSkip.className = "entry-meta warning ifs-generated-at";
+    cycleSkip.textContent = payload.source_summary.realized_cycle_skip_message;
+    summary.appendChild(cycleSkip);
   }
 
   return summary;
@@ -406,12 +416,16 @@ function renderMissingProductionTable(machines) {
 function renderMissingProductionSummary(payload) {
   const summary = document.createElement("div");
   summary.className = "ifs-summary";
+  const processCombinationCount = payload?.process_combination_count
+    ?? payload?.working_machine_count;
+  const activeIfsCombinationCount = payload?.active_ifs_combination_count
+    ?? payload?.active_ifs_machine_count;
 
   const items = [
     ["Tarih", payload?.process_date],
-    ["Çevrim girilen", payload?.working_machine_count],
-    ["IFS aktif makine", payload?.active_ifs_machine_count],
-    ["Başlatma eksiği", payload?.missing_count],
+    ["DB eslesmesi", processCombinationCount],
+    ["IFS kombinasyon", activeIfsCombinationCount],
+    ["DB eksigi", payload?.missing_count],
   ];
 
   for (const [label, value] of items) {
@@ -510,7 +524,7 @@ function appendShiftLossCell(rowElement, reportRow, shift) {
       "Gercek",
       shiftMetricValue(reportRow, shift, "actual_quantity", shift.legacyActualKey),
     ],
-    ["Optimum", shiftMetricValue(reportRow, shift, "optimum_quantity")],
+    ["Beklenen", shiftMetricValue(reportRow, shift, "optimum_quantity")],
     ["Kayip", shiftMetricValue(reportRow, shift, "loss_quantity")],
   ];
 

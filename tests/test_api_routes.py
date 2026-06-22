@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,8 @@ from app.models import (
     Machine,
     MachineBreakdown,
     ProductionEngineer,
+    ProductionLossReport,
+    ProductionLossReportRow,
 )
 from app.web.pages import (
     APP_ROUTE_URLS,
@@ -337,7 +340,6 @@ def test_entry_submit_saves_locally_and_queues_excel_sync(client, tmp_path):
                 "col_f": "101",
                 "col_g": "Product 101",
                 "col_h": "WO-1",
-                "col_i": "HM-02-01",
                 "col_j": "16",
                 "col_k": "12",
                 "col_l": "12,5",
@@ -366,6 +368,8 @@ def test_entry_submit_saves_locally_and_queues_excel_sync(client, tmp_path):
     assert payload["entry"]["payload"]["col_e"] == "08.00-16.00"
     assert payload["entry"]["payload"]["col_f"] == "101"
     assert payload["entry"]["payload"]["col_h"] == "WO-1"
+    assert payload["entry"]["payload"]["col_i"] is None
+    assert payload["entry"]["payload"]["col_l"] == "12,5"
     assert payload["entry"]["payload"]["col_r"] is None
     assert payload["entry"]["payload"]["col_x"] == "270-270-270-276-276-275"
     assert payload["entry"]["payload"]["col_y"] == "30-30-40"
@@ -377,7 +381,9 @@ def test_entry_submit_saves_locally_and_queues_excel_sync(client, tmp_path):
 
     entries_response = client.get("/api/entries")
     assert entries_response.status_code == 200
-    assert len(entries_response.json()["entries"]) == 1
+    entries_payload = entries_response.json()["entries"]
+    assert len(entries_payload) == 1
+    assert entries_payload[0]["payload"]["col_l"] == "12,5"
 
     settings = Settings(
         excel_path=str(tmp_path / "process.xlsx"),
@@ -393,6 +399,7 @@ def test_entry_submit_saves_locally_and_queues_excel_sync(client, tmp_path):
         assert entry.synced_at is None
         assert entry.process_date == "2026-06-08"
         assert entry.machine_code == "101"
+        assert entry.col_l == "12,5"
         assert entry.production_engineer_id is not None
 
 
@@ -435,6 +442,8 @@ def test_process_excel_sync_button_bulk_appends_selected_day(client, tmp_path):
     worksheet = workbook["PROSES 2026"]
     assert worksheet.cell(row=2, column=6).value == "101"
     assert worksheet.cell(row=3, column=6).value == "102"
+    assert worksheet.cell(row=2, column=12).value == 12.5
+    assert worksheet.cell(row=3, column=12).value == 12.5
     workbook.close()
 
     settings = Settings(
@@ -447,6 +456,7 @@ def test_process_excel_sync_button_bulk_appends_selected_day(client, tmp_path):
         entries = session.query(Entry).order_by(Entry.machine_code).all()
         assert [entry.sync_status for entry in entries] == ["synced", "synced"]
         assert [entry.excel_row_number for entry in entries] == [2, 3]
+        assert [entry.col_l for entry in entries] == ["12,5", "12,5"]
 
 
 def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
@@ -455,10 +465,12 @@ def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
         "client_request_id": "entry-client-request-1",
         "client_recorded_at": "2026-06-08T09:20:00+03:00",
         "tour_context_id": context_id,
+        "payload_schema_version": 2,
         "payload": {
             "col_f": "M-01",
             "col_g": "WO-1",
             "col_h": "16",
+            "col_l": "12,5",
         },
     }
 
@@ -472,6 +484,8 @@ def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
     assert replay_payload["idempotent_replay"] is True
     assert replay_payload["entry"]["id"] == first_payload["entry"]["id"]
     assert replay_payload["entry"]["client_request_id"] == "entry-client-request-1"
+    assert first_payload["entry"]["payload"]["col_l"] == "12,5"
+    assert replay_payload["entry"]["payload"]["col_l"] == "12,5"
 
     workbook = load_workbook(tmp_path / "process.xlsx")
     worksheet = workbook["PROSES 2026"]
@@ -485,7 +499,8 @@ def test_entry_submit_is_idempotent_for_client_request_id(client, tmp_path):
         backup_dir=str(tmp_path / "backups"),
     )
     with create_session(settings) as session:
-        assert session.query(Entry).count() == 1
+        entry = session.query(Entry).one()
+        assert entry.col_l == "12,5"
 
 
 def test_entries_list_orders_by_process_date_machine_and_engineer(client, tmp_path):
@@ -607,7 +622,6 @@ def test_second_section_entry_blanks_first_section_only_columns(client):
                 "col_f": "203",
                 "col_g": "Product 203",
                 "col_h": "WO-203",
-                "col_i": "HM-02-203",
                 "col_j": "16",
                 "col_o": "6",
                 "col_p": "45",
@@ -625,6 +639,7 @@ def test_second_section_entry_blanks_first_section_only_columns(client):
 
     assert response.status_code == 201
     entry_payload = response.json()["entry"]["payload"]
+    assert entry_payload["col_i"] is None
     assert entry_payload["col_o"] is None
     assert entry_payload["col_p"] is None
     assert entry_payload["col_q"] is None
@@ -800,8 +815,7 @@ def test_amount_control_shift_create_list_detail_and_breakdown_links(client, tmp
     assert len(amount_shift["breakdowns"]) == 2
     assert amount_shift["breakdowns"][0]["entry_id"] is None
     assert (
-        amount_shift["breakdowns"][0]["amount_control_shift_id"]
-        == amount_shift["id"]
+        amount_shift["breakdowns"][0]["amount_control_shift_id"] == amount_shift["id"]
     )
     assert amount_shift["breakdowns"][0]["machine_code"] == "101"
 
@@ -855,10 +869,7 @@ def test_amount_control_shift_is_idempotent_for_client_request_id(
     replay_payload = replay_response.json()
     assert replay_payload["idempotent_replay"] is True
     assert replay_payload["shift"]["id"] == first_payload["shift"]["id"]
-    assert (
-        replay_payload["shift"]["client_request_id"]
-        == "amount-client-request-2"
-    )
+    assert replay_payload["shift"]["client_request_id"] == "amount-client-request-2"
 
     settings = Settings(
         excel_path=str(tmp_path / "process.xlsx"),
@@ -1010,6 +1021,18 @@ def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
                     col_g="Fallback Product",
                     col_h="WO-1",
                     col_k="1",
+                    col_l="15",
+                    process_date="2026-06-08",
+                    machine_code="101",
+                    sync_status="synced",
+                ),
+                Entry(
+                    col_a="08.06.2026",
+                    col_f="101",
+                    col_g="Second Product",
+                    col_h="WO-2",
+                    col_k="1",
+                    col_l=None,
                     process_date="2026-06-08",
                     machine_code="101",
                     sync_status="synced",
@@ -1019,7 +1042,7 @@ def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
         session.commit()
 
     async def fake_fetch_actuals(_settings, order_numbers):
-        assert order_numbers == ["WO-1"]
+        assert order_numbers == ["WO-1", "WO-2"]
         return [
             {
                 "OrderNo": "WO-1",
@@ -1029,12 +1052,34 @@ def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
                 "ActualStartDate": "2026-06-08T08:00:00+03:00",
                 "ActualFinishDate": "2026-06-08T09:00:00+03:00",
                 "NetMachineMinutes": 60,
-            }
+            },
+            {
+                "OrderNo": "WO-2",
+                "PreferredResourceId": "101",
+                "WorkCenterNo": "SP25",
+                "PartNoDesc": "PET 28MM 6GR",
+                "ActualStartDate": "2026-06-08T09:00:00+03:00",
+                "ActualFinishDate": "2026-06-08T10:00:00+03:00",
+                "NetMachineMinutes": 60,
+            },
         ]
 
     monkeypatch.setattr(
         "app.features.production_loss.service.fetch_shop_order_operation_actual_rows",
         fake_fetch_actuals,
+    )
+
+    async def fake_fetch_label_stock(
+        _settings,
+        *,
+        date_from,
+        date_to,
+    ):
+        return []
+
+    monkeypatch.setattr(
+        "app.features.production_loss.service.fetch_production_label_stock_rows",
+        fake_fetch_label_stock,
     )
 
     async def fake_fetch_operation_history(
@@ -1053,12 +1098,29 @@ def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
                 "ResourceId": "101",
                 "OrderNo": "WO-1",
                 "PartNo": "PET-6",
-            }
+            },
+            {
+                "TransactionId": "TX-200",
+                "TimeOfProduction": "2026-06-08T06:20:00Z",
+                "QtyComplete": "50",
+                "ResourceId": "101",
+                "OrderNo": "WO-2",
+                "PartNo": "PET-6",
+            },
         ]
 
     monkeypatch.setattr(
         "app.features.production_loss.service.fetch_shop_order_operation_history_rows",
         fake_fetch_operation_history,
+    )
+
+    async def fake_fetch_part_descriptions(_settings, part_numbers):
+        assert part_numbers == ["PET-6"]
+        return {"PET-6": "PET 28MM 6GR"}
+
+    monkeypatch.setattr(
+        "app.features.production_loss.service.fetch_inventory_part_descriptions",
+        fake_fetch_part_descriptions,
     )
 
     response = client.post(
@@ -1070,16 +1132,101 @@ def test_production_loss_report_endpoint_creates_snapshot(client, monkeypatch):
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.json()
     payload = response.json()
     assert payload["row_count"] == 1
-    assert payload["warning_count"] == 0
-    assert payload["rows"][0]["production_loss_net"] == "200"
+    assert payload["warning_count"] == 1
+    first_row = payload["rows"][0]
+    expected_first_row_values = {
+        "job_order": "WO-1",
+        "daily_total_quantity": 100,
+        "active_cavities": "1",
+        "cycle_time_seconds": "15",
+        "shift_0800_1600_actual_quantity": 100,
+        "shift_0800_1600_machine_minutes": "60",
+        "shift_0800_1600_optimum_quantity": "240",
+        "shift_0800_1600_loss_quantity": "140",
+        "net_machine_minutes": "60",
+        "gross_elapsed_minutes": "60",
+        "optimum_net_quantity": "240",
+        "production_loss_net": "140",
+        "optimum_gross_quantity": "240",
+        "production_loss_gross": "140",
+        "break_loss_quantity": "0",
+        "local_breakdown_minutes": 0,
+    }
+    for key, value in expected_first_row_values.items():
+        assert first_row[key] == value
+
+    source_summary = payload["source_summary"]
+    expected_source_summary_values = {
+        "quantity_source": "ifs-operation-history",
+        "operation_history_refreshed": True,
+        "operation_history_ifs_error": None,
+        "operation_history_row_count": 2,
+        "operation_history_event_count": 2,
+        "operation_history_quantity_total": 150,
+        "operation_history_parse_error_count": 0,
+        "operation_history_out_of_range_count": 0,
+        "operation_history_shift_group_count": 2,
+        "operation_history_product_description_count": 1,
+        "operation_history_product_description_error": None,
+        "ifs_refreshed": True,
+        "ifs_error": None,
+        "ifs_actual_count": 2,
+        "ifs_cached_count": 2,
+        "quantity_group_count": 2,
+        "process_match_count": 2,
+        "realized_cycle_source": "process-entry-col-l",
+        "realized_cycle_valid_count": 1,
+        "realized_cycle_missing_count": 1,
+        "realized_cycle_invalid_count": 0,
+        "realized_cycle_skipped_count": 1,
+        "realized_cycle_included_quantity_total": 100,
+        "realized_cycle_skipped_quantity_total": 50,
+    }
+    for key, value in expected_source_summary_values.items():
+        assert source_summary[key] == value
+    assert (
+        "gerceklesen cevrim eksik/gecersiz"
+        in source_summary["realized_cycle_skip_message"]
+    )
+    assert len(source_summary["realized_cycle_skip_details"]) == 1
+    skip_detail = source_summary["realized_cycle_skip_details"][0]
+    assert skip_detail["record_date"] == "2026-06-08"
+    assert skip_detail["machine_code"] == "101"
+    assert skip_detail["job_order"] == "WO-2"
+    assert skip_detail["entry_id"] is not None
+    assert skip_detail["raw_cycle"] is None
+    assert skip_detail["reason"] == "missing-cycle-time"
+    assert skip_detail["message"] == "Gerceklesen cevrim eksik"
     assert Path(payload["output_path"]).exists()
 
     list_response = client.get("/api/production-loss-reports")
     assert list_response.status_code == 200
     assert list_response.json()["reports"][0]["id"] == payload["id"]
+    assert list_response.json()["reports"][0]["source_summary"] == source_summary
+
+    detail_response = client.get(f"/api/production-loss-reports/{payload['id']}")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["source_summary"] == source_summary
+    for key, value in expected_first_row_values.items():
+        assert detail_payload["rows"][0][key] == value
+
+    with create_session(settings) as session:
+        report = session.query(ProductionLossReport).one()
+        report_rows = (
+            session.query(ProductionLossReportRow)
+            .order_by(ProductionLossReportRow.job_order)
+            .all()
+        )
+        assert json.loads(report.source_summary_json) == source_summary
+        assert report.warning_count == 1
+        assert len(report_rows) == 1
+        assert report_rows[0].cycle_time_seconds == "15"
+        assert report_rows[0].optimum_net_quantity == "240"
+        assert report_rows[0].production_loss_net == "140"
 
 
 def test_ifs_stock_endpoint_returns_u1_hm02_stock(client, monkeypatch):
@@ -1179,6 +1326,7 @@ def test_ifs_whatsapp_status_message_endpoint_returns_copy_ready_message(
 ):
     async def fake_fetch(_settings):
         return [
+            {"PreferredResourceId": "101"},
             {"PreferredResourceId": "302"},
             {"PreferredResourceId": "210"},
         ]
@@ -1192,21 +1340,21 @@ def test_ifs_whatsapp_status_message_endpoint_returns_copy_ready_message(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["hall_numbers"] == [3, 4]
-    assert payload["active_ifs_machine_count"] == 2
-    assert payload["machine_count"] == 20
-    assert payload["halls"][0]["hall_number"] == 3
+    assert payload["hall_numbers"] == [1, 2, 3, 4]
+    assert payload["active_ifs_machine_count"] == 3
+    assert payload["machine_count"] == 47
+    assert payload["halls"][0]["hall_number"] == 1
     assert payload["halls"][0]["machines"][0] == {
-        "machine_code": "302",
-        "hall_number": 3,
-        "hall_name": "Hole 3",
+        "machine_code": "101",
+        "hall_number": 1,
+        "hall_name": "Hole 1",
         "is_active": True,
         "status": "Üretim",
     }
     assert "Salon 3\n302 Üretim\n303 Kapalı" in payload["message"]
     assert "Salon 4\n202 Kapalı" in payload["message"]
     assert "210 Üretim" in payload["message"]
-    assert payload["message"].count("IFS kontrolleri yapılmıştır.") == 2
+    assert payload["message"].count("IFS kontrolleri yapılmıştır.") == 4
 
 
 def test_ifs_whatsapp_status_message_endpoint_returns_ifs_error(
@@ -1227,12 +1375,20 @@ def test_ifs_whatsapp_status_message_endpoint_returns_ifs_error(
     assert "IFS unavailable" in response.json()["detail"]
 
 
-def test_ifs_missing_production_starts_endpoint_lists_working_hall_3_4_missing_from_ifs(
+def test_ifs_missing_production_starts_endpoint_lists_ifs_combinations_missing_from_db(
     client,
     monkeypatch,
 ):
     async def fake_fetch(_settings):
-        return [{"PreferredResourceId": "303"}]
+        return [
+            {"PreferredResourceId": "302", "OrderNo": "WO-302"},
+            {"PreferredResourceId": "303", "OrderNo": "WO-303"},
+            {
+                "PreferredResourceId": "302",
+                "OrderNo": "WO-MISSING",
+                "PartNoDesc": "Product Missing",
+            },
+        ]
 
     monkeypatch.setattr(
         "app.features.ifs.api.fetch_pet_ongoing_operations",
@@ -1263,23 +1419,24 @@ def test_ifs_missing_production_starts_endpoint_lists_working_hall_3_4_missing_f
     assert response.status_code == 200
     payload = response.json()
     assert payload["process_date"] == "2026-06-08"
-    assert payload["hall_numbers"] == [3, 4]
-    assert payload["working_machine_count"] == 2
-    assert payload["active_ifs_machine_count"] == 1
+    assert payload["hall_numbers"] == [1, 2, 3, 4]
+    assert payload["working_machine_count"] == 3
+    assert payload["process_combination_count"] == 3
+    assert payload["active_ifs_machine_count"] == 2
+    assert payload["active_ifs_combination_count"] == 3
     assert payload["missing_count"] == 1
     assert payload["machines"] == [
         {
             "machine_code": "302",
             "hall_number": 3,
             "hall_name": "Hole 3",
-            "latest_work_order": "WO-302",
-            "latest_product": "Product 302",
-            "latest_cycle_time": "12,5",
-            "latest_submitted_at": payload["machines"][0]["latest_submitted_at"],
-            "entry_count": 1,
+            "latest_work_order": "WO-MISSING",
+            "latest_product": "Product Missing",
+            "latest_cycle_time": None,
+            "latest_submitted_at": None,
+            "entry_count": 0,
         }
     ]
-    assert payload["machines"][0]["latest_submitted_at"]
 
 
 def test_ifs_missing_production_starts_endpoint_returns_ifs_error(
@@ -1301,72 +1458,6 @@ def test_ifs_missing_production_starts_endpoint_returns_ifs_error(
 
     assert response.status_code == 502
     assert "IFS unavailable" in response.json()["detail"]
-
-
-def test_ifs_operation_materials_endpoint_returns_hm02_materials(client, monkeypatch):
-    called_with: dict[str, object] = {}
-
-    async def fake_fetch(_settings, operation):
-        called_with["operation"] = operation
-        return [
-            {
-                "OrderNo": "2615",
-                "ReleaseNo": "*",
-                "SequenceNo": "*",
-                "LineItemNo": 2,
-                "OperationNo": 10,
-                "PartNo": "HM-02-01-01-525",
-                "IssueToLoc": "U1",
-                "QtyRequired": 25.578,
-                "QtyAssigned": 0,
-                "QtyIssued": 0,
-                "QtyRemainingToReserve": 25.578,
-                "QtyAvailable": 100.72,
-                "PrintUnit": "kg",
-                "SoPartNo": "MM-PET0048-12-024Y-025",
-                "Cf_Tercihedilenkaynak": "135",
-            }
-        ]
-
-    monkeypatch.setattr(
-        "app.features.ifs.api.fetch_operation_hm02_materials",
-        fake_fetch,
-    )
-
-    response = client.get(
-        "/api/ifs/operation-hm02-materials",
-        params={"order_no": "2615", "operation_no": 10},
-    )
-
-    assert response.status_code == 200
-    assert called_with["operation"] == {
-        "OrderNo": "2615",
-        "ReleaseNo": "*",
-        "SequenceNo": "*",
-        "OperationNo": 10,
-    }
-    assert response.json() == {
-        "material_count": 1,
-        "materials": [
-            {
-                "order_no": "2615",
-                "release_no": "*",
-                "sequence_no": "*",
-                "line_item_no": 2,
-                "operation_no": 10,
-                "part_no": "HM-02-01-01-525",
-                "issue_to_location": "U1",
-                "qty_required": 25.578,
-                "qty_assigned": 0,
-                "qty_issued": 0,
-                "qty_remaining_to_reserve": 25.578,
-                "qty_available": 100.72,
-                "print_unit": "kg",
-                "produced_part_no": "MM-PET0048-12-024Y-025",
-                "machine": "135",
-            }
-        ],
-    }
 
 
 def test_ifs_used_materials_endpoint_returns_used_hm02_set(client, monkeypatch):
@@ -1503,7 +1594,7 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
                     "PrintUnit": "kg",
                     "SoPartNo": "MM-PET0002",
                     "Cf_Tercihedilenkaynak": "172",
-                }
+                },
             ],
         }
 
@@ -1551,7 +1642,9 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
     bootstrap_payload = bootstrap_response.json()
     assert bootstrap_payload["excel"]["available"] is True
     assert bootstrap_payload["excel"]["database_backed"] is True
-    assert [engineer["full_name"] for engineer in bootstrap_payload["production_engineers"]] == [
+    assert [
+        engineer["full_name"] for engineer in bootstrap_payload["production_engineers"]
+    ] == [
         "Barış Çetik",
         "Abdullah Kaya",
         "Fevzi Kılınç",
@@ -1594,7 +1687,9 @@ def test_bootstrap_and_health_endpoints_report_current_state(client):
     context_id = _tour_context(client)
     refreshed_bootstrap_response = client.get("/api/bootstrap")
     assert refreshed_bootstrap_response.status_code == 200
-    assert refreshed_bootstrap_response.json()["latest_tour_context"]["id"] == context_id
+    assert (
+        refreshed_bootstrap_response.json()["latest_tour_context"]["id"] == context_id
+    )
 
     health_response = client.get("/health")
     assert health_response.status_code == 200
@@ -1795,8 +1890,7 @@ def test_tour_context_is_idempotent_for_client_request_id(client):
     assert replay_payload["idempotent_replay"] is True
     assert replay_payload["id"] == first_payload["id"]
     assert (
-        replay_payload["tour_context"]["client_request_id"]
-        == "tour-client-request-2"
+        replay_payload["tour_context"]["client_request_id"] == "tour-client-request-2"
     )
 
 
@@ -1829,7 +1923,9 @@ def test_shift_boundaries(request_time, expected_shift):
     assert shift_for_request_time(request_time) == expected_shift
 
 
-def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, tmp_path):
+def test_entry_submit_uses_database_when_process_excel_is_missing(
+    monkeypatch, tmp_path
+):
     workbook_path = tmp_path / "process.xlsx"
     _freeze_request_time(monkeypatch)
     monkeypatch.setenv("EXCEL_PATH", str(workbook_path))
@@ -1847,9 +1943,12 @@ def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, t
             "/api/entries",
             json={
                 "tour_context_id": context_id,
+                "payload_schema_version": 2,
                 "payload": {
                     "col_f": "M-01",
-                    "col_g": "WO-1",
+                    "col_g": "Product M-01",
+                    "col_h": "WO-1",
+                    "col_l": "12,5",
                 },
             },
         )
@@ -1868,6 +1967,7 @@ def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, t
         assert pending_entries_response.status_code == 200
         pending_entries = pending_entries_response.json()["entries"]
         assert len(pending_entries) == 1
+        assert pending_entries[0]["payload"]["col_l"] == "12,5"
 
         retry_response = client.post(
             "/api/sync/retry",
@@ -1895,3 +1995,4 @@ def test_entry_submit_uses_database_when_process_excel_is_missing(monkeypatch, t
         assert entry.excel_row_number is None
         assert entry.last_error
         assert entry.synced_at is None
+        assert entry.col_l == "12,5"
