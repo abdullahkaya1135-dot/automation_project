@@ -16,6 +16,7 @@ from app.integrations.ifs.client import (
     fetch_operation_history_rows,
     fetch_operation_hm02_materials,
     fetch_pet_ongoing_operations,
+    fetch_pet_stopped_operations,
     fetch_planning_used_hm02_materials,
     fetch_production_label_stock_rows,
     fetch_shop_order_operation_actual_rows,
@@ -320,6 +321,77 @@ def test_fetch_pet_ongoing_operations_uses_dispatch_filter_and_follows_next_link
     )
     assert requests[0].url.params["$top"] == "1000"
     assert str(requests[1].url) == "https://ifs.example.com/next-operation-page"
+
+
+def test_fetch_pet_stopped_operations_uses_durus_interrupted_interval_window():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+    date_from = "2026-05-24"
+    date_to = "2026-07-23"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer test-token"
+        path = unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        if "GetDatesForInterval" in path:
+            assert "StartOffset=-30" in path
+            assert "EndOffset=30" in path
+            return httpx.Response(
+                200,
+                json={
+                    "DateFrom": date_from,
+                    "DateTo": date_to,
+                    "value": {"DateFrom": date_from, "DateTo": date_to},
+                },
+            )
+        if "GetOperations" in path:
+            assert "DispListFilterId='DURUS'" in path
+            assert (
+                "Selection=IfsApp.ShopFloorWorkbenchHandling."
+                "DisListFilterSelection'Interrupted'"
+            ) in path
+            assert (
+                "WorkCenterCode=IfsApp.ShopFloorWorkbenchHandling."
+                "WorkCenterCodeShopFloor'InternalWorkCenter'"
+            ) in path
+            assert date_from in path
+            assert date_to in path
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2710",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 30,
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404, text="Unexpected URL")
+
+    async def run() -> list[dict]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_pet_stopped_operations(
+                settings,
+                client=client,
+                access_token="test-token",
+            )
+
+    rows = asyncio.run(run())
+
+    assert rows == [
+        {"OrderNo": "2710", "ReleaseNo": "*", "SequenceNo": "*", "OperationNo": 30}
+    ]
+    assert len(requests) == 2
+    assert "GetDatesForInterval" in unquote(requests[0].url.raw_path.decode())
+    assert "GetOperations" in unquote(requests[1].url.raw_path.decode())
+    assert requests[1].url.params["$select"] == (
+        "OrderNo,ReleaseNo,SequenceNo,OperationNo,Contract,WorkCenterNo,"
+        "PartNo,PartNoDesc,PreferredResourceId,OperationNoDesc,RemainingQty"
+    )
+    assert requests[1].url.params["$top"] == "1000"
 
 
 def test_fetch_pet_ongoing_operations_reports_ifs_http_errors():
@@ -1118,15 +1190,19 @@ def test_fetch_planning_used_hm02_materials_collects_visible_order_materials():
     assert len(requests) == 4
 
 
-def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_path):
+def test_find_u1_return_candidates_excludes_active_and_stopped_used_materials(
+    tmp_path,
+):
     requests: list[httpx.Request] = []
     planning_path = tmp_path / "planning.xlsx"
-    _create_planning_workbook(planning_path, ["2579"])
+    _create_planning_workbook(planning_path, [])
     settings = Settings(
         ifs_base_url="https://ifs.example.com",
         timezone="Europe/Istanbul",
         production_planning_path=str(planning_path),
     )
+    date_from = "2026-05-24"
+    date_to = "2026-07-23"
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -1136,22 +1212,37 @@ def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_pat
                 200,
                 json={
                     "value": [
-                        {"PartNo": "HM-02-A", "LotBatchNo": "USED"},
-                        {"PartNo": "HM-03-B", "LotBatchNo": "PLANNED"},
-                        {"PartNo": "HM-04-C", "LotBatchNo": "L1"},
+                        {"PartNo": "HM-02-RUNNING", "LotBatchNo": "ACTIVE"},
+                        {"PartNo": "HM-03-DURAN", "LotBatchNo": "STOPPED"},
+                        {"PartNo": "HM-04-FREE", "LotBatchNo": "FREE"},
                     ]
                 },
             )
-        if "GetOperations" in path and "ShopOrder" in path:
+        if "GetDatesForInterval" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "DateFrom": date_from,
+                    "DateTo": date_to,
+                    "value": {"DateFrom": date_from, "DateTo": date_to},
+                },
+            )
+        if "GetOperations" in path and "DispListFilterId='DURUS'" in path:
+            assert (
+                "Selection=IfsApp.ShopFloorWorkbenchHandling."
+                "DisListFilterSelection'Interrupted'"
+            ) in path
+            assert date_from in path
+            assert date_to in path
             return httpx.Response(
                 200,
                 json={
                     "value": [
                         {
-                            "OrderNo": "2579",
+                            "OrderNo": "2710",
                             "ReleaseNo": "*",
                             "SequenceNo": "*",
-                            "OperationNo": 20,
+                            "OperationNo": 30,
                         }
                     ]
                 },
@@ -1178,20 +1269,20 @@ def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_pat
                         {
                             "OrderNo": "2615",
                             "OperationNo": 10,
-                            "PartNo": "HM-02-A",
+                            "PartNo": "HM-02-RUNNING",
                         }
                     ]
                 },
             )
-        if "OperationMaterialArray" in path and "OrderNo='2579'" in path:
+        if "OperationMaterialArray" in path and "OrderNo='2710'" in path:
             return httpx.Response(
                 200,
                 json={
                     "value": [
                         {
-                            "OrderNo": "2579",
-                            "OperationNo": 20,
-                            "PartNo": "HM-03-B",
+                            "OrderNo": "2710",
+                            "OperationNo": 30,
+                            "PartNo": "HM-03-DURAN",
                         }
                     ]
                 },
@@ -1208,30 +1299,39 @@ def test_find_u1_return_candidates_compares_stock_against_used_materials(tmp_pat
 
     summary = asyncio.run(run())
 
-    assert len(requests) == 5
+    request_paths = [unquote(request.url.raw_path.decode()) for request in requests]
+    assert any("GetDatesForInterval" in path for path in request_paths)
+    assert any(
+        "GetOperations" in path and "DispListFilterId='DURUS'" in path
+        for path in request_paths
+    )
     assert summary["generated_at"]
     assert summary["stock_count"] == 3
     assert summary["operation_count"] == 1
     assert summary["active_used_material_count"] == 1
     assert summary["active_used_part_count"] == 1
     assert summary["active_used_hm02_part_count"] == 1
-    assert summary["planning_order_count"] == 1
-    assert summary["planning_operation_count"] == 1
-    assert summary["planning_used_material_count"] == 1
-    assert summary["planning_used_part_count"] == 1
-    assert summary["planning_used_hm02_part_count"] == 1
+    assert summary["stopped_operation_count"] == 1
+    assert summary["stopped_used_material_count"] == 1
+    assert summary["stopped_used_part_count"] == 1
+    assert summary["stopped_used_hm02_part_count"] == 1
+    assert summary["planning_order_count"] == 0
+    assert summary["planning_operation_count"] == 0
+    assert summary["planning_used_material_count"] == 0
+    assert summary["planning_used_part_count"] == 0
+    assert summary["planning_used_hm02_part_count"] == 0
     assert summary["used_material_count"] == 2
     assert summary["used_part_count"] == 2
     assert summary["used_hm02_part_count"] == 2
     assert summary["return_candidate_count"] == 1
-    assert summary["used_parts"] == ["HM-02-A", "HM-03-B"]
-    assert summary["used_hm02_parts"] == ["HM-02-A", "HM-03-B"]
+    assert summary["used_parts"] == ["HM-02-RUNNING", "HM-03-DURAN"]
+    assert summary["used_hm02_parts"] == ["HM-02-RUNNING", "HM-03-DURAN"]
     assert summary["return_candidates"] == [
-        {"PartNo": "HM-04-C", "LotBatchNo": "L1"},
+        {"PartNo": "HM-04-FREE", "LotBatchNo": "FREE"},
     ]
     assert summary["used_materials"] == [
-        {"OrderNo": "2615", "OperationNo": 10, "PartNo": "HM-02-A"},
-        {"OrderNo": "2579", "OperationNo": 20, "PartNo": "HM-03-B"},
+        {"OrderNo": "2615", "OperationNo": 10, "PartNo": "HM-02-RUNNING"},
+        {"OrderNo": "2710", "OperationNo": 30, "PartNo": "HM-03-DURAN"},
     ]
 
 

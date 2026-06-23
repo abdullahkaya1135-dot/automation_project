@@ -217,14 +217,15 @@ token. The app fetches active PET operations during `/api/bootstrap` and maps
 `PreferredResourceId` to the Makine dropdown and `OrderNo` to the work-order
 dropdown.
 
-The `IFS U1 Iade Adaylari` check also reads visible job orders from column `A`
-of the latest valid `.xlsx` workbook in `PRODUCTION_PLANNING_DIR`. Daily files
-are selected by the newest date at the start of the filename, such as
-`GG.AA.YYYY ÇİZELGE 1.xlsx`; file modified time is only used as a tie-breaker.
-Temporary Excel files starting with `~$` are ignored. If
-`PRODUCTION_PLANNING_DIR` is blank, the app falls back to the configured
-`PRODUCTION_PLANNING_PATH` workbook. Hidden sheets, hidden rows, and hidden
-column `A` are ignored before the app checks scheduled orders for
+The `IFS U1 Iade Adaylari` check compares U1 stock against IFS usage from
+ongoing PET operations, DURUS/Interrupted stopped operations, and visible job
+orders from column `A` of the latest valid `.xlsx` workbook in
+`PRODUCTION_PLANNING_DIR`. Daily files are selected by the newest date at the
+start of the filename, such as `GG.AA.YYYY ÇİZELGE 1.xlsx`; file modified time
+is only used as a tie-breaker. Temporary Excel files starting with `~$` are
+ignored. If `PRODUCTION_PLANNING_DIR` is blank, the app falls back to the
+configured `PRODUCTION_PLANNING_PATH` workbook. Hidden sheets, hidden rows, and
+hidden column `A` are ignored before the app checks scheduled orders for
 HM-02/HM-03/HM-04 usage in IFS. Set `IFS_PART_PREFIXES` to a comma-separated
 list such as
 `HM-02,HM-03,HM-04` to control which raw-material prefixes are included; the

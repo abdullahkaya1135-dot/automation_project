@@ -1541,9 +1541,13 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
             "planning_used_material_count": 1,
             "planning_used_part_count": 1,
             "planning_used_hm02_part_count": 1,
-            "used_material_count": 2,
-            "used_part_count": 2,
-            "used_hm02_part_count": 2,
+            "stopped_operation_count": 1,
+            "stopped_used_material_count": 1,
+            "stopped_used_part_count": 1,
+            "stopped_used_hm02_part_count": 1,
+            "used_material_count": 3,
+            "used_part_count": 3,
+            "used_hm02_part_count": 3,
             "return_candidate_count": 1,
             "return_candidates": [
                 {
@@ -1558,8 +1562,8 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
                     "ObjId": "obj-1",
                 },
             ],
-            "used_parts": ["HM-02-A", "HM-03-B"],
-            "used_hm02_parts": ["HM-02-A", "HM-03-B"],
+            "used_parts": ["HM-02-A", "HM-03-B", "HM-03-DURAN"],
+            "used_hm02_parts": ["HM-02-A", "HM-03-B", "HM-03-DURAN"],
             "used_materials": [
                 {
                     "OrderNo": "2615",
@@ -1595,6 +1599,23 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
                     "SoPartNo": "MM-PET0002",
                     "Cf_Tercihedilenkaynak": "172",
                 },
+                {
+                    "OrderNo": "2616",
+                    "ReleaseNo": "*",
+                    "SequenceNo": "*",
+                    "LineItemNo": 4,
+                    "OperationNo": 20,
+                    "PartNo": "HM-03-DURAN",
+                    "IssueToLoc": "U1",
+                    "QtyRequired": 5,
+                    "QtyAssigned": 0,
+                    "QtyIssued": 0,
+                    "QtyRemainingToReserve": 5,
+                    "QtyAvailable": 30,
+                    "PrintUnit": "kg",
+                    "SoPartNo": "MM-PET-DURAN",
+                    "Cf_Tercihedilenkaynak": "261",
+                },
             ],
         }
 
@@ -1615,12 +1636,16 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
     assert payload["planning_used_material_count"] == 1
     assert payload["planning_used_part_count"] == 1
     assert payload["planning_used_hm02_part_count"] == 1
-    assert payload["used_material_count"] == 2
-    assert payload["used_part_count"] == 2
-    assert payload["used_hm02_part_count"] == 2
+    assert payload["stopped_operation_count"] == 1
+    assert payload["stopped_used_material_count"] == 1
+    assert payload["stopped_used_part_count"] == 1
+    assert payload["stopped_used_hm02_part_count"] == 1
+    assert payload["used_material_count"] == 3
+    assert payload["used_part_count"] == 3
+    assert payload["used_hm02_part_count"] == 3
     assert payload["return_candidate_count"] == 1
-    assert payload["used_parts"] == ["HM-02-A", "HM-03-B"]
-    assert payload["used_hm02_parts"] == ["HM-02-A", "HM-03-B"]
+    assert payload["used_parts"] == ["HM-02-A", "HM-03-B", "HM-03-DURAN"]
+    assert payload["used_hm02_parts"] == ["HM-02-A", "HM-03-B", "HM-03-DURAN"]
     assert [row["lot_batch_no"] for row in payload["return_candidates"]] == [
         "L1",
     ]
@@ -1634,6 +1659,9 @@ def test_ifs_return_candidates_endpoint_returns_unused_u1_stock(client, monkeypa
     assert payload["used_materials"][0]["part_no"] == "HM-02-A"
     assert payload["used_materials"][0]["machine"] == "135"
     assert payload["used_materials"][1]["part_no"] == "HM-03-B"
+    assert payload["used_materials"][2]["order_no"] == "2616"
+    assert payload["used_materials"][2]["operation_no"] == 20
+    assert payload["used_materials"][2]["part_no"] == "HM-03-DURAN"
 
 
 def test_bootstrap_and_health_endpoints_report_current_state(client):

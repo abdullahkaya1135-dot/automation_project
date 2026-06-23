@@ -153,6 +153,10 @@ async def ifs_u1_return_candidates(request: Request) -> dict[str, Any]:
             summary["planning_used_hm02_part_count"],
         ),
         "planning_used_hm02_part_count": summary["planning_used_hm02_part_count"],
+        "stopped_operation_count": summary["stopped_operation_count"],
+        "stopped_used_material_count": summary["stopped_used_material_count"],
+        "stopped_used_part_count": summary["stopped_used_part_count"],
+        "stopped_used_hm02_part_count": summary["stopped_used_hm02_part_count"],
         "used_material_count": summary["used_material_count"],
         "used_part_count": summary.get(
             "used_part_count",

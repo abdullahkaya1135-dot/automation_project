@@ -388,6 +388,72 @@ def _pet_operations_path(settings: Settings) -> str:
     return f"ShopFloorWorkbenchHandling.svc/GetOperations({arg_text})"
 
 
+def _pet_stopped_operation_interval_path(settings: Settings) -> str:
+    args = (
+        ("Contract", _odata_string(settings.ifs_contract)),
+        ("StartOffset", "-30"),
+        ("EndOffset", "30"),
+    )
+    arg_text = ",".join(f"{name}={value}" for name, value in args)
+    return f"ShopFloorWorkbenchHandling.svc/GetDatesForInterval({arg_text})"
+
+
+def _pet_stopped_operations_path(
+    settings: Settings,
+    *,
+    date_from: str,
+    date_to: str,
+) -> str:
+    args = (
+        ("Contract", _odata_string(settings.ifs_contract)),
+        (
+            "FilterBy",
+            "IfsApp.ShopFloorWorkbenchHandling.DispatchListFilterBy'PredefinedFilter'",
+        ),
+        ("DispListFilterId", _odata_string("DURUS")),
+        (
+            "Selection",
+            "IfsApp.ShopFloorWorkbenchHandling.DisListFilterSelection'Interrupted'",
+        ),
+        (
+            "DispatchRule",
+            "IfsApp.ShopFloorWorkbenchHandling.DispatchRule'AsScheduled'",
+        ),
+        ("DepartmentList", "null"),
+        ("WorkCenterList", "null"),
+        (
+            "WorkCenterCode",
+            "IfsApp.ShopFloorWorkbenchHandling.WorkCenterCodeShopFloor"
+            "'InternalWorkCenter'",
+        ),
+        ("ProductionLineList", "null"),
+        ("ResourceList", "null"),
+        ("LaborClassList", "null"),
+        ("DateFrom", date_from),
+        ("DateTo", date_to),
+        (
+            "BaseIntervalOn",
+            "IfsApp.ShopFloorWorkbenchHandling.DispListIntervalBasis"
+            "'PlannedFinishTime'",
+        ),
+        ("MyAssignedOper", "false"),
+        ("BarcodeId", "null"),
+        ("OrderNo", "null"),
+        ("ReleaseNo", "null"),
+        ("SequenceNo", "null"),
+        ("ProgramId", "null"),
+        ("ProjectId", "null"),
+        ("SubProjectId", "null"),
+        ("ActivityNo", "null"),
+        ("ActivitySeq", "null"),
+        ("CompanyId", _odata_string(settings.ifs_company_id)),
+        ("EmployeeId", "null"),
+        ("TeamId", "null"),
+    )
+    arg_text = ",".join(f"{name}={value}" for name, value in args)
+    return f"ShopFloorWorkbenchHandling.svc/GetOperations({arg_text})"
+
+
 def _shop_order_operations_path(settings: Settings, order_no: str) -> str:
     args = (
         ("Contract", _odata_string(settings.ifs_contract)),
@@ -612,6 +678,33 @@ async def _get_all(
         next_params = None
 
     return rows
+
+
+def _operation_interval_result(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = payload.get("value")
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, list) and value and isinstance(value[0], Mapping):
+        return value[0]
+    return payload
+
+
+def _operation_interval_date(value: Any, field_name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise IFSClientError(
+            f"IFS stopped-operation-interval response did not include {field_name}",
+            endpoint_category="stopped-operation-interval",
+        )
+    return text
+
+
+def _parse_operation_interval_dates(payload: Mapping[str, Any]) -> tuple[str, str]:
+    result = _operation_interval_result(payload)
+    return (
+        _operation_interval_date(result.get("DateFrom"), "DateFrom"),
+        _operation_interval_date(result.get("DateTo"), "DateTo"),
+    )
 
 
 async def _post_json_action(
@@ -1438,6 +1531,75 @@ async def fetch_pet_ongoing_operations(
             await http_client.aclose()
 
 
+async def _fetch_pet_stopped_operation_interval_dates(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient,
+    access_token: str,
+) -> tuple[str, str]:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = _projection_url(settings, _pet_stopped_operation_interval_path(settings))
+    payload = await _get_json_with_retry(
+        client,
+        url,
+        endpoint_category="stopped-operation-interval",
+        headers=headers,
+        params=None,
+    )
+    return _parse_operation_interval_dates(payload)
+
+
+async def fetch_pet_stopped_operations(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch interrupted DURUS operations from the stopped PET dispatch list."""
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+            ("ifs_company_id", "IFS_COMPANY_ID"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        date_from, date_to = await _fetch_pet_stopped_operation_interval_dates(
+            settings,
+            client=http_client,
+            access_token=token,
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(
+            settings,
+            _pet_stopped_operations_path(
+                settings,
+                date_from=date_from,
+                date_to=date_to,
+            ),
+        )
+        params = {
+            "$select": ",".join(OPERATION_SELECT_FIELDS),
+            "$top": "1000",
+        }
+        return await _get_all(
+            http_client,
+            url,
+            endpoint_category="pet-stopped-operations",
+            headers=headers,
+            params=params,
+        )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
 async def fetch_operation_hm02_materials(
     settings: Settings,
     operation: Mapping[str, Any],
@@ -1613,6 +1775,46 @@ async def fetch_used_hm02_materials(
             "used_hm02_part_count": len(used_parts),
             "used_hm02_parts": used_parts,
             "used_materials": used_materials,
+        }
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_stopped_hm02_materials(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+) -> dict[str, Any]:
+    """Fetch configured material-prefix usage for interrupted DURUS operations."""
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        operations = await fetch_pet_stopped_operations(
+            settings,
+            client=http_client,
+            access_token=token,
+        )
+        operations = _deduplicated_operations(operations)
+        used_materials = await _fetch_hm02_materials_for_operations(
+            settings,
+            operations,
+            client=http_client,
+            access_token=token,
+        )
+
+        used_parts = sorted(used_hm02_part_numbers(used_materials))
+        return {
+            "stopped_operation_count": len(operations),
+            "stopped_used_material_count": len(used_materials),
+            "stopped_used_part_count": len(used_parts),
+            "stopped_used_parts": used_parts,
+            "stopped_used_hm02_part_count": len(used_parts),
+            "stopped_used_hm02_parts": used_parts,
+            "stopped_used_materials": used_materials,
         }
     finally:
         if close_client:
@@ -1941,7 +2143,7 @@ async def find_u1_return_candidates(
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
 ) -> dict[str, Any]:
-    """Find U1 configured-prefix stock rows not used by active or planned operations."""
+    """Find U1 configured-prefix stock rows not used by active/stopped/planned work."""
 
     planning_path = resolve_planning_workbook(
         settings.production_planning_dir,
@@ -1953,13 +2155,23 @@ async def find_u1_return_candidates(
     http_client = client or httpx.AsyncClient(timeout=30.0)
     try:
         token = access_token or await obtain_access_token(settings, client=http_client)
-        stock_rows, active_summary, planning_summary = await asyncio.gather(
+        (
+            stock_rows,
+            active_summary,
+            stopped_summary,
+            planning_summary,
+        ) = await asyncio.gather(
             fetch_u1_hm02_stock(
                 settings,
                 client=http_client,
                 access_token=token,
             ),
             fetch_used_hm02_materials(
+                settings,
+                client=http_client,
+                access_token=token,
+            ),
+            fetch_stopped_hm02_materials(
                 settings,
                 client=http_client,
                 access_token=token,
@@ -1974,6 +2186,7 @@ async def find_u1_return_candidates(
         used_materials = _deduplicated_materials(
             [
                 *active_summary["used_materials"],
+                *stopped_summary["stopped_used_materials"],
                 *planning_summary["planning_used_materials"],
             ]
         )
@@ -1988,6 +2201,10 @@ async def find_u1_return_candidates(
             "planning_used_part_count",
             planning_summary["planning_used_hm02_part_count"],
         )
+        stopped_used_part_count = stopped_summary.get(
+            "stopped_used_part_count",
+            stopped_summary["stopped_used_hm02_part_count"],
+        )
         return {
             "generated_at": _generated_at(settings),
             "planning_source_path": str(planning_path),
@@ -1997,6 +2214,14 @@ async def find_u1_return_candidates(
             "active_used_material_count": active_summary["used_material_count"],
             "active_used_part_count": active_used_part_count,
             "active_used_hm02_part_count": active_summary["used_hm02_part_count"],
+            "stopped_operation_count": stopped_summary["stopped_operation_count"],
+            "stopped_used_material_count": stopped_summary[
+                "stopped_used_material_count"
+            ],
+            "stopped_used_part_count": stopped_used_part_count,
+            "stopped_used_hm02_part_count": stopped_summary[
+                "stopped_used_hm02_part_count"
+            ],
             "planning_order_count": planning_summary["planning_order_count"],
             "planning_operation_count": planning_summary["planning_operation_count"],
             "planning_used_material_count": planning_summary[

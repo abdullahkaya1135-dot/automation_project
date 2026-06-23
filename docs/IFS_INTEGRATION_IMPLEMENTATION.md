@@ -227,7 +227,7 @@ Stock rows are lot/batch-specific. There can be multiple rows for the same `Part
 The comparison should usually keep all rows for an unused `PartNo`, not aggregate
 them away, because return-to-inventory actions may require the lot/batch and `ObjId`.
 
-## Data Source 2: PET Active Machine Operations
+## Data Source 2: PET Active And DURAN Stopped Machine Operations
 
 Projection:
 
@@ -312,6 +312,30 @@ RemainingQty     = remaining operation quantity
 The `GetOperations` response does not directly contain raw-material/component
 codes. Use each operation's keys to call `OperationMaterialArray`.
 
+DURAN/stopped operations use the same projection, but with the stopped dispatch
+list and an explicit IFS date window.
+
+Window query:
+
+```text
+GetDatesForInterval(-30, 30)
+```
+
+Use the returned `DateFrom` and `DateTo` values in the stopped operation query:
+
+```text
+DispListFilterId: DURUS
+Selection: Interrupted
+WorkCenterCode: InternalWorkCenter
+DateFrom: <GetDatesForInterval DateFrom>
+DateTo: <GetDatesForInterval DateTo>
+```
+
+The stopped `GetOperations` query should otherwise use the same contract,
+company, dispatch rule, interval basis, selected fields, and pagination behavior
+as the ongoing PET operation query. Include these DURAN rows in the material
+usage comparison before deciding that U1 stock is free to return.
+
 ## Data Source 3: HM-02/HM-03/HM-04 Materials Used By Operations
 
 Projection:
@@ -329,7 +353,8 @@ DispatchListOperationSet(...)/OperationMaterialArray
 Purpose:
 
 ```text
-For each active operation, read configured raw-material/component lines.
+For each active, DURAN stopped, or visible planning operation, read configured
+raw-material/component lines.
 ```
 
 Confirmed sample operation:
@@ -405,7 +430,8 @@ LineItemNo
 ```
 
 Use `PartNo` from `OperationMaterialArray` as the set of configured raw materials currently
-used by active machine operations.
+used by active PET operations, DURAN stopped operations, or visible planning
+workbook orders.
 
 ## Comparison Logic
 
@@ -414,21 +440,33 @@ High-level algorithm:
 ```text
 1. Fetch all U1 HM-02/HM-03/HM-04 stock rows with AvailableQty > 0.
 2. Fetch all ongoing PET operations.
-3. For each operation, fetch OperationMaterialArray filtered to the configured prefixes.
-4. Build a set of used PartNo values from material lines.
-5. Return every U1 stock row whose PartNo is not in the used set.
+3. Fetch DURAN stopped operations by calling GetDatesForInterval(-30, 30), then
+   GetOperations with DispListFilterId='DURUS', Selection='Interrupted',
+   WorkCenterCode='InternalWorkCenter', and the returned DateFrom/DateTo.
+4. Read visible planning workbook orders and fetch their shop-order operations.
+5. For each operation, fetch OperationMaterialArray filtered to the configured prefixes.
+6. Build a set of used PartNo values from active, stopped, and planning material lines.
+7. Return every U1 stock row whose PartNo is not in the used set.
 ```
 
 Pseudo-code:
 
 ```python
 stock_rows = fetch_u1_hm02_stock()
-operations = fetch_pet_ongoing_operations()
+active_operations = fetch_pet_ongoing_operations()
+date_window = fetch_get_dates_for_interval(-30, 30)
+stopped_operations = fetch_pet_stopped_operations(
+    disp_list_filter_id="DURUS",
+    selection="Interrupted",
+    date_from=date_window["DateFrom"],
+    date_to=date_window["DateTo"],
+)
+planning_operations = fetch_visible_planning_order_operations()
 
 used_parts = set()
 material_usage = []
 
-for operation in operations:
+for operation in active_operations + stopped_operations + planning_operations:
     materials = fetch_hm02_operation_materials(operation)
     for material in materials:
         used_parts.add(material["PartNo"])
@@ -455,6 +493,10 @@ Recommended output shape:
   "generated_at": "2026-06-09T00:00:00+03:00",
   "stock_count": 27,
   "operation_count": 31,
+  "stopped_operation_count": 2,
+  "stopped_used_material_count": 1,
+  "stopped_used_part_count": 1,
+  "stopped_used_hm02_part_count": 1,
   "used_hm02_part_count": 1,
   "return_candidate_count": 0,
   "return_candidates": [
@@ -574,6 +616,7 @@ obtain OAuth token
 create authenticated httpx client
 fetch stock rows
 fetch PET operations
+fetch DURAN stopped operations
 fetch operation materials
 compute return candidates
 ```
@@ -585,6 +628,9 @@ async def fetch_u1_hm02_stock(settings) -> list[dict]:
     ...
 
 async def fetch_pet_ongoing_operations(settings) -> list[dict]:
+    ...
+
+async def fetch_pet_stopped_operations(settings) -> list[dict]:
     ...
 
 async def fetch_operation_hm02_materials(settings, operation) -> list[dict]:
@@ -678,6 +724,8 @@ Before merging the integration:
 [ ] Stock query returns U1 HM-02/HM-03/HM-04 rows.
 [ ] Reference_DispatchListFilter returns PET / Salon 4.
 [ ] GetOperations returns ongoing PET operations.
+[ ] GetDatesForInterval(-30, 30) returns the DURAN stopped-operation date window.
+[ ] GetOperations returns DURUS / Interrupted stopped operations with that date window.
 [ ] OperationMaterialArray returns configured raw-material rows for at least one operation.
 [ ] Pagination is handled for stock, operations, and materials.
 [ ] Return-candidate comparison keeps lot/batch-level stock rows.
