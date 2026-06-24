@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
+import { apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
 import {
   renderIfsReturnCandidates,
   renderIfsReturnPrintArea,
   renderListError,
   renderLoading,
-} from "./render.js?v=20260619-frontend-cleanup";
-import { setButtonBusy, setMessage } from "./utils.js?v=20260619-frontend-cleanup";
+} from "./render.js?v=20260624-package-label-checklist-cache";
+import { setButtonBusy, setMessage } from "./utils.js?v=20260624-package-label-checklist-cache";
 
 let latestIfsReturnCandidatesPayload = null;
 

@@ -5,7 +5,7 @@ import {
   setInputValue,
   updateStatusPill,
   uniqueSorted,
-} from "./utils.js?v=20260619-frontend-cleanup";
+} from "./utils.js?v=20260624-package-label-checklist-cache";
 
 let shopOrderPairs = [];
 

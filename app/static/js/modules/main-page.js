@@ -1,24 +1,28 @@
-import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
+import { apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
 import {
   amountControlRequestBodies,
   initializeAmountControlControls,
   resetAmountControlForm,
   updateAmountControlBootstrap,
-} from "./amount-control.js?v=20260619-frontend-cleanup";
+} from "./amount-control.js?v=20260624-package-label-checklist-cache";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
-} from "./dates.js?v=20260619-frontend-cleanup";
+} from "./dates.js?v=20260624-package-label-checklist-cache";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
-} from "./ifs-return.js?v=20260619-frontend-cleanup";
+} from "./ifs-return.js?v=20260624-package-label-checklist-cache";
+import {
+  handlePackageLabelChecklist,
+  handlePrintPackageLabelChecklist,
+} from "./package-label-checklist.js?v=20260624-package-label-checklist-cache";
 import {
   loadAmountControlShifts,
   loadAuxiliarySubmissions,
   loadEntryLists,
-} from "./lists.js?v=20260619-frontend-cleanup";
+} from "./lists.js?v=20260624-package-label-checklist-cache";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -31,27 +35,27 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260619-frontend-cleanup";
+} from "./offline.js?v=20260624-package-label-checklist-cache";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
-} from "./payloads.js?v=20260619-frontend-cleanup";
+} from "./payloads.js?v=20260624-package-label-checklist-cache";
 import {
   renderListError,
   renderLoading,
   renderMissingProductionStarts,
   renderProductionLossReport,
-} from "./render.js?v=20260619-frontend-cleanup";
+} from "./render.js?v=20260624-package-label-checklist-cache";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
   updateShopOrderOptions,
-} from "./shop-orders.js?v=20260619-frontend-cleanup";
+} from "./shop-orders.js?v=20260624-package-label-checklist-cache";
 import {
   initializeTemperatureShorthandInputs,
   normalizeTemperatureShorthandForm,
-} from "./temperature.js?v=20260619-frontend-cleanup";
+} from "./temperature.js?v=20260624-package-label-checklist-cache";
 import {
   applyAutomaticTourTiming,
   applyTourContext,
@@ -61,7 +65,7 @@ import {
   readStoredTourContext,
   storeTourContext,
   updateContextStatus,
-} from "./tour-context.js?v=20260619-frontend-cleanup";
+} from "./tour-context.js?v=20260624-package-label-checklist-cache";
 import {
   cleanRequired,
   createClientRequestId,
@@ -69,7 +73,7 @@ import {
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260619-frontend-cleanup";
+} from "./utils.js?v=20260624-package-label-checklist-cache";
 
 export function initMainPage() {
   const page = document.body?.dataset?.page;
@@ -239,6 +243,22 @@ function initializeReportsPage() {
     ifsReturnPrintButton.disabled = true;
     ifsReturnPrintButton.addEventListener("click", handlePrintIfsReturnCandidates);
   }
+
+  const packageLabelChecklistButton = document.querySelector("#run-package-label-checklist");
+  if (packageLabelChecklistButton) {
+    packageLabelChecklistButton.addEventListener("click", handlePackageLabelChecklist);
+  }
+
+  const packageLabelChecklistPrintButton = document.querySelector(
+    "#print-package-label-checklist",
+  );
+  if (packageLabelChecklistPrintButton) {
+    packageLabelChecklistPrintButton.disabled = true;
+    packageLabelChecklistPrintButton.addEventListener(
+      "click",
+      handlePrintPackageLabelChecklist,
+    );
+  }
 }
 
 async function initializeApplication(page) {
@@ -322,7 +342,8 @@ function pageMessageTarget(page) {
       || document.querySelector("#cycle-report-message")
       || document.querySelector("#whatsapp-status-feedback")
       || document.querySelector("#missing-production-message")
-      || document.querySelector("#ifs-return-message");
+      || document.querySelector("#ifs-return-message")
+      || document.querySelector("#package-label-checklist-message");
   }
   return document.querySelector("#phone-sync-message");
 }

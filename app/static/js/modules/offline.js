@@ -1,4 +1,4 @@
-import { ApiError, apiJson } from "../api.js?v=20260619-frontend-cleanup";
+import { ApiError, apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
 import {
   OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
@@ -8,19 +8,19 @@ import {
   OFFLINE_STATUS_SERVER_SAVED,
   OFFLINE_STATUS_SYNCING,
   OFFLINE_STATUS_VALIDATION_FAILED,
-} from "./constants.js?v=20260619-frontend-cleanup";
+} from "./constants.js?v=20260624-package-label-checklist-cache";
 import {
   applyTourContext,
   readStoredTourContext,
   storeTourContext,
-} from "./tour-context.js?v=20260619-frontend-cleanup";
+} from "./tour-context.js?v=20260624-package-label-checklist-cache";
 import {
   createClientRequestId,
   downloadTextFile,
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260619-frontend-cleanup";
+} from "./utils.js?v=20260624-package-label-checklist-cache";
 
 let offlineDbPromise = null;
 let offlineSyncInProgress = false;

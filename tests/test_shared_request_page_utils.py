@@ -1,5 +1,7 @@
 import json
+import re
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +24,27 @@ def _injected_json_constant(source: str, name: str):
     value, end = json.JSONDecoder().raw_decode(source[start:])
     assert source[start + end] == ";"
     return value
+
+
+def _static_js_import_graph(entry_path: str = "js/app.js") -> set[str]:
+    import_pattern = re.compile(r"""(?:from\s+|import\()\s*["']([^"']+)["']""")
+    visited: set[str] = set()
+
+    def visit(relative_path: str) -> None:
+        if relative_path in visited:
+            return
+        visited.add(relative_path)
+        source_path = pages.STATIC_DIR / relative_path
+        source = source_path.read_text(encoding="utf-8")
+        for import_spec in import_pattern.findall(source):
+            if not import_spec.startswith("."):
+                continue
+            import_path = import_spec.split("?", 1)[0]
+            resolved_path = (source_path.parent / import_path).resolve()
+            visit(resolved_path.relative_to(pages.STATIC_DIR).as_posix())
+
+    visit(entry_path)
+    return visited
 
 
 def test_settings_from_request_reuses_existing_app_state(monkeypatch):
@@ -205,6 +228,30 @@ def test_static_asset_urls_share_versioned_static_prefix():
         assert asset_url.endswith(f"?v={pages.STATIC_ASSET_VERSION}")
 
 
+def test_app_shell_urls_cover_static_js_import_graph():
+    shell_js_paths = {
+        asset_url.removeprefix(pages.STATIC_URL_PREFIX).split("?", 1)[0]
+        for asset_url in pages.APP_SHELL_URLS
+        if asset_url.startswith(f"{pages.STATIC_URL_PREFIX}js/")
+    }
+
+    assert _static_js_import_graph() <= shell_js_paths
+
+
+def test_static_js_import_versions_match_current_asset_version():
+    version_pattern = re.compile(r"""\?v=([^"')]+)""")
+    js_paths = [
+        Path("app/static/js/app.js"),
+        Path("app/static/js/api.js"),
+        *sorted(Path("app/static/js/modules").glob("*.js")),
+    ]
+
+    for js_path in js_paths:
+        source = js_path.read_text(encoding="utf-8")
+        for version in version_pattern.findall(source):
+            assert version == pages.STATIC_ASSET_VERSION
+
+
 def test_service_worker_injects_current_route_and_shell_constants():
     response = pages.service_worker()
     source = bytes(response.body).decode()
@@ -214,5 +261,11 @@ def test_service_worker_injects_current_route_and_shell_constants():
     assert response.headers["Service-Worker-Allowed"] == "/"
     assert _injected_json_constant(source, "APP_ROUTE_URLS") == list(pages.APP_ROUTE_URLS)
     assert _injected_json_constant(source, "APP_SHELL_URLS") == list(pages.APP_SHELL_URLS)
+    assert _injected_json_constant(source, "CACHE_NAME") == pages.SERVICE_WORKER_CACHE_NAME
     assert source.index("const APP_ROUTE_URLS") < source.index("const APP_SHELL_URLS")
     assert source.index("const APP_SHELL_URLS") < source.index("const CACHE_NAME")
+    assert source.index("const CACHE_NAME") < source.index("self.addEventListener")
+
+    static_source = (pages.STATIC_DIR / "service-worker.js").read_text(encoding="utf-8")
+    assert "const CACHE_NAME" not in static_source
+    assert 'url.pathname === "/service-worker.js"' not in static_source

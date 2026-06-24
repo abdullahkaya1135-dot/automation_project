@@ -1,10 +1,10 @@
-import { SYNC_LABELS } from "./constants.js?v=20260619-frontend-cleanup";
-import { dateForDisplay } from "./dates.js?v=20260619-frontend-cleanup";
+import { SYNC_LABELS } from "./constants.js?v=20260624-package-label-checklist-cache";
+import { dateForDisplay } from "./dates.js?v=20260624-package-label-checklist-cache";
 import {
   displayValue,
   formatTimestamp,
   updateStatusPill,
-} from "./utils.js?v=20260619-frontend-cleanup";
+} from "./utils.js?v=20260624-package-label-checklist-cache";
 
 const PRODUCTION_LOSS_SHIFT_COLUMNS = [
   {
@@ -21,6 +21,110 @@ const PRODUCTION_LOSS_SHIFT_COLUMNS = [
     label: "16.00-24.00",
     prefix: "shift_1600_2400",
     legacyActualKey: "shift_1600_2400_quantity",
+  },
+];
+
+const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES = [
+  {
+    label: "No",
+    keys: ["no", "row_no", "line_no", "sequence", "index"],
+    className: "mono-cell package-label-checklist-number",
+  },
+  {
+    label: "Handling Unit",
+    keys: [
+      "handling_unit",
+      "handling_unit_id",
+      "handling_unit_no",
+      "handlingUnit",
+      "handlingUnitId",
+      "handlingUnitNo",
+      "sscc",
+      "package_id",
+    ],
+    className: "mono-cell",
+  },
+  {
+    label: "Part No",
+    keys: ["part_no", "partNo", "material_part_no", "materialPartNo"],
+    className: "mono-cell",
+  },
+  {
+    label: "Description",
+    keys: [
+      "description",
+      "part_description",
+      "material_name",
+      "material_description",
+      "part_desc",
+    ],
+  },
+  {
+    label: "Qty",
+    keys: [
+      "qty",
+      "qty_onhand",
+      "quantity",
+      "available_qty",
+      "label_quantity",
+      "qty_per_package",
+      "package_qty",
+    ],
+  },
+  {
+    label: "Location",
+    keys: ["location", "location_no", "locationNo", "warehouse_location"],
+    className: "mono-cell",
+  },
+  {
+    label: "Lot/Batch",
+    keys: ["lot_batch", "lot_batch_no", "lotBatchNo", "lot_no", "batch_no", "lot"],
+    className: "mono-cell",
+  },
+  {
+    label: "Job Order",
+    keys: ["job_order", "job_order_no", "order_no", "shop_order_no", "source_ref1"],
+    className: "mono-cell",
+  },
+  {
+    label: "Machine",
+    keys: [
+      "machine",
+      "machine_code",
+      "machineCode",
+      "resource_id",
+      "preferred_resource_id",
+    ],
+    className: "mono-cell",
+    value: packageLabelChecklistMachineText,
+  },
+  {
+    label: "Operation Status",
+    keys: ["operation_match_status", "match_status"],
+    value: packageLabelChecklistOperationStatusText,
+  },
+  {
+    label: "Label OK",
+    keys: [
+      "label_ok",
+      "labelOk",
+      "has_label",
+      "label_found",
+      "label_printed",
+      "label_status",
+    ],
+    className: "package-label-checklist-writing-cell",
+    value: packageLabelChecklistStatusText,
+  },
+  {
+    label: "Missing Reason",
+    keys: ["missing_reason", "missingReason", "label_missing_reason", "reason"],
+    className: "package-label-checklist-writing-cell",
+  },
+  {
+    label: "Notes",
+    keys: ["notes", "note", "comment", "remarks"],
+    className: "package-label-checklist-writing-cell",
   },
 ];
 
@@ -115,6 +219,7 @@ export function renderIfsReturnPrintArea(payload) {
   }
 
   if (!payload) {
+    deactivatePrintArea(container);
     container.replaceChildren();
     return;
   }
@@ -127,10 +232,67 @@ export function renderIfsReturnPrintArea(payload) {
     empty.className = "empty-state";
     empty.textContent = "İade adayı yok.";
     container.replaceChildren(empty);
+    activatePrintArea(container);
     return;
   }
 
   container.replaceChildren(renderIfsReturnCandidateTable(candidates));
+  activatePrintArea(container);
+}
+
+export function renderPackageLabelChecklist(container, payload) {
+  if (!container) {
+    return;
+  }
+
+  const rows = packageLabelChecklistRows(payload);
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(renderPackageLabelChecklistSummary(payload, rows));
+
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Checklist satiri yok.";
+    fragment.appendChild(empty);
+    container.replaceChildren(fragment);
+    return;
+  }
+
+  fragment.appendChild(renderPackageLabelChecklistTable(rows));
+  container.replaceChildren(fragment);
+}
+
+export function renderPackageLabelChecklistPrintArea(payload) {
+  const container = document.querySelector("#package-label-checklist-print-area");
+  if (!container) {
+    return;
+  }
+
+  if (!payload) {
+    deactivatePrintArea(container);
+    container.replaceChildren();
+    return;
+  }
+
+  const rows = packageLabelChecklistRows(payload);
+  const fragment = document.createDocumentFragment();
+  const title = document.createElement("h1");
+  title.className = "package-label-checklist-print-title";
+  title.textContent = "Package Label Checklist";
+  fragment.appendChild(title);
+  fragment.appendChild(renderPackageLabelChecklistSummary(payload, rows));
+
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Checklist satiri yok.";
+    fragment.appendChild(empty);
+  } else {
+    fragment.appendChild(renderPackageLabelChecklistTable(rows));
+  }
+
+  container.replaceChildren(fragment);
+  activatePrintArea(container);
 }
 
 export function renderMissingProductionStarts(container, payload) {
@@ -327,6 +489,61 @@ function renderProductionLossSummary(payload) {
   return summary;
 }
 
+function renderPackageLabelChecklistSummary(payload, rows) {
+  const summaryPayload = payload?.summary || {};
+  const summary = document.createElement("div");
+  summary.className = "ifs-summary package-label-checklist-summary";
+  const counts = packageLabelChecklistSummaryCounts(payload, rows);
+
+  const items = [
+    ["Satir", counts.rowCount],
+    ["Handling Unit", counts.handlingUnitCount],
+    ["Makine", counts.matchedCount],
+    ["Belirsiz", counts.ambiguousCount],
+    ["Makine yok", counts.notFoundCount],
+    ["Is emri yok", counts.missingJobOrderCount],
+    ["Operasyon okunamadi", counts.operationLookupFailedCount],
+    [
+      "Son kontrol",
+      summaryPayload.generated_at ? formatTimestamp(summaryPayload.generated_at) : null,
+    ],
+  ];
+
+  for (const [label, value] of items) {
+    const item = document.createElement("div");
+    item.className = "ifs-summary-item";
+
+    const itemLabel = document.createElement("span");
+    itemLabel.textContent = label;
+
+    const itemValue = document.createElement("strong");
+    itemValue.textContent = displayValue(value);
+
+    item.append(itemLabel, itemValue);
+    summary.appendChild(item);
+  }
+
+  if (payload?.source_name || payload?.source_path) {
+    const source = document.createElement("p");
+    source.className = "entry-meta ifs-generated-at";
+    source.textContent = `Kaynak: ${payload.source_name || payload.source_path}`;
+    if (payload?.source_path) {
+      source.title = payload.source_path;
+    }
+    summary.appendChild(source);
+  }
+
+  const warningText = payload?.warning || summaryPayload.warning;
+  if (warningText) {
+    const warning = document.createElement("p");
+    warning.className = "entry-meta warning ifs-generated-at";
+    warning.textContent = warningText;
+    summary.appendChild(warning);
+  }
+
+  return summary;
+}
+
 function renderIfsReturnCandidateTable(candidates) {
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-scroll";
@@ -368,6 +585,223 @@ function renderIfsReturnCandidateTable(candidates) {
   table.append(thead, tbody);
   tableWrap.appendChild(table);
   return tableWrap;
+}
+
+function renderPackageLabelChecklistTable(rows) {
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-scroll";
+
+  const table = document.createElement("table");
+  table.className = "data-table package-label-checklist-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const column of PACKAGE_LABEL_CHECKLIST_ROW_SOURCES) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = column.label;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    for (const column of PACKAGE_LABEL_CHECKLIST_ROW_SOURCES) {
+      appendChecklistCell(
+        tr,
+        packageLabelChecklistCellValue(row, column, index),
+        column.className,
+      );
+    }
+    tbody.appendChild(tr);
+  });
+
+  table.append(thead, tbody);
+  tableWrap.appendChild(table);
+  return tableWrap;
+}
+
+function packageLabelChecklistRows(payload) {
+  for (const key of [
+    "checklist_rows",
+    "rows",
+    "items",
+    "labels",
+    "package_labels",
+    "checklist",
+  ]) {
+    if (Array.isArray(payload?.[key])) {
+      return payload[key];
+    }
+  }
+  return [];
+}
+
+function packageLabelChecklistSummaryCounts(payload, rows) {
+  const summaryPayload = payload?.summary || {};
+  const rowCount = Number(
+    payload?.checklist_count
+      ?? payload?.row_count
+      ?? summaryPayload.row_count
+      ?? payload?.package_label_count
+      ?? payload?.label_count
+      ?? rows.length,
+  ) || 0;
+  const handlingUnitCount = Number(
+    payload?.handling_unit_count ?? uniqueChecklistValueCount(rows, [
+      "handling_unit",
+      "handling_unit_id",
+      "handling_unit_no",
+      "handlingUnit",
+      "handlingUnitId",
+      "handlingUnitNo",
+      "sscc",
+      "package_id",
+    ]),
+  ) || 0;
+  const labelOkCount = Number(
+    payload?.label_ok_count
+      ?? payload?.ok_label_count
+      ?? summaryPayload.label_ok_count
+      ?? rows.filter((row) => packageLabelChecklistStatus(row) === true).length,
+  ) || 0;
+  const missingCount = Number(
+    payload?.missing_label_count
+      ?? payload?.missing_count
+      ?? payload?.label_missing_count
+      ?? summaryPayload.missing_label_count
+      ?? rows.filter((row) => packageLabelChecklistStatus(row) === false).length,
+  ) || 0;
+  const matchedCount = Number(summaryPayload.matched_count ?? 0) || 0;
+  const ambiguousCount = Number(summaryPayload.ambiguous_count ?? 0) || 0;
+  const notFoundCount = Number(summaryPayload.not_found_count ?? 0) || 0;
+  const missingJobOrderCount = Number(
+    summaryPayload.missing_job_order_count ?? 0,
+  ) || 0;
+  const operationLookupFailedCount = Number(
+    summaryPayload.operation_lookup_failed_count ?? 0,
+  ) || 0;
+
+  return {
+    rowCount,
+    handlingUnitCount,
+    labelOkCount,
+    missingCount,
+    matchedCount,
+    ambiguousCount,
+    notFoundCount,
+    missingJobOrderCount,
+    operationLookupFailedCount,
+  };
+}
+
+function uniqueChecklistValueCount(rows, keys) {
+  return new Set(
+    rows
+      .map((row) => checklistRowValue(row, keys))
+      .filter((value) => value !== null && value !== undefined && value !== ""),
+  ).size;
+}
+
+function packageLabelChecklistCellValue(row, column, index) {
+  if (typeof column.value === "function") {
+    return column.value(row, column, index);
+  }
+  const value = checklistRowValue(row, column.keys);
+  if (value !== null) {
+    return value;
+  }
+  if (column.label === "No") {
+    return index + 1;
+  }
+  return null;
+}
+
+function checklistRowValue(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function packageLabelChecklistStatusText(row) {
+  const status = packageLabelChecklistStatus(row);
+  if (status === true) {
+    return "OK";
+  }
+  if (status === false) {
+    return "Eksik";
+  }
+  return null;
+}
+
+function packageLabelChecklistMachineText(row, column) {
+  const status = String(row?.operation_match_status || "").trim().toLowerCase();
+  if (status === "ambiguous") {
+    return "Belirsiz";
+  }
+  if (status === "lookup_failed") {
+    return null;
+  }
+  return checklistRowValue(row, column.keys);
+}
+
+function packageLabelChecklistOperationStatusText(row) {
+  const status = String(row?.operation_match_status || "").trim().toLowerCase();
+  const matchCount = Number(row?.operation_match_count || 0);
+  if (status === "matched") {
+    return "Eslesmis";
+  }
+  if (status === "matched_by_job_order") {
+    return "Is emrine gore eslesmis";
+  }
+  if (status === "ambiguous") {
+    return matchCount > 0 ? `Belirsiz (${matchCount} aday)` : "Belirsiz";
+  }
+  if (status === "not_found") {
+    return "Makine yok";
+  }
+  if (status === "no_job_order") {
+    return "Is emri yok";
+  }
+  if (status === "lookup_failed") {
+    return "IFS operasyonu okunamadi";
+  }
+  return checklistRowValue(row, ["operation_match_status", "match_status"]);
+}
+
+function packageLabelChecklistStatus(row) {
+  const value = checklistRowValue(row, [
+    "label_ok",
+    "labelOk",
+    "has_label",
+    "label_found",
+    "label_printed",
+    "label_status",
+  ]);
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value > 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["ok", "yes", "true", "1", "var"].includes(normalized)) {
+      return true;
+    }
+    if (["missing", "eksik", "no", "false", "0", "yok"].includes(normalized)) {
+      return false;
+    }
+  }
+  if (checklistRowValue(row, ["missing_reason", "label_missing_reason", "reason"])) {
+    return false;
+  }
+  return null;
 }
 
 function renderMissingProductionTable(machines) {
@@ -513,6 +947,33 @@ function appendTableCell(row, value, className) {
   }
   cell.textContent = displayValue(value);
   row.appendChild(cell);
+}
+
+function appendChecklistCell(row, value, className) {
+  const cell = document.createElement("td");
+  if (className) {
+    cell.className = className;
+  }
+  cell.textContent = value === null || value === undefined || value === ""
+    ? ""
+    : displayValue(value);
+  row.appendChild(cell);
+}
+
+function activatePrintArea(container) {
+  for (const area of document.querySelectorAll(".print-only.print-active")) {
+    if (area !== container) {
+      area.classList.remove("print-active");
+      area.setAttribute("aria-hidden", "true");
+    }
+  }
+  container.classList.add("print-active");
+  container.setAttribute("aria-hidden", "false");
+}
+
+function deactivatePrintArea(container) {
+  container.classList.remove("print-active");
+  container.setAttribute("aria-hidden", "true");
 }
 
 function appendShiftLossCell(rowElement, reportRow, shift) {

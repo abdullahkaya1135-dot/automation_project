@@ -15,6 +15,7 @@ from sqlalchemy import Integer, cast, select
 from ...core.config import Settings
 from ...core.database import create_session
 from ...integrations.ifs.client import fetch_pet_ongoing_operations
+from ...models import Machine
 from ...services.shop_order_source import (
     ShopOrderOption,
     shop_order_options_from_ifs_operations,
@@ -33,8 +34,10 @@ REPORT_HEADERS = (
     "Gerçekleşen Çevrim Süresi",
     "Optimum Çevrim Süresi",
     "Kontrol Durumu",
+    "Sonuç",
 )
 SOURCE_COLUMN_COUNT = 12
+REPORT_HALL_NUMBERS = (1, 2)
 PART_NECK_PATTERN = re.compile(r"(\d+(?:[,.]\d+)?)\s*MM\b", re.IGNORECASE)
 PART_GRAM_PATTERN = re.compile(r"(\d+(?:[,.]\d+)?)\s*GR\b", re.IGNORECASE)
 STATUS_OK = "Uygun"
@@ -82,6 +85,7 @@ class CycleReportRow:
     actual_cycle_time: Decimal | None
     optimum_cycle_time: Decimal | None
     control_status: str
+    result: str | None
 
 
 @dataclass(frozen=True)
@@ -190,9 +194,12 @@ def _read_process_rows(settings: Settings, report_date: Date) -> list[ProcessCyc
     with create_session(settings) as session:
         entries = session.scalars(
             select(Entry)
+            .join(Machine, Entry.machine_code == Machine.machine_code)
             .where(Entry.process_date == report_date.isoformat())
+            .where(Machine.hall_number.in_(REPORT_HALL_NUMBERS))
             .order_by(
                 cast(Entry.machine_code, Integer).asc(),
+                Entry.machine_code.asc(),
                 Entry.production_engineer_id.asc(),
                 Entry.id.asc(),
             )
@@ -520,9 +527,27 @@ def build_cycle_report_rows(
                 actual_cycle_time=process_row.actual_cycle_time,
                 optimum_cycle_time=optimum_cycle,
                 control_status=status,
+                result=None if status == STATUS_CHECK else status,
             )
         )
     return report_rows
+
+
+def _machine_code_sort_key(value: Any) -> tuple[int, int | str]:
+    machine_code = _identifier(value)
+    if machine_code.isdigit():
+        return (0, int(machine_code))
+    return (1, machine_code)
+
+
+def _ordered_report_rows(rows: list[CycleReportRow]) -> list[CycleReportRow]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.control_status,
+            _machine_code_sort_key(row.machine_no),
+        ),
+    )
 
 
 def _read_shop_order_options(settings: Settings) -> list[ShopOrderOption]:
@@ -551,6 +576,7 @@ def _write_report(output_path: Path, rows: list[CycleReportRow]) -> None:
                 _excel_value(row.actual_cycle_time),
                 _excel_value(row.optimum_cycle_time),
                 row.control_status,
+                row.result,
             ]
         )
 
@@ -588,7 +614,9 @@ def create_cycle_report(settings: Settings, report_date: Date) -> CycleReportRes
     shop_orders = _read_shop_order_options(settings)
 
     cycle_entries = _read_cycle_table(settings)
-    report_rows = build_cycle_report_rows(process_rows, shop_orders, cycle_entries)
+    report_rows = _ordered_report_rows(
+        build_cycle_report_rows(process_rows, shop_orders, cycle_entries)
+    )
 
     output_dir = Path(settings.report_output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,3 @@
-const CACHE_NAME = "process-offline-shell-v12";
-
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -44,7 +42,6 @@ self.addEventListener("fetch", (event) => {
   if (
     url.pathname.startsWith("/static/")
     || url.pathname === "/manifest.webmanifest"
-    || url.pathname === "/service-worker.js"
   ) {
     event.respondWith(cacheFirst(request));
   }

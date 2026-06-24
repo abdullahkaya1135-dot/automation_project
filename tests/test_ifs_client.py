@@ -15,6 +15,7 @@ from app.integrations.ifs.client import (
     fetch_inventory_part_descriptions,
     fetch_operation_history_rows,
     fetch_operation_hm02_materials,
+    fetch_package_label_checklist,
     fetch_pet_ongoing_operations,
     fetch_pet_stopped_operations,
     fetch_planning_used_hm02_materials,
@@ -28,6 +29,7 @@ from app.integrations.ifs.client import (
     return_candidate_stock_rows,
     serialize_material_row,
     serialize_operation_row,
+    serialize_package_label_checklist_row,
     serialize_stock_row,
     used_hm02_part_numbers,
 )
@@ -153,6 +155,142 @@ def test_fetch_u1_hm02_stock_uses_filter_and_follows_next_link():
     assert requests[0].url.params["$expand"] == "PartNoRef($select=Description)"
     assert requests[0].url.params["$top"] == "1000"
     assert str(requests[1].url) == "https://ifs.example.com/next-stock-page"
+
+
+def test_fetch_package_label_checklist_filters_sorts_and_enriches_machine():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer test-token"
+        path = unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        if path.endswith("/InventoryPartInStockHandling.svc/InventoryPartInStockSet"):
+            assert request.url.params["$filter"] == (
+                "Contract eq 'S01' and startswith(PartNo,'MM') "
+                "and not startswith(PartNo,'MM-PET') "
+                "and startswith(LocationNo,'U01') and QtyOnhand gt 0"
+            )
+            assert request.url.params["$orderby"] == (
+                "HandlingUnitId asc,PartNo asc,LotBatchNo asc"
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "Contract": "S01",
+                            "PartNo": "MM-AAA",
+                            "PartNoDesc": "Product A",
+                            "LocationNo": "U01",
+                            "QtyOnhand": 12,
+                            "AvailableQty": 10,
+                            "UoM": "pcs",
+                            "LotBatchNo": "2758-*-*-1",
+                            "HandlingUnitId": "HU-2",
+                            "ObjId": "obj-2",
+                        },
+                        {
+                            "Contract": "S01",
+                            "PartNo": "MM-PET-SKIP",
+                            "LocationNo": "U01",
+                            "QtyOnhand": 1,
+                            "LotBatchNo": "2766-*-*-1",
+                            "HandlingUnitId": "HU-0",
+                            "ObjId": "obj-skip",
+                        },
+                        {
+                            "Contract": "S01",
+                            "PartNo": "MM-BBB",
+                            "PartNoDesc": "Product B",
+                            "LocationNo": "U01A",
+                            "QtyOnhand": 24,
+                            "AvailableQty": 24,
+                            "UoM": "pcs",
+                            "LotBatchNo": "2800-*-*-1",
+                            "HandlingUnitId": "HU-1",
+                            "ObjId": "obj-1",
+                        },
+                    ],
+                    "@odata.count": 3,
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2758'" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2758",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 20,
+                            "PartNo": "MM-AAA",
+                            "PartNoDesc": "Product A",
+                            "PreferredResourceId": "401",
+                            "WorkCenterNo": "WC-A",
+                        }
+                    ]
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2800'" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2800",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 20,
+                            "PartNo": "MM-BBB",
+                            "PreferredResourceId": "302",
+                            "WorkCenterNo": "WC-B",
+                        },
+                        {
+                            "OrderNo": "2800",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 10,
+                            "PartNo": "MM-BBB",
+                            "PreferredResourceId": "301",
+                            "WorkCenterNo": "WC-B",
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(404, text=f"Unexpected URL: {request.url}")
+
+    async def run() -> dict:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_package_label_checklist(
+                settings,
+                client=client,
+                access_token="test-token",
+                page_size=100,
+                concurrency=1,
+            )
+
+    payload = asyncio.run(run())
+
+    assert payload["summary"]["source_stock_count"] == 3
+    assert payload["summary"]["excluded_count"] == 1
+    assert payload["summary"]["stock_count"] == 2
+    assert payload["summary"]["row_count"] == 2
+    assert payload["summary"]["job_order_count"] == 2
+    assert payload["summary"]["operation_count"] == 3
+    assert payload["summary"]["matched_count"] == 1
+    assert payload["summary"]["ambiguous_count"] == 1
+    assert payload["summary"]["operation_lookup_failed_count"] == 0
+    assert payload["summary"]["operation_lookup_failed_orders"] == []
+    assert [row["handling_unit_id"] for row in payload["rows"]] == ["HU-1", "HU-2"]
+    assert payload["rows"][0]["job_order"] == "2800"
+    assert payload["rows"][0]["machine_code"] is None
+    assert payload["rows"][0]["operation_no"] is None
+    assert payload["rows"][0]["operation_ambiguous"] is True
+    assert payload["rows"][1]["job_order"] == "2758"
+    assert payload["rows"][1]["machine_code"] == "401"
+    assert payload["rows"][1]["operation_match_status"] == "matched"
 
 
 def test_fetch_u1_hm02_stock_obtains_oauth_token_when_needed():
@@ -849,6 +987,295 @@ def test_fetch_production_label_stock_rows_uses_stock_journey_query():
     assert requests[1].url.params["$skip"] == "2"
 
 
+def test_fetch_package_label_checklist_queries_stock_and_enriches_operations():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer test-token"
+        path = unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        if "InventoryPartInStockSet" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "@odata.count": 3,
+                    "value": [
+                        {
+                            "ObjId": "OBJ-1",
+                            "Contract": "S01",
+                            "PartNo": "MM-CAP001",
+                            "PartNoDesc": "Cap 1",
+                            "LocationNo": "U0101",
+                            "QtyOnhand": 10,
+                            "AvailableQty": 8,
+                            "UoM": "PCS",
+                            "LotBatchNo": "2579-L1",
+                            "SerialNo": "*",
+                            "ReceiptDate": "2026-06-24T05:00:00Z",
+                            "HandlingUnitId": "HU-1",
+                            "ConfigurationId": "*",
+                            "EngChgLevel": "1",
+                            "WaivDevRejNo": "*",
+                            "ActivitySeq": 0,
+                        },
+                        {
+                            "ObjId": "OBJ-2",
+                            "Contract": "S01",
+                            "PartNo": "MM-CAP002",
+                            "PartNoDesc": "Cap 2",
+                            "LocationNo": "U0102",
+                            "QtyOnhand": 5,
+                            "AvailableQty": 5,
+                            "UoM": "PCS",
+                            "LotBatchNo": "IGNORED-L1",
+                            "ShopOrderNo": "2580",
+                            "HandlingUnitId": "HU-2",
+                        },
+                        {
+                            "ObjId": "OBJ-3",
+                            "Contract": "S01",
+                            "PartNo": "MM-CAP003",
+                            "PartNoDesc": "Cap 3",
+                            "LocationNo": "U0103",
+                            "QtyOnhand": 7,
+                            "AvailableQty": 7,
+                            "UoM": "PCS",
+                            "LotBatchNo": "2590",
+                            "HandlingUnitId": "HU-3",
+                        },
+                    ],
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2579'" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2579",
+                            "OperationNo": 10,
+                            "WorkCenterNo": "WC-X",
+                            "PreferredResourceId": "M-X",
+                            "PartNo": "MM-OTHER",
+                        },
+                        {
+                            "OrderNo": "2579",
+                            "OperationNo": 20,
+                            "WorkCenterNo": "WC-1",
+                            "PreferredResourceId": "M-10",
+                            "PartNo": "MM-CAP001",
+                            "PartNoDesc": "Cap 1",
+                        },
+                    ]
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2580'" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2580",
+                            "OperationNo": 10,
+                            "WorkCenterNo": "WC-2",
+                            "PreferredResourceId": "M-20",
+                            "PartNo": "MM-OTHER-A",
+                        },
+                        {
+                            "OrderNo": "2580",
+                            "OperationNo": 20,
+                            "WorkCenterNo": "WC-3",
+                            "PreferredResourceId": "M-30",
+                            "PartNo": "MM-OTHER-B",
+                        },
+                    ]
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2590'" in path:
+            return httpx.Response(200, json={"value": []})
+        return httpx.Response(404, text="Unexpected URL")
+
+    async def run() -> dict:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_package_label_checklist(
+                settings,
+                client=client,
+                access_token="test-token",
+                page_size=5000,
+                concurrency=3,
+            )
+
+    checklist = asyncio.run(run())
+
+    stock_request = requests[0]
+    assert stock_request.url.path.endswith(
+        "/InventoryPartInStockHandling.svc/InventoryPartInStockSet"
+    )
+    assert stock_request.url.params["$filter"] == (
+        "Contract eq 'S01' "
+        "and startswith(PartNo,'MM') "
+        "and not startswith(PartNo,'MM-PET') "
+        "and startswith(LocationNo,'U01') "
+        "and QtyOnhand gt 0"
+    )
+    assert stock_request.url.params["$select"] == (
+        "Contract,PartNo,PartNoDesc,LocationNo,QtyOnhand,AvailableQty,UoM,"
+        "LotBatchNo,SerialNo,ReceiptDate,HandlingUnitId,ConfigurationId,"
+        "EngChgLevel,WaivDevRejNo,ActivitySeq,ObjId"
+    )
+    assert stock_request.url.params["$orderby"] == (
+        "HandlingUnitId asc,PartNo asc,LotBatchNo asc"
+    )
+    assert stock_request.url.params["$count"] == "true"
+    assert stock_request.url.params["$top"] == "5000"
+    assert stock_request.url.params["$skip"] == "0"
+
+    operation_paths = [
+        unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        for request in requests
+        if "GetOperations" in unquote(request.url.raw_path.decode())
+    ]
+    assert len(operation_paths) == 3
+    assert any("OrderNo='2579'" in path for path in operation_paths)
+    assert any("OrderNo='2580'" in path for path in operation_paths)
+    assert any("OrderNo='2590'" in path for path in operation_paths)
+
+    summary = checklist["summary"]
+    assert summary["stock_count"] == 3
+    assert summary["row_count"] == 3
+    assert summary["job_order_count"] == 3
+    assert summary["operation_count"] == 4
+    assert summary["matched_count"] == 1
+    assert summary["part_matched_count"] == 1
+    assert summary["ambiguous_count"] == 1
+    assert summary["not_found_count"] == 1
+    assert summary["operation_lookup_failed_count"] == 0
+    assert summary["operation_lookup_failed_orders"] == []
+    assert summary["match_status_counts"] == {
+        "matched": 1,
+        "ambiguous": 1,
+        "not_found": 1,
+    }
+
+    rows = checklist["rows"]
+    assert rows[0]["job_order"] == "2579"
+    assert rows[0]["machine_code"] == "M-10"
+    assert rows[0]["work_center_no"] == "WC-1"
+    assert rows[0]["operation_no"] == 20
+    assert rows[0]["operation_match_status"] == "matched"
+    assert rows[0]["operation_ambiguous"] is False
+    assert rows[1]["job_order"] == "2580"
+    assert rows[1]["machine_code"] is None
+    assert rows[1]["work_center_no"] is None
+    assert rows[1]["operation_no"] is None
+    assert rows[1]["operation_match_status"] == "ambiguous"
+    assert rows[1]["operation_ambiguous"] is True
+    assert rows[1]["operation_match_count"] == 2
+    assert rows[2]["job_order"] == "2590"
+    assert rows[2]["operation_match_status"] == "not_found"
+
+
+def test_fetch_package_label_checklist_keeps_rows_when_operation_lookup_fails():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        if "InventoryPartInStockSet" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "ObjId": "OBJ-1",
+                            "Contract": "S01",
+                            "PartNo": "MM-CAP001",
+                            "PartNoDesc": "Cap 1",
+                            "LocationNo": "U0101",
+                            "QtyOnhand": 10,
+                            "AvailableQty": 8,
+                            "UoM": "PCS",
+                            "LotBatchNo": "2579-L1",
+                            "HandlingUnitId": "HU-1",
+                        },
+                        {
+                            "ObjId": "OBJ-2",
+                            "Contract": "S01",
+                            "PartNo": "MM-CAP002",
+                            "PartNoDesc": "Cap 2",
+                            "LocationNo": "U0102",
+                            "QtyOnhand": 5,
+                            "AvailableQty": 5,
+                            "UoM": "PCS",
+                            "LotBatchNo": "2580-L1",
+                            "HandlingUnitId": "HU-2",
+                        },
+                    ],
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2579'" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2579",
+                            "OperationNo": 20,
+                            "WorkCenterNo": "WC-1",
+                            "PreferredResourceId": "M-10",
+                            "PartNo": "MM-CAP001",
+                        }
+                    ]
+                },
+            )
+        if "GetOperations" in path and "OrderNo='2580'" in path:
+            return httpx.Response(502, text="IFS operation timeout")
+        return httpx.Response(404, text="Unexpected URL")
+
+    async def run() -> dict:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_package_label_checklist(
+                settings,
+                client=client,
+                access_token="test-token",
+                page_size=5000,
+                concurrency=2,
+            )
+
+    checklist = asyncio.run(run())
+
+    operation_paths = [
+        unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        for request in requests
+        if "GetOperations" in unquote(request.url.raw_path.decode())
+    ]
+    assert any("OrderNo='2579'" in path for path in operation_paths)
+    assert any("OrderNo='2580'" in path for path in operation_paths)
+
+    summary = checklist["summary"]
+    assert summary["row_count"] == 2
+    assert summary["operation_count"] == 1
+    assert summary["matched_count"] == 1
+    assert summary["operation_lookup_failed_count"] == 1
+    assert summary["operation_lookup_failed_orders"] == ["2580"]
+    assert "2580" in summary["warning"]
+    assert summary["match_status_counts"] == {
+        "matched": 1,
+        "lookup_failed": 1,
+    }
+
+    rows = checklist["rows"]
+    assert rows[0]["job_order"] == "2579"
+    assert rows[0]["operation_match_status"] == "matched"
+    assert rows[0]["machine_code"] == "M-10"
+    assert rows[1]["job_order"] == "2580"
+    assert rows[1]["operation_match_status"] == "lookup_failed"
+    assert rows[1]["machine_code"] is None
+    assert rows[1]["operation_match_count"] == 0
+
+
 def test_fetch_operation_history_rows_requests_each_date_applied_month_bucket():
     requests: list[httpx.Request] = []
     settings = Settings(
@@ -1359,6 +1786,48 @@ def test_serialize_stock_row_uses_api_output_shape():
     assert payload["qty_onhand"] == 15
     assert payload["uom"] == "kg"
     assert payload["obj_id"] == "obj-1"
+
+
+def test_serialize_package_label_checklist_row_uses_api_output_shape():
+    payload = serialize_package_label_checklist_row(
+        {
+            "Contract": "S01",
+            "PartNo": "MM-CAP001",
+            "PartNoDesc": "Cap 1",
+            "LocationNo": "U0101",
+            "QtyOnhand": 10,
+            "AvailableQty": 8,
+            "UoM": "PCS",
+            "LotBatchNo": "2579-L1",
+            "SerialNo": "*",
+            "ReceiptDate": "2026-06-24T05:00:00Z",
+            "HandlingUnitId": "HU-1",
+            "ConfigurationId": "*",
+            "EngChgLevel": "1",
+            "WaivDevRejNo": "*",
+            "ActivitySeq": 0,
+            "ObjId": "obj-1",
+        }
+    )
+
+    assert payload == {
+        "contract": "S01",
+        "part_no": "MM-CAP001",
+        "part_description": "Cap 1",
+        "location_no": "U0101",
+        "qty_onhand": 10,
+        "available_qty": 8,
+        "uom": "PCS",
+        "lot_batch_no": "2579-L1",
+        "serial_no": "*",
+        "receipt_date": "2026-06-24T05:00:00Z",
+        "handling_unit_id": "HU-1",
+        "configuration_id": "*",
+        "eng_chg_level": "1",
+        "waiv_dev_rej_no": "*",
+        "activity_seq": 0,
+        "obj_id": "obj-1",
+    }
 
 
 def test_serialize_operation_row_uses_api_output_shape():

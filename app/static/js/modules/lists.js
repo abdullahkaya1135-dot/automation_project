@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260619-frontend-cleanup";
+import { apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
 import {
   renderAmountControlShiftList,
   renderAuxiliarySubmissionList,
   renderEntryList,
   renderListError,
-} from "./render.js?v=20260619-frontend-cleanup";
-import { entryTime } from "./utils.js?v=20260619-frontend-cleanup";
+} from "./render.js?v=20260624-package-label-checklist-cache";
+import { entryTime } from "./utils.js?v=20260624-package-label-checklist-cache";
 
 export async function loadEntryLists() {
   await Promise.all([loadRecentEntries(), loadPendingEntries()]);

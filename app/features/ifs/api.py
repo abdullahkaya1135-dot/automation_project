@@ -7,6 +7,7 @@ from ...domain.request_settings import settings_from_request
 from ...integrations.ifs.client import (
     IFSClientError,
     IFSConfigurationError,
+    fetch_package_label_checklist,
     fetch_pet_ongoing_operations,
     fetch_u1_hm02_stock,
     fetch_used_hm02_materials,
@@ -56,6 +57,15 @@ async def ifs_u1_hm02_stock(request: Request) -> dict[str, Any]:
         "stock_count": len(rows),
         "stock": [serialize_stock_row(row) for row in rows],
     }
+
+
+@router.get("/package-label-checklist")
+async def ifs_package_label_checklist(request: Request) -> dict[str, Any]:
+    settings = settings_from_request(request)
+    try:
+        return await fetch_package_label_checklist(settings)
+    except (IFSConfigurationError, IFSClientError) as exc:
+        raise _ifs_http_exception(exc) from exc
 
 
 @router.get("/pet-ongoing-operations")

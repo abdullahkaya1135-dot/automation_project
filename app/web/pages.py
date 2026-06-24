@@ -15,7 +15,8 @@ TEMPLATES = Jinja2Templates(directory=TEMPLATES_DIR)
 MANIFEST_URL = "/manifest.webmanifest"
 SERVICE_WORKER_URL = "/service-worker.js"
 STATIC_URL_PREFIX = "/static/"
-STATIC_ASSET_VERSION = "20260619-frontend-cleanup"
+STATIC_ASSET_VERSION = "20260624-package-label-checklist-cache"
+SERVICE_WORKER_CACHE_NAME = f"process-offline-shell-{STATIC_ASSET_VERSION}"
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,14 @@ def static_asset_url(path: str) -> str:
     return f"{STATIC_URL_PREFIX}{path}?v={STATIC_ASSET_VERSION}"
 
 
+def _static_js_module_asset_urls() -> tuple[str, ...]:
+    modules_dir = STATIC_DIR / "js" / "modules"
+    return tuple(
+        static_asset_url(module_path.relative_to(STATIC_DIR).as_posix())
+        for module_path in sorted(modules_dir.glob("*.js"))
+    )
+
+
 APP_STYLESHEET_URL = static_asset_url("css/app.css")
 APP_SCRIPT_URL = static_asset_url("js/app.js")
 SHARED_PAGE_ASSET_URLS = (
@@ -71,20 +80,7 @@ APP_SHELL_URLS = (
     APP_STYLESHEET_URL,
     static_asset_url("js/api.js"),
     APP_SCRIPT_URL,
-    static_asset_url("js/modules/amount-control.js"),
-    static_asset_url("js/modules/constants.js"),
-    static_asset_url("js/modules/dates.js"),
-    static_asset_url("js/modules/ifs-return.js"),
-    static_asset_url("js/modules/lists.js"),
-    static_asset_url("js/modules/login.js"),
-    static_asset_url("js/modules/main-page.js"),
-    static_asset_url("js/modules/offline.js"),
-    static_asset_url("js/modules/payloads.js"),
-    static_asset_url("js/modules/render.js"),
-    static_asset_url("js/modules/shop-orders.js"),
-    static_asset_url("js/modules/temperature.js"),
-    static_asset_url("js/modules/tour-context.js"),
-    static_asset_url("js/modules/utils.js"),
+    *_static_js_module_asset_urls(),
 )
 
 TEMPLATES.env.globals.update(
@@ -106,11 +102,13 @@ def service_worker() -> Response:
     source = (STATIC_DIR / "service-worker.js").read_text(encoding="utf-8")
     route_urls = json.dumps(APP_ROUTE_URLS, indent=2)
     shell_urls = json.dumps(APP_SHELL_URLS, indent=2)
+    cache_name = json.dumps(SERVICE_WORKER_CACHE_NAME)
     return Response(
         "\n".join(
             (
                 f"const APP_ROUTE_URLS = {route_urls};",
                 f"const APP_SHELL_URLS = {shell_urls};",
+                f"const CACHE_NAME = {cache_name};",
                 "",
                 source,
             )

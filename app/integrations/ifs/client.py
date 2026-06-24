@@ -113,6 +113,42 @@ PRODUCTION_LABEL_STOCK_SELECT_FIELDS = (
     "Cf_Palet_Ici_Miktar",
     "ObjId",
 )
+PACKAGE_LABEL_STOCK_SELECT_FIELDS = (
+    "Contract",
+    "PartNo",
+    "PartNoDesc",
+    "LocationNo",
+    "QtyOnhand",
+    "AvailableQty",
+    "UoM",
+    "LotBatchNo",
+    "SerialNo",
+    "ReceiptDate",
+    "HandlingUnitId",
+    "ConfigurationId",
+    "EngChgLevel",
+    "WaivDevRejNo",
+    "ActivitySeq",
+    "ObjId",
+)
+PACKAGE_LABEL_STOCK_FIELD_MAP = {
+    "Contract": "contract",
+    "PartNo": "part_no",
+    "PartNoDesc": "part_description",
+    "LocationNo": "location_no",
+    "QtyOnhand": "qty_onhand",
+    "AvailableQty": "available_qty",
+    "UoM": "uom",
+    "LotBatchNo": "lot_batch_no",
+    "SerialNo": "serial_no",
+    "ReceiptDate": "receipt_date",
+    "HandlingUnitId": "handling_unit_id",
+    "ConfigurationId": "configuration_id",
+    "EngChgLevel": "eng_chg_level",
+    "WaivDevRejNo": "waiv_dev_rej_no",
+    "ActivitySeq": "activity_seq",
+    "ObjId": "obj_id",
+}
 OPERATION_SELECT_FIELDS = (
     "OrderNo",
     "ReleaseNo",
@@ -1033,7 +1069,7 @@ def _odata_count_value(value: Any) -> int | None:
         return None
     try:
         count = int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     return count if count >= 0 else None
 
@@ -1865,6 +1901,253 @@ async def fetch_shop_order_operations(
             await http_client.aclose()
 
 
+def _package_label_stock_filter(settings: Settings) -> str:
+    return (
+        f"Contract eq {_odata_string(settings.ifs_contract)} "
+        "and startswith(PartNo,'MM') "
+        "and not startswith(PartNo,'MM-PET') "
+        "and startswith(LocationNo,'U01') "
+        "and QtyOnhand gt 0"
+    )
+
+
+def _package_label_job_order(row: Mapping[str, Any]) -> str | None:
+    for field_name in ("OrderNo", "order_no", "ShopOrderNo", "shop_order_no"):
+        value = str(row.get(field_name) or "").strip()
+        if value:
+            return value
+
+    lot_batch_no = str(row.get("LotBatchNo") or "").strip()
+    if not lot_batch_no:
+        return None
+    return lot_batch_no.split("-", 1)[0].strip() or None
+
+
+def _package_label_operation_match(
+    stock_row: Mapping[str, Any],
+    operations: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[str, Any] | None, str, int]:
+    if not operations:
+        return None, "not_found", 0
+
+    part_no = _identity_value(stock_row.get("PartNo"))
+    part_matches = [
+        operation
+        for operation in operations
+        if part_no and _identity_value(operation.get("PartNo")) == part_no
+    ]
+    candidates = sorted(part_matches or list(operations), key=_operation_choice_sort_key)
+    if len(candidates) == 1:
+        status_text = "matched" if part_matches else "matched_by_job_order"
+        return candidates[0], status_text, 1
+    return None, "ambiguous", len(candidates)
+
+
+def _operation_choice_sort_key(operation: Mapping[str, Any]) -> tuple[int, str]:
+    try:
+        operation_no = int(operation.get("OperationNo"))
+    except (TypeError, ValueError):
+        operation_no = 999999
+    return operation_no, _identity_value(operation.get("PreferredResourceId"))
+
+
+def _package_label_stock_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    included_rows = [
+        dict(row)
+        for row in rows
+        if not _identity_value(row.get("PartNo")).upper().startswith("MM-PET")
+    ]
+    return sorted(included_rows, key=_package_label_stock_sort_key)
+
+
+def _package_label_stock_sort_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
+    return (
+        _identity_value(row.get("HandlingUnitId")),
+        _identity_value(row.get("PartNo")),
+        _identity_value(row.get("LotBatchNo")),
+    )
+
+
+def _package_label_checklist_row(
+    stock_row: Mapping[str, Any],
+    operations_by_order: Mapping[str, Sequence[Mapping[str, Any]]],
+    failed_operation_orders: set[str],
+) -> dict[str, Any]:
+    payload = serialize_package_label_checklist_row(stock_row)
+    job_order = _package_label_job_order(stock_row)
+    if job_order in failed_operation_orders:
+        operation, match_status, match_count = None, "lookup_failed", 0
+    elif job_order:
+        operation, match_status, match_count = _package_label_operation_match(
+            stock_row,
+            operations_by_order.get(job_order, ()),
+        )
+    else:
+        operation, match_status, match_count = None, "no_job_order", 0
+
+    payload.update(
+        {
+            "job_order": job_order,
+            "machine_code": (
+                operation.get("PreferredResourceId") if operation is not None else None
+            ),
+            "work_center_no": (
+                operation.get("WorkCenterNo") if operation is not None else None
+            ),
+            "operation_no": (
+                operation.get("OperationNo") if operation is not None else None
+            ),
+            "operation_part_no": (
+                operation.get("PartNo") if operation is not None else None
+            ),
+            "operation_part_description": (
+                operation.get("PartNoDesc") if operation is not None else None
+            ),
+            "operation_match_status": match_status,
+            "operation_ambiguous": match_status == "ambiguous",
+            "operation_match_count": match_count,
+        }
+    )
+    return payload
+
+
+async def fetch_package_label_checklist(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    page_size: int = 5000,
+    concurrency: int = PLANNING_IFS_CONCURRENCY,
+) -> dict[str, Any]:
+    """Build the morning package-label checklist from MM U01 stock."""
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+            ("ifs_company_id", "IFS_COMPANY_ID"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(
+            settings,
+            "InventoryPartInStockHandling.svc/InventoryPartInStockSet",
+        )
+        raw_stock_rows = await _get_paged_by_top_skip(
+            http_client,
+            url,
+            endpoint_category="package-label-checklist-stock",
+            headers=headers,
+            params={
+                "$filter": _package_label_stock_filter(settings),
+                "$select": ",".join(PACKAGE_LABEL_STOCK_SELECT_FIELDS),
+                "$orderby": "HandlingUnitId asc,PartNo asc,LotBatchNo asc",
+                "$count": "true",
+            },
+            page_size=page_size,
+            dedupe_field="ObjId",
+        )
+        stock_rows = _package_label_stock_rows(raw_stock_rows)
+        job_orders = list(
+            dict.fromkeys(
+                job_order
+                for row in stock_rows
+                if (job_order := _package_label_job_order(row)) and job_order != "0"
+            )
+        )
+
+        async def fetch_order_operations(
+            job_order: str,
+        ) -> tuple[str, list[dict[str, Any]], str | None]:
+            try:
+                operations = await fetch_shop_order_operations(
+                    settings,
+                    job_order,
+                    client=http_client,
+                    access_token=token,
+                )
+            except IFSClientError as exc:
+                return job_order, [], str(exc)
+            return job_order, _deduplicated_operations(operations), None
+
+        operation_pairs = await _gather_limited(
+            job_orders,
+            fetch_order_operations,
+            concurrency=max(1, concurrency),
+        )
+        operations_by_order = {
+            job_order: operations
+            for job_order, operations, error_text in operation_pairs
+            if error_text is None
+        }
+        failed_operation_errors = {
+            job_order: error_text
+            for job_order, _operations, error_text in operation_pairs
+            if error_text is not None
+        }
+        failed_operation_orders = set(failed_operation_errors)
+        rows = [
+            _package_label_checklist_row(
+                stock_row,
+                operations_by_order,
+                failed_operation_orders,
+            )
+            for stock_row in stock_rows
+        ]
+        status_counts: dict[str, int] = {}
+        for row in rows:
+            status_text = str(row.get("operation_match_status") or "unknown")
+            status_counts[status_text] = status_counts.get(status_text, 0) + 1
+
+        summary: dict[str, Any] = {
+            "generated_at": _generated_at(settings),
+            "stock_count": len(stock_rows),
+            "source_stock_count": len(raw_stock_rows),
+            "excluded_prefix": "MM-PET",
+            "excluded_count": len(raw_stock_rows) - len(stock_rows),
+            "row_count": len(rows),
+            "job_order_count": len(job_orders),
+            "operation_count": sum(
+                len(operations) for operations in operations_by_order.values()
+            ),
+            "matched_count": status_counts.get("matched", 0)
+            + status_counts.get("matched_by_job_order", 0),
+            "part_matched_count": status_counts.get("matched", 0),
+            "job_order_matched_count": status_counts.get(
+                "matched_by_job_order",
+                0,
+            ),
+            "ambiguous_count": status_counts.get("ambiguous", 0),
+            "not_found_count": status_counts.get("not_found", 0),
+            "missing_job_order_count": status_counts.get("no_job_order", 0),
+            "operation_lookup_failed_count": len(failed_operation_errors),
+            "operation_lookup_failed_orders": sorted(failed_operation_errors),
+            "match_status_counts": status_counts,
+        }
+        if failed_operation_errors:
+            failed_orders = ", ".join(sorted(failed_operation_errors))
+            summary["warning"] = (
+                "IFS operasyonlari okunamayan is emirleri var: "
+                f"{failed_orders}"
+            )
+
+        return {
+            "summary": summary,
+            "rows": rows,
+        }
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
 async def fetch_shop_order_operation_actual_rows(
     settings: Settings,
     order_numbers: Sequence[str],
@@ -2255,6 +2538,13 @@ def serialize_stock_row(row: Mapping[str, Any]) -> dict[str, Any]:
         part_ref.get("Description") if isinstance(part_ref, Mapping) else None
     )
     return payload
+
+
+def serialize_package_label_checklist_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        output_name: row.get(source_name)
+        for source_name, output_name in PACKAGE_LABEL_STOCK_FIELD_MAP.items()
+    }
 
 
 def serialize_operation_row(row: Mapping[str, Any]) -> dict[str, Any]:

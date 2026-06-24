@@ -567,6 +567,25 @@ button:disabled {
   color: #172026;
 }
 
+.package-label-checklist-table {
+  min-width: 1120px;
+}
+
+.package-label-checklist-number {
+  text-align: center;
+}
+
+.package-label-checklist-writing-cell {
+  min-width: 120px;
+}
+
+.package-label-checklist-print-title {
+  margin: 0 0 10px;
+  color: #000000;
+  font-size: 18pt;
+  line-height: 1.15;
+}
+
 .production-loss-shift-cell {
   min-width: 150px;
 }
@@ -651,10 +670,14 @@ button:disabled {
   }
 
   .print-only {
-    display: block;
+    display: none;
     width: 100%;
     background: #ffffff;
     color: #000000;
+  }
+
+  .print-only.print-active {
+    display: block;
   }
 
   .print-only .table-scroll {
@@ -677,6 +700,39 @@ button:disabled {
 
   .print-only .data-table th {
     background: #f1f1f1;
+  }
+
+  .print-only .package-label-checklist-summary {
+    margin-bottom: 10pt;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .print-only .package-label-checklist-summary .ifs-summary-item {
+    padding: 5pt;
+    border-color: #333333;
+  }
+
+  .print-only .package-label-checklist-summary .ifs-summary-item span,
+  .print-only .package-label-checklist-summary .ifs-summary-item strong {
+    color: #000000;
+  }
+
+  .print-only .package-label-checklist-summary .ifs-summary-item span {
+    font-size: 8pt;
+  }
+
+  .print-only .package-label-checklist-summary .ifs-summary-item strong {
+    font-size: 10pt;
+  }
+
+  .print-only .package-label-checklist-table {
+    table-layout: fixed;
+    font-size: 8.5pt;
+  }
+
+  .print-only .package-label-checklist-writing-cell {
+    min-width: 0;
+    height: 22pt;
   }
 
   .print-only .empty-state {

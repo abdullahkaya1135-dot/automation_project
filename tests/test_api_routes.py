@@ -26,6 +26,7 @@ from app.web.pages import (
     APP_ROUTE_URLS,
     APP_SHELL_URLS,
     PROTECTED_PAGE_PATHS,
+    SERVICE_WORKER_CACHE_NAME,
     SHARED_PAGE_ASSET_URLS,
 )
 
@@ -112,6 +113,9 @@ PAGE_SECTION_EXPECTATIONS = {
         'id="run-ifs-return-candidates"',
         'id="print-ifs-return-candidates"',
         'id="ifs-return-print-area"',
+        'id="run-package-label-checklist"',
+        'id="print-package-label-checklist"',
+        'id="package-label-checklist-print-area"',
     ),
 }
 PAGE_SECTION_EXCLUSIONS = {
@@ -125,6 +129,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-package-label-checklist"',
     ),
     "/process": (
         'id="dashboard-heading"',
@@ -135,6 +140,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-package-label-checklist"',
     ),
     "/auxiliary": (
         'id="dashboard-heading"',
@@ -146,6 +152,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-package-label-checklist"',
     ),
     "/amount-control": (
         'id="dashboard-heading"',
@@ -157,6 +164,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-package-label-checklist"',
     ),
     "/reports": (
         'id="dashboard-heading"',
@@ -216,7 +224,7 @@ def _create_cycle_table(path: Path) -> None:
             "BPH",
         ]
     )
-    worksheet.append(["M-01", "SP25", 28, 6, None, None, 12, None])
+    worksheet.append(["101", "SP25", 28, 6, None, None, 12, None])
     workbook.save(path)
     workbook.close()
 
@@ -956,14 +964,28 @@ def test_amount_control_shift_detail_returns_404_for_missing_id(client):
     assert response.status_code == 404
 
 
-def test_cycle_report_endpoint_creates_today_report(client):
+def test_cycle_report_endpoint_creates_today_report(client, monkeypatch):
+    async def fake_fetch_pet_ongoing_operations(_settings):
+        return [
+            {
+                "OrderNo": "WO-1",
+                "PreferredResourceId": "101",
+                "WorkCenterNo": "SP25",
+                "PartNoDesc": "PET0001-01 400ML SEFFAF 28MM YIVLI 6GR",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.features.cycle_reports.service.fetch_pet_ongoing_operations",
+        fake_fetch_pet_ongoing_operations,
+    )
     context_id = _tour_context(client)
     entry_response = client.post(
         "/api/entries",
         json={
             "tour_context_id": context_id,
             "payload": {
-                "col_f": "M-01",
+                "col_f": "101",
                 "col_g": "WO-1",
                 "col_h": "16",
                 "col_i": "12",
@@ -989,13 +1011,14 @@ def test_cycle_report_endpoint_creates_today_report(client):
     worksheet = workbook["Çevrim Kontrol"]
     assert [cell.value for cell in worksheet[2]] == [
         "SP25",
-        "M-01",
+        "101",
         28,
         6,
         16,
         12,
         12.5,
         12,
+        "Uygun",
         "Uygun",
     ]
     workbook.close()
@@ -1269,6 +1292,112 @@ def test_ifs_stock_endpoint_returns_u1_hm02_stock(client, monkeypatch):
                 "waiv_dev_rej_no": None,
                 "activity_seq": None,
                 "handling_unit_id": None,
+            }
+        ],
+    }
+
+
+def test_ifs_package_label_checklist_endpoint_returns_summary_and_rows(
+    client,
+    monkeypatch,
+):
+    async def fake_fetch(_settings):
+        return {
+            "summary": {
+                "generated_at": "2026-06-24T08:00:00+03:00",
+                "stock_count": 1,
+                "row_count": 1,
+                "job_order_count": 1,
+                "operation_count": 1,
+                "matched_count": 1,
+                "part_matched_count": 1,
+                "job_order_matched_count": 0,
+                "ambiguous_count": 0,
+                "not_found_count": 0,
+                "missing_job_order_count": 0,
+                "match_status_counts": {"matched": 1},
+            },
+            "rows": [
+                {
+                    "contract": "S01",
+                    "part_no": "MM-CAP001",
+                    "part_description": "Cap 1",
+                    "location_no": "U0101",
+                    "qty_onhand": 10,
+                    "available_qty": 8,
+                    "uom": "PCS",
+                    "lot_batch_no": "2579-L1",
+                    "serial_no": "*",
+                    "receipt_date": "2026-06-24T05:00:00Z",
+                    "handling_unit_id": "HU-1",
+                    "configuration_id": "*",
+                    "eng_chg_level": "1",
+                    "waiv_dev_rej_no": "*",
+                    "activity_seq": 0,
+                    "obj_id": "OBJ-1",
+                    "job_order": "2579",
+                    "machine_code": "M-10",
+                    "work_center_no": "WC-1",
+                    "operation_no": 20,
+                    "operation_part_no": "MM-CAP001",
+                    "operation_part_description": "Cap 1",
+                    "operation_match_status": "matched",
+                    "operation_ambiguous": False,
+                    "operation_match_count": 1,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_package_label_checklist",
+        fake_fetch,
+    )
+
+    response = client.get("/api/ifs/package-label-checklist")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "summary": {
+            "generated_at": "2026-06-24T08:00:00+03:00",
+            "stock_count": 1,
+            "row_count": 1,
+            "job_order_count": 1,
+            "operation_count": 1,
+            "matched_count": 1,
+            "part_matched_count": 1,
+            "job_order_matched_count": 0,
+            "ambiguous_count": 0,
+            "not_found_count": 0,
+            "missing_job_order_count": 0,
+            "match_status_counts": {"matched": 1},
+        },
+        "rows": [
+            {
+                "contract": "S01",
+                "part_no": "MM-CAP001",
+                "part_description": "Cap 1",
+                "location_no": "U0101",
+                "qty_onhand": 10,
+                "available_qty": 8,
+                "uom": "PCS",
+                "lot_batch_no": "2579-L1",
+                "serial_no": "*",
+                "receipt_date": "2026-06-24T05:00:00Z",
+                "handling_unit_id": "HU-1",
+                "configuration_id": "*",
+                "eng_chg_level": "1",
+                "waiv_dev_rej_no": "*",
+                "activity_seq": 0,
+                "obj_id": "OBJ-1",
+                "job_order": "2579",
+                "machine_code": "M-10",
+                "work_center_no": "WC-1",
+                "operation_no": 20,
+                "operation_part_no": "MM-CAP001",
+                "operation_part_description": "Cap 1",
+                "operation_match_status": "matched",
+                "operation_ambiguous": False,
+                "operation_match_count": 1,
             }
         ],
     }
@@ -1755,12 +1884,26 @@ def test_reports_javascript_wires_missing_production_check():
     assert "#copy-whatsapp-status-message" in source
     assert "#whatsapp-status-message-text" in source
     assert "#run-missing-production-starts" in source
+    assert "#run-package-label-checklist" in source
+    assert "#print-package-label-checklist" in source
     assert "#production-loss-form" in source
     assert "#sync-process-date" in source
     assert "/api/ifs/whatsapp-status-message" in source
     assert "/api/ifs/missing-production-starts?" in source
+    assert "package-label-checklist.js" in source
     assert "/api/production-loss-reports" in source
     assert "process_date" in source
+
+
+def test_package_label_checklist_renderer_prefers_onhand_quantity():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    qty_column_start = source.index('label: "Qty"')
+    qty_column_end = source.index('label: "Location"', qty_column_start)
+    qty_column = source[qty_column_start:qty_column_end]
+
+    assert qty_column.index('"qty_onhand"') < qty_column.index('"available_qty"')
+    assert 'label: "Operation Status"' in source
+    assert "packageLabelChecklistMachineText" in source
 
 
 def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(
@@ -1772,12 +1915,13 @@ def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(
     assert response.headers["Cache-Control"] == "no-cache"
     assert response.headers["Service-Worker-Allowed"] == "/"
     source = response.text
-    assert "process-offline-shell-" in source
+    assert f'const CACHE_NAME = "{SERVICE_WORKER_CACHE_NAME}";' in source
     assert 'request.mode === "navigate"' in source
     assert "url.pathname" in source
     assert 'networkFirst(request, "/")' not in source
     assert "cache.put(cacheKey, response.clone())" in source
     assert "cache.match(cacheKey)" in source
+    assert 'url.pathname === "/service-worker.js"' not in source
     for route in APP_ROUTE_URLS:
         assert f'"{route}"' in source
     for asset_url in APP_SHELL_URLS:
@@ -1786,6 +1930,13 @@ def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(
     static_source = Path("app/static/service-worker.js").read_text(encoding="utf-8")
     assert "const APP_ROUTE_URLS" not in static_source
     assert "const APP_SHELL_URLS" not in static_source
+    assert "const CACHE_NAME" not in static_source
+
+
+def test_app_shell_urls_are_served(client):
+    for asset_url in APP_SHELL_URLS:
+        response = client.get(asset_url)
+        assert response.status_code == 200, asset_url
 
 
 def test_manifest_start_url_and_scope_stay_at_root(client):

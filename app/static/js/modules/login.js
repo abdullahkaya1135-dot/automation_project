@@ -1,4 +1,4 @@
-import { setButtonBusy } from "./utils.js?v=20260619-frontend-cleanup";
+import { setButtonBusy } from "./utils.js?v=20260624-package-label-checklist-cache";
 
 export function initLogin() {
   const loginForm = document.querySelector("#login-form");

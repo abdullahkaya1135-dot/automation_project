@@ -56,6 +56,7 @@ REPORT_HEADERS = [
     "Gerçekleşen Çevrim Süresi",
     "Optimum Çevrim Süresi",
     "Kontrol Durumu",
+    "Sonuç",
 ]
 
 
@@ -126,6 +127,12 @@ def _ifs_operations() -> list[dict[str, object]]:
         {
             "OrderNo": "PF-ORDER",
             "PreferredResourceId": "162",
+            "WorkCenterNo": "PF-6",
+            "PartNoDesc": "PET0001-01 400ML SEFFAF 28MM YIVLI 45GR",
+        },
+        {
+            "OrderNo": "PF-ORDER-161",
+            "PreferredResourceId": "161",
             "WorkCenterNo": "PF-6",
             "PartNoDesc": "PET0001-01 400ML SEFFAF 28MM YIVLI 45GR",
         },
@@ -307,7 +314,7 @@ def test_cycle_report_tries_neck_fallback_before_gram_fallback():
     assert row.control_status == "Kontrol Edilecek"
 
 
-def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
+def test_create_cycle_report_filters_report_halls_and_orders_rows(
     tmp_path,
     monkeypatch,
 ):
@@ -323,6 +330,9 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
         [
             _process_row("09.06.2026", 175, 2668, 3, 2, 213),
             _process_row("09.06.2026", 162, "PF-ORDER", 6, 6, "23,1"),
+            _process_row("09.06.2026", 161, "PF-ORDER-161", 8, 8, 23),
+            _process_row("09.06.2026", 302, "HALL-3", 1, 1, 10),
+            _process_row("09.06.2026", 202, "HALL-4", 1, 1, 10),
         ],
     )
     _create_cycle_table(tmp_path / "cycle.xlsx")
@@ -331,8 +341,8 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
 
     result = create_cycle_report(settings, date(2026, 6, 9))
 
-    assert result.row_count == 2
-    assert result.matched_count == 2
+    assert result.row_count == 3
+    assert result.matched_count == 3
     assert result.warning_count == 0
     assert result.output_path.name == "09.06.2026 Cycle Report.xlsx"
     assert result.output_path.exists()
@@ -341,17 +351,6 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
     worksheet = workbook["Çevrim Kontrol"]
     assert [cell.value for cell in worksheet[1]] == REPORT_HEADERS
     assert [cell.value for cell in worksheet[2]] == [
-        "PF-6",
-        "162",
-        28,
-        45,
-        6,
-        6,
-        23.1,
-        21,
-        "Uygun",
-    ]
-    assert [cell.value for cell in worksheet[3]] == [
         "70DPH",
         "175",
         28,
@@ -361,7 +360,33 @@ def test_create_cycle_report_matches_sources_and_uses_machine_tiebreaker(
         213,
         14,
         "Kontrol Edilecek",
+        None,
     ]
+    assert [cell.value for cell in worksheet[3]] == [
+        "PF-6",
+        "161",
+        28,
+        45,
+        8,
+        8,
+        23,
+        24,
+        "Uygun",
+        "Uygun",
+    ]
+    assert [cell.value for cell in worksheet[4]] == [
+        "PF-6",
+        "162",
+        28,
+        45,
+        6,
+        6,
+        23.1,
+        21,
+        "Uygun",
+        "Uygun",
+    ]
+    assert worksheet.max_row == 4
     workbook.close()
 
 
