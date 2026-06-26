@@ -411,10 +411,10 @@ def _working_machines_by_cycle_time(
             latest_cycle_time=cycle_time,
             latest_submitted_at=submitted_at,
             entry_count=entry_counts[key],
-        )
+    )
 
     report_rows: list[MissingProductionStartRow] = []
-    for key, row in latest_by_combination.items():
+    for combination_key, row in latest_by_combination.items():
         report_rows.append(
             MissingProductionStartRow(
                 machine_code=row.machine_code,
@@ -425,7 +425,7 @@ def _working_machines_by_cycle_time(
                 latest_product=row.latest_product,
                 latest_cycle_time=row.latest_cycle_time,
                 latest_submitted_at=row.latest_submitted_at,
-                entry_count=entry_counts[key],
+                entry_count=entry_counts[combination_key],
             )
         )
     return sorted(

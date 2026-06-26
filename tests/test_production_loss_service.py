@@ -383,18 +383,22 @@ def test_normalize_inventory_label_rows_dedupes_stock_journey_by_physical_label(
         "missing_u01_count": 1,
         "zero_quantity_count": 0,
     }
-    assert [
-        (
-            event.result_key,
-            event.record_date,
-            event.shift,
-            event.machine_code,
-            event.job_order,
-            event.quantity,
-            event.label_time.isoformat(timespec="minutes"),
+    actual_events = []
+    for event in events:
+        assert event.label_time is not None
+        actual_events.append(
+            (
+                event.result_key,
+                event.record_date,
+                event.shift,
+                event.machine_code,
+                event.job_order,
+                event.quantity,
+                event.label_time.isoformat(timespec="minutes"),
+            )
         )
-        for event in events
-    ] == [
+
+    assert actual_events == [
         (
             "stock:HU-2758:MM-PET-35:2758-*-*-1",
             "2026-06-08",
@@ -476,6 +480,7 @@ def test_normalize_inventory_label_rows_uses_receipt_date_for_record_date_and_sh
     event = events[0]
     assert event.record_date == "2026-06-08"
     assert event.shift == "24.00-08.00"
+    assert event.label_time is not None
     assert event.label_time.isoformat(timespec="minutes") == "2026-06-08T07:59"
     assert event.quantity == 48
 

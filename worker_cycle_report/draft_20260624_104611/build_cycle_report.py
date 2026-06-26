@@ -5,12 +5,11 @@ import math
 import os
 import statistics
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from openpyxl import load_workbook
-
 
 DEFAULT_SOURCE = (
     "\\\\fileserver\\PRODUCTION\\\u00dcRET\u0130M RAPOR FK\\"

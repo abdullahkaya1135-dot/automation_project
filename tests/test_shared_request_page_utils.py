@@ -1,7 +1,6 @@
 import json
 import re
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest

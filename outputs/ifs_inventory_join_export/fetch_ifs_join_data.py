@@ -14,9 +14,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.core.config import get_settings
-from app.integrations.ifs.client import obtain_access_token
-
+from app.core.config import get_settings  # noqa: E402
+from app.integrations.ifs.client import obtain_access_token  # noqa: E402
 
 INVENTORY_PROJECTION = "InventoryTransactionsHistoryHandling"
 SHOP_PROJECTION = "ShopFloorWorkbenchHandling"

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import openpyxl
 
-
 SOURCE = Path(__file__).with_name("PROSES 2026_FK_source_copy.xlsx")
 PRODUCT_RE = re.compile(r"\b\d+(?:[,.]\d+)?\s*MM\b.*\b\d+(?:[,.]\d+)?\s*GR\b", re.I)
 

@@ -1971,7 +1971,12 @@ def _package_label_operation_match(
 
 def _operation_choice_sort_key(operation: Mapping[str, Any]) -> tuple[int, str]:
     try:
-        operation_no = int(operation.get("OperationNo"))
+        operation_no_value = operation.get("OperationNo")
+        operation_no = (
+            int(str(operation_no_value))
+            if operation_no_value is not None
+            else 999999
+        )
     except (TypeError, ValueError):
         operation_no = 999999
     return operation_no, _identity_value(_operation_machine_code(operation))
@@ -2186,6 +2191,7 @@ def _package_label_checklist_row(
 ) -> dict[str, Any]:
     payload = serialize_package_label_checklist_row(stock_row)
     job_order = _package_label_job_order(stock_row)
+    candidates: list[Mapping[str, Any]]
     if job_order in failed_operation_orders:
         operation, match_status, match_count, candidates = None, "lookup_failed", 0, []
     elif job_order:

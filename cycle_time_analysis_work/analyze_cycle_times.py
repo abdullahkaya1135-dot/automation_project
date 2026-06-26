@@ -10,7 +10,6 @@ from statistics import mean, median, stdev
 
 import openpyxl
 
-
 WORK_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = WORK_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
@@ -69,7 +68,7 @@ def clean_number(value):
     if value is None:
         return None
     if abs(value - round(value)) < 1e-9:
-        return int(round(value))
+        return round(value)
     return round(value, 3)
 
 
@@ -269,8 +268,8 @@ def append_observation(
 
 
 def read_workbook_observations(source_sheet):
-    observations = []
-    skipped = []
+    observations: list[dict[str, object]] = []
+    skipped: list[dict[str, object]] = []
     for source_row, row in enumerate(
         source_sheet.iter_rows(min_row=2, max_row=source_sheet.max_row, min_col=6, max_col=12, values_only=True),
         2,
@@ -293,8 +292,8 @@ def read_workbook_observations(source_sheet):
 
 
 def read_db_observations():
-    observations = []
-    skipped = []
+    observations: list[dict[str, object]] = []
+    skipped: list[dict[str, object]] = []
     stats_row = {"total_rows": 0}
     if not DB_PATH.exists():
         skipped.append(
