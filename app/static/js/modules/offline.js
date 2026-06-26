@@ -1,4 +1,4 @@
-import { ApiError, apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
+import { ApiError, apiJson } from "../api.js?v=20260626-breakdown-context-v2";
 import {
   OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
@@ -8,19 +8,19 @@ import {
   OFFLINE_STATUS_SERVER_SAVED,
   OFFLINE_STATUS_SYNCING,
   OFFLINE_STATUS_VALIDATION_FAILED,
-} from "./constants.js?v=20260626-breakdowns-paper-fields";
+} from "./constants.js?v=20260626-breakdown-context-v2";
 import {
   applyTourContext,
   readStoredTourContext,
   storeTourContext,
-} from "./tour-context.js?v=20260626-breakdowns-paper-fields";
+} from "./tour-context.js?v=20260626-breakdown-context-v2";
 import {
   createClientRequestId,
   downloadTextFile,
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./utils.js?v=20260626-breakdown-context-v2";
 
 let offlineDbPromise = null;
 let offlineSyncInProgress = false;

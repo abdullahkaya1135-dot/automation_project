@@ -1,4 +1,4 @@
-import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260626-breakdowns-paper-fields";
+import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260626-breakdown-context-v2";
 
 export function initializeTemperatureShorthandInputs() {
   for (const selector of TEMPERATURE_SHORTHAND_SELECTORS) {

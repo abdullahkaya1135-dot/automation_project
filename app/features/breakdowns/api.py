@@ -23,12 +23,13 @@ from .domain import (
 )
 from .models import Machine, MachineBreakdown
 from .schemas import (
+    BreakdownContextResponse,
     BreakdownCreate,
     BreakdownCreateResponse,
     BreakdownListResponse,
     BreakdownResponse,
 )
-from .service import serialize_breakdown
+from .service import breakdown_context_options, serialize_breakdown
 
 router = APIRouter(
     prefix="/api/breakdowns",
@@ -165,6 +166,23 @@ def list_breakdowns(
                 serialize_breakdown(breakdown) for breakdown in breakdowns
             ]
         }
+
+
+@router.get("/context", response_model=BreakdownContextResponse)
+def get_breakdown_context(
+    request: Request,
+    record_date: str = Query(..., min_length=10, max_length=10),
+) -> dict[str, Any]:
+    settings = settings_from_request(request)
+    normalized_record_date = breakdown_record_date(record_date)
+    with create_session(settings) as session:
+        options = breakdown_context_options(session, normalized_record_date)
+    return {
+        "record_date": normalized_record_date,
+        "source": "process_entries",
+        "option_count": len(options),
+        "options": options,
+    }
 
 
 @router.get("/{breakdown_id}", response_model=BreakdownResponse)

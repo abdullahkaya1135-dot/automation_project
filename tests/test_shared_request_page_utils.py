@@ -11,6 +11,7 @@ from app.domain import request_settings, request_values, shifts
 from app.web import pages
 
 ISTANBUL_TIMEZONE = timezone(timedelta(hours=3), "Europe/Istanbul")
+EXPECTED_STATIC_ASSET_VERSION = "20260626-breakdown-context-v2"
 
 
 def _request_with_state(**state_values):
@@ -217,14 +218,23 @@ def test_page_metadata_constants_stay_consistent():
         assert route.active_page
 
 
+def test_static_asset_release_version_controls_cache_lane():
+    expected_cache_name = f"process-offline-shell-{EXPECTED_STATIC_ASSET_VERSION}"
+
+    assert pages.STATIC_ASSET_VERSION == EXPECTED_STATIC_ASSET_VERSION
+    assert expected_cache_name == pages.SERVICE_WORKER_CACHE_NAME
+
+
 def test_static_asset_urls_share_versioned_static_prefix():
+    expected_suffix = f"?v={EXPECTED_STATIC_ASSET_VERSION}"
+
     assert pages.APP_STYLESHEET_URL in pages.SHARED_PAGE_ASSET_URLS
     assert pages.APP_SCRIPT_URL in pages.SHARED_PAGE_ASSET_URLS
     for asset_url in pages.APP_SHELL_URLS:
         if asset_url == pages.MANIFEST_URL:
             continue
         assert asset_url.startswith(pages.STATIC_URL_PREFIX)
-        assert asset_url.endswith(f"?v={pages.STATIC_ASSET_VERSION}")
+        assert asset_url.endswith(expected_suffix)
 
 
 def test_app_shell_urls_cover_static_js_import_graph():
@@ -241,14 +251,21 @@ def test_static_js_import_versions_match_current_asset_version():
     version_pattern = re.compile(r"""\?v=([^"')]+)""")
     js_paths = sorted(pages.STATIC_DIR.joinpath("js").rglob("*.js"))
     versioned_imports = []
+    mismatched_imports = []
 
     for js_path in js_paths:
         source = js_path.read_text(encoding="utf-8")
         for version in version_pattern.findall(source):
-            versioned_imports.append((js_path, version))
-            assert version == pages.STATIC_ASSET_VERSION
+            relative_path = js_path.relative_to(pages.STATIC_DIR).as_posix()
+            versioned_imports.append((relative_path, version))
+            if version != pages.STATIC_ASSET_VERSION:
+                mismatched_imports.append((relative_path, version))
 
     assert versioned_imports
+    assert not mismatched_imports, (
+        "JS import query versions must match pages.STATIC_ASSET_VERSION: "
+        f"{mismatched_imports}"
+    )
 
 
 def test_service_worker_injects_current_route_and_shell_constants():
@@ -261,6 +278,7 @@ def test_service_worker_injects_current_route_and_shell_constants():
     assert _injected_json_constant(source, "APP_ROUTE_URLS") == list(pages.APP_ROUTE_URLS)
     assert _injected_json_constant(source, "APP_SHELL_URLS") == list(pages.APP_SHELL_URLS)
     assert _injected_json_constant(source, "CACHE_NAME") == pages.SERVICE_WORKER_CACHE_NAME
+    assert EXPECTED_STATIC_ASSET_VERSION in pages.SERVICE_WORKER_CACHE_NAME
     assert source.index("const APP_ROUTE_URLS") < source.index("const APP_SHELL_URLS")
     assert source.index("const APP_SHELL_URLS") < source.index("const CACHE_NAME")
     assert source.index("const CACHE_NAME") < source.index("self.addEventListener")

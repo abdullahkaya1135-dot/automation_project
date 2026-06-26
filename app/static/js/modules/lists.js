@@ -1,12 +1,12 @@
-import { apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
+import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
 import {
   renderAmountControlShiftList,
   renderAuxiliarySubmissionList,
   renderBreakdownList,
   renderEntryList,
   renderListError,
-} from "./render.js?v=20260626-breakdowns-paper-fields";
-import { entryTime } from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./render.js?v=20260626-breakdown-context-v2";
+import { entryTime } from "./utils.js?v=20260626-breakdown-context-v2";
 
 export async function loadEntryLists() {
   await Promise.all([loadRecentEntries(), loadPendingEntries()]);

@@ -1,14 +1,14 @@
-import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260626-breakdowns-paper-fields";
-import { localIsoDate } from "./dates.js?v=20260626-breakdowns-paper-fields";
+import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260626-breakdown-context-v2";
+import { localIsoDate } from "./dates.js?v=20260626-breakdown-context-v2";
 import {
   machineOptionsFromBootstrap,
   normalizeShopOrderOptions,
-} from "./bootstrap-options.js?v=20260626-breakdowns-paper-fields";
+} from "./bootstrap-options.js?v=20260626-breakdown-context-v2";
 import {
   cleanOptional,
   cleanRequired,
   uniqueSorted,
-} from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./utils.js?v=20260626-breakdown-context-v2";
 
 let amountControlMachines = [];
 let amountControlShopOrders = [];

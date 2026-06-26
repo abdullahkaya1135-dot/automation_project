@@ -1,17 +1,22 @@
-import { localIsoDate } from "./dates.js?v=20260626-breakdowns-paper-fields";
+import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
+import { localIsoDate } from "./dates.js?v=20260626-breakdown-context-v2";
 import {
   machineOptionsFromBootstrap,
   normalizeShopOrderOptions,
   shopOrderProductText,
-} from "./bootstrap-options.js?v=20260626-breakdowns-paper-fields";
+} from "./bootstrap-options.js?v=20260626-breakdown-context-v2";
 import {
   cleanOptional,
   cleanRequired,
+  compareOptionText,
   uniqueSorted,
-} from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./utils.js?v=20260626-breakdown-context-v2";
 
 let breakdownMachines = [];
 let breakdownShopOrders = [];
+let fallbackBreakdownMachines = [];
+let fallbackBreakdownShopOrders = [];
+let breakdownContextRequestId = 0;
 
 export function initializeBreakdownControls() {
   const form = document.querySelector("#breakdown-form");
@@ -20,6 +25,12 @@ export function initializeBreakdownControls() {
   }
 
   applyDefaultBreakdownDate();
+  document
+    .querySelector("#breakdown-date")
+    ?.addEventListener("change", () => {
+      clearBreakdownDateScopedInputs();
+      void refreshBreakdownContextForDate();
+    });
   document
     .querySelector("#breakdown-machine")
     ?.addEventListener("change", () => {
@@ -37,16 +48,18 @@ export function initializeBreakdownControls() {
 }
 
 export function updateBreakdownBootstrap(machines, shopOrderSource) {
-  breakdownShopOrders = normalizeShopOrderOptions(shopOrderSource?.options);
-  breakdownMachines = machineOptionsFromBootstrap(machines, shopOrderSource).map(
-    (machine) => ({
-      machineCode: machine.machineCode,
-      label: machine.machineCode,
-    }),
+  fallbackBreakdownShopOrders = normalizeShopOrderOptions(
+    shopOrderSource?.options,
   );
-  populateBreakdownMachineSelect();
-  updateBreakdownJobOrders();
-  applyBreakdownProductFromOrder();
+  fallbackBreakdownMachines = machineOptionsFromBootstrap(
+    machines,
+    shopOrderSource,
+  ).map((machine) => ({
+    machineCode: machine.machineCode,
+    label: machine.machineCode,
+  }));
+  applyBreakdownOptions(fallbackBreakdownMachines, fallbackBreakdownShopOrders);
+  void refreshBreakdownContextForDate();
 }
 
 export function breakdownRequestBody(form) {
@@ -69,19 +82,182 @@ export function breakdownRequestBody(form) {
 
 export function resetBreakdownForm(form) {
   form.reset();
-  const productInput = document.querySelector("#breakdown-product");
-  if (productInput) {
-    delete productInput.dataset.autofilledFor;
-  }
+  clearBreakdownDateScopedInputs();
   applyDefaultBreakdownDate();
   updateBreakdownJobOrders();
+  void refreshBreakdownContextForDate();
 }
 
 function applyDefaultBreakdownDate() {
   const dateInput = document.querySelector("#breakdown-date");
   if (dateInput && !dateInput.value) {
-    dateInput.value = localIsoDate(new Date());
+    dateInput.value = previousLocalIsoDate();
   }
+}
+
+function previousLocalIsoDate(value = new Date()) {
+  const previousDay = new Date(value.getTime());
+  previousDay.setDate(previousDay.getDate() - 1);
+  return localIsoDate(previousDay);
+}
+
+async function refreshBreakdownContextForDate() {
+  const requestId = ++breakdownContextRequestId;
+  const dateInput = document.querySelector("#breakdown-date");
+  const recordDate = cleanOptional(dateInput?.value);
+  if (!dateInput || !recordDate) {
+    applyFallbackBreakdownOptions();
+    return;
+  }
+
+  try {
+    const query = new URLSearchParams({ record_date: recordDate });
+    const payload = await apiJson(`/api/breakdowns/context?${query.toString()}`);
+    if (!isCurrentBreakdownContextRequest(requestId, recordDate)) {
+      return;
+    }
+
+    const contextOptions = normalizeBreakdownContextOptions(payload?.options);
+    if (payload?.record_date !== recordDate || !contextOptions.length) {
+      applyFallbackBreakdownOptions();
+      return;
+    }
+
+    applyBreakdownOptions(
+      machineOptionsFromContext(contextOptions),
+      contextOptions,
+    );
+  } catch (_error) {
+    if (isCurrentBreakdownContextRequest(requestId, recordDate)) {
+      applyFallbackBreakdownOptions();
+    }
+  }
+}
+
+function isCurrentBreakdownContextRequest(requestId, recordDate) {
+  return requestId === breakdownContextRequestId
+    && document.querySelector("#breakdown-date")?.value === recordDate;
+}
+
+function applyFallbackBreakdownOptions() {
+  applyBreakdownOptions(fallbackBreakdownMachines, fallbackBreakdownShopOrders);
+}
+
+function applyBreakdownOptions(machines, shopOrders) {
+  breakdownMachines = machines;
+  breakdownShopOrders = shopOrders;
+  populateBreakdownMachineSelect();
+  updateBreakdownJobOrders();
+  reconcileBreakdownDateScopedInputs();
+  applyBreakdownProductFromOrder();
+}
+
+function clearBreakdownDateScopedInputs() {
+  const orderInput = document.querySelector("#breakdown-job-order");
+  if (orderInput) {
+    orderInput.value = "";
+  }
+  const productInput = document.querySelector("#breakdown-product");
+  if (productInput) {
+    productInput.value = "";
+    delete productInput.dataset.autofilledFor;
+  }
+}
+
+function reconcileBreakdownDateScopedInputs() {
+  const orderInput = document.querySelector("#breakdown-job-order");
+  const productInput = document.querySelector("#breakdown-product");
+  const orderNo = cleanOptional(orderInput?.value);
+  if (!orderNo) {
+    return;
+  }
+
+  const option = selectedBreakdownShopOrder();
+  if (!option) {
+    clearBreakdownDateScopedInputs();
+    return;
+  }
+
+  const productText = shopOrderProductText(option);
+  const productValue = cleanOptional(productInput?.value);
+  if (productValue && productValue !== productText) {
+    productInput.value = "";
+    delete productInput.dataset.autofilledFor;
+  }
+}
+
+function normalizeBreakdownContextOptions(options) {
+  if (!Array.isArray(options)) {
+    return [];
+  }
+  const seen = new Set();
+  const normalized = [];
+  for (const option of options) {
+    const resourceId = cleanOptional(option?.machine_code);
+    const orderNo = cleanOptional(option?.job_order);
+    if (!resourceId || !orderNo) {
+      continue;
+    }
+    const partDescription = cleanOptional(option?.produced_product);
+    const entryId = cleanOptional(option?.entry_id);
+    const submittedAt = cleanOptional(option?.submitted_at);
+    const key = [
+      resourceId,
+      orderNo,
+      partDescription || "",
+      entryId || submittedAt || "",
+    ].join("\u0000");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({
+      key,
+      orderNo,
+      resourceId,
+      releaseNo: "*",
+      sequenceNo: "*",
+      operationNo: null,
+      partNo: null,
+      partDescription,
+      entryId,
+      submittedAt,
+    });
+  }
+  normalized.sort(compareBreakdownContextOptions);
+  return normalized;
+}
+
+function compareBreakdownContextOptions(left, right) {
+  const machineComparison = compareOptionText(left.resourceId, right.resourceId);
+  if (machineComparison) {
+    return machineComparison;
+  }
+  const orderComparison = compareOptionText(left.orderNo, right.orderNo);
+  if (orderComparison) {
+    return orderComparison;
+  }
+  const leftTime = Date.parse(left.submittedAt || "");
+  const rightTime = Date.parse(right.submittedAt || "");
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return rightTime - leftTime;
+  }
+  if (Number.isFinite(leftTime)) {
+    return -1;
+  }
+  if (Number.isFinite(rightTime)) {
+    return 1;
+  }
+  return compareOptionText(
+    left.partDescription || "",
+    right.partDescription || "",
+  );
+}
+
+function machineOptionsFromContext(options) {
+  return uniqueSorted(options.map((option) => option.resourceId)).map(
+    (machineCode) => ({ machineCode, label: machineCode }),
+  );
 }
 
 function populateBreakdownMachineSelect() {

@@ -1068,6 +1068,133 @@ def test_breakdown_create_list_detail_and_idempotent_replay(client, tmp_path):
         assert persisted.stop_reason == "Hydraulic pressure fault"
 
 
+def test_breakdown_context_returns_process_entry_prefill_options(client, tmp_path):
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    older_duplicate = Entry(
+        process_date="2026-06-08",
+        machine_code="2",
+        col_f="2",
+        col_g="Product A",
+        col_h="WO-1",
+        sync_status="synced",
+        submitted_at=datetime(2026, 6, 8, 8, 0),
+        created_at=datetime(2026, 6, 8, 8, 1),
+    )
+    latest_duplicate = Entry(
+        process_date="2026-06-08",
+        machine_code="2",
+        col_f="2",
+        col_g="Product A",
+        col_h="WO-1",
+        sync_status="synced",
+        submitted_at=datetime(2026, 6, 8, 9, 0),
+        created_at=datetime(2026, 6, 8, 9, 1),
+    )
+    machine_ten = Entry(
+        process_date="2026-06-08",
+        machine_code="10",
+        col_f="10",
+        col_g="Product B",
+        col_h="WO-2",
+        sync_status="synced",
+        submitted_at=datetime(2026, 6, 8, 9, 30),
+        created_at=datetime(2026, 6, 8, 9, 31),
+    )
+    older_fallback = Entry(
+        process_date="2026-06-08",
+        machine_code=None,
+        col_f="101",
+        col_g="Product C",
+        col_h="WO-3",
+        sync_status="synced",
+        created_at=datetime(2026, 6, 8, 10, 0),
+    )
+    latest_fallback = Entry(
+        process_date="2026-06-08",
+        machine_code=None,
+        col_f="101",
+        col_g="Product C",
+        col_h="WO-3",
+        sync_status="synced",
+        created_at=datetime(2026, 6, 8, 11, 0),
+    )
+
+    with create_session(settings) as session:
+        session.add_all(
+            [
+                older_duplicate,
+                latest_duplicate,
+                machine_ten,
+                older_fallback,
+                latest_fallback,
+                Entry(
+                    process_date="2026-06-08",
+                    machine_code="5",
+                    col_f="5",
+                    col_g="Missing job order",
+                    col_h=" ",
+                    sync_status="synced",
+                ),
+                Entry(
+                    process_date="2026-06-08",
+                    machine_code=None,
+                    col_f=" ",
+                    col_g="Missing machine",
+                    col_h="WO-MISSING-MACHINE",
+                    sync_status="synced",
+                ),
+                Entry(
+                    process_date="2026-06-09",
+                    machine_code="1",
+                    col_f="1",
+                    col_g="Other date",
+                    col_h="WO-OTHER",
+                    sync_status="synced",
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/api/breakdowns/context",
+        params={"record_date": "2026-06-08"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["record_date"] == "2026-06-08"
+    assert payload["source"] == "process_entries"
+    assert payload["option_count"] == 3
+    assert payload["options"] == [
+        {
+            "machine_code": "2",
+            "job_order": "WO-1",
+            "produced_product": "Product A",
+            "entry_id": latest_duplicate.id,
+            "submitted_at": "2026-06-08T09:00:00Z",
+        },
+        {
+            "machine_code": "10",
+            "job_order": "WO-2",
+            "produced_product": "Product B",
+            "entry_id": machine_ten.id,
+            "submitted_at": "2026-06-08T09:30:00Z",
+        },
+        {
+            "machine_code": "101",
+            "job_order": "WO-3",
+            "produced_product": "Product C",
+            "entry_id": latest_fallback.id,
+            "submitted_at": None,
+        },
+    ]
+
+
 def test_breakdown_accepts_paper_minimum_payload(client):
     response = client.post(
         "/api/breakdowns",
@@ -2063,6 +2190,36 @@ def test_breakdown_javascript_uses_machine_code_labels_only():
     assert 'formData.get("resumed_at")' not in source
     assert "stopped_at:" not in source
     assert "resumed_at:" not in source
+
+
+def test_breakdown_javascript_wires_previous_day_context_lookup():
+    source = Path("app/static/js/modules/breakdowns.js").read_text(encoding="utf-8")
+
+    assert "previousLocalIsoDate" in source
+    assert "previousDay.setDate(previousDay.getDate() - 1)" in source
+    assert "/api/breakdowns/context?" in source
+    assert "applyFallbackBreakdownOptions" in source
+
+
+def test_breakdown_javascript_clears_stale_job_product_on_date_context_change():
+    source = Path("app/static/js/modules/breakdowns.js").read_text(encoding="utf-8")
+
+    date_listener = source[
+        source.index('.querySelector("#breakdown-date")') :
+        source.index('.querySelector("#breakdown-machine")')
+    ]
+
+    assert "clearBreakdownDateScopedInputs();" in date_listener
+    assert "void refreshBreakdownContextForDate();" in date_listener
+    assert date_listener.index("clearBreakdownDateScopedInputs();") < (
+        date_listener.index("void refreshBreakdownContextForDate();")
+    )
+    assert "function clearBreakdownDateScopedInputs()" in source
+    assert 'document.querySelector("#breakdown-job-order")' in source
+    assert 'document.querySelector("#breakdown-product")' in source
+    assert "delete productInput.dataset.autofilledFor" in source
+    assert "clearBreakdownDateScopedInputs();\n  applyDefaultBreakdownDate();" in source
+    assert "reconcileBreakdownDateScopedInputs();" in source
 
 
 def test_reports_javascript_wires_missing_production_check():

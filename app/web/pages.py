@@ -15,7 +15,7 @@ TEMPLATES = Jinja2Templates(directory=TEMPLATES_DIR)
 MANIFEST_URL = "/manifest.webmanifest"
 SERVICE_WORKER_URL = "/service-worker.js"
 STATIC_URL_PREFIX = "/static/"
-STATIC_ASSET_VERSION = "20260626-breakdowns-paper-fields"
+STATIC_ASSET_VERSION = "20260626-breakdown-context-v2"
 SERVICE_WORKER_CACHE_NAME = f"process-offline-shell-{STATIC_ASSET_VERSION}"
 
 

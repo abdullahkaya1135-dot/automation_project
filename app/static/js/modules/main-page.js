@@ -1,35 +1,35 @@
-import { apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
+import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
 import {
   amountControlRequestBodies,
   initializeAmountControlControls,
   resetAmountControlForm,
   updateAmountControlBootstrap,
-} from "./amount-control.js?v=20260626-breakdowns-paper-fields";
+} from "./amount-control.js?v=20260626-breakdown-context-v2";
 import {
   breakdownRequestBody,
   initializeBreakdownControls,
   resetBreakdownForm,
   updateBreakdownBootstrap,
-} from "./breakdowns.js?v=20260626-breakdowns-paper-fields";
+} from "./breakdowns.js?v=20260626-breakdown-context-v2";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
-} from "./dates.js?v=20260626-breakdowns-paper-fields";
+} from "./dates.js?v=20260626-breakdown-context-v2";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
-} from "./ifs-return.js?v=20260626-breakdowns-paper-fields";
+} from "./ifs-return.js?v=20260626-breakdown-context-v2";
 import {
   handlePackageLabelChecklist,
   handlePrintPackageLabelChecklist,
-} from "./package-label-checklist.js?v=20260626-breakdowns-paper-fields";
+} from "./package-label-checklist.js?v=20260626-breakdown-context-v2";
 import {
   loadAmountControlShifts,
   loadAuxiliarySubmissions,
   loadBreakdowns,
   loadEntryLists,
-} from "./lists.js?v=20260626-breakdowns-paper-fields";
+} from "./lists.js?v=20260626-breakdown-context-v2";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -42,27 +42,27 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260626-breakdowns-paper-fields";
+} from "./offline.js?v=20260626-breakdown-context-v2";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
-} from "./payloads.js?v=20260626-breakdowns-paper-fields";
+} from "./payloads.js?v=20260626-breakdown-context-v2";
 import {
   renderListError,
   renderLoading,
   renderMissingProductionStarts,
   renderProductionLossReport,
-} from "./render.js?v=20260626-breakdowns-paper-fields";
+} from "./render.js?v=20260626-breakdown-context-v2";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
   updateShopOrderOptions,
-} from "./shop-orders.js?v=20260626-breakdowns-paper-fields";
+} from "./shop-orders.js?v=20260626-breakdown-context-v2";
 import {
   initializeTemperatureShorthandInputs,
   normalizeTemperatureShorthandForm,
-} from "./temperature.js?v=20260626-breakdowns-paper-fields";
+} from "./temperature.js?v=20260626-breakdown-context-v2";
 import {
   applyAutomaticTourTiming,
   applyTourContext,
@@ -72,7 +72,7 @@ import {
   readStoredTourContext,
   storeTourContext,
   updateContextStatus,
-} from "./tour-context.js?v=20260626-breakdowns-paper-fields";
+} from "./tour-context.js?v=20260626-breakdown-context-v2";
 import {
   cleanRequired,
   createClientRequestId,
@@ -80,7 +80,7 @@ import {
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./utils.js?v=20260626-breakdown-context-v2";
 
 export function initMainPage() {
   const page = document.body?.dataset?.page;

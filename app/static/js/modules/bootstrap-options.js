@@ -2,7 +2,7 @@ import {
   cleanOptional,
   compareOptionText,
   uniqueSorted,
-} from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./utils.js?v=20260626-breakdown-context-v2";
 
 export function machineOptionsFromBootstrap(machines, shopOrderSource) {
   let machineOptions = normalizeMachineOptions(machines);

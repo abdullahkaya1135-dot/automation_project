@@ -1,10 +1,10 @@
-import { SYNC_LABELS } from "./constants.js?v=20260626-breakdowns-paper-fields";
-import { dateForDisplay } from "./dates.js?v=20260626-breakdowns-paper-fields";
+import { SYNC_LABELS } from "./constants.js?v=20260626-breakdown-context-v2";
+import { dateForDisplay } from "./dates.js?v=20260626-breakdown-context-v2";
 import {
   displayValue,
   formatTimestamp,
   updateStatusPill,
-} from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./utils.js?v=20260626-breakdown-context-v2";
 
 const PRODUCTION_LOSS_SHIFT_COLUMNS = [
   {

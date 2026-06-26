@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
+import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
 import {
   renderListError,
   renderLoading,
   renderPackageLabelChecklist,
   renderPackageLabelChecklistPrintArea,
-} from "./render.js?v=20260626-breakdowns-paper-fields";
-import { setButtonBusy, setMessage } from "./utils.js?v=20260626-breakdowns-paper-fields";
+} from "./render.js?v=20260626-breakdown-context-v2";
+import { setButtonBusy, setMessage } from "./utils.js?v=20260626-breakdown-context-v2";
 
 let latestPackageLabelChecklistPayload = null;
 

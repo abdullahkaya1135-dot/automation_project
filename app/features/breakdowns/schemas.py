@@ -45,3 +45,18 @@ class BreakdownCreateResponse(BaseModel):
 
 class BreakdownListResponse(BaseModel):
     breakdowns: list[BreakdownResponse]
+
+
+class BreakdownContextOption(BaseModel):
+    machine_code: str
+    job_order: str
+    produced_product: str | None = None
+    entry_id: int
+    submitted_at: str | None = None
+
+
+class BreakdownContextResponse(BaseModel):
+    record_date: str
+    source: str
+    option_count: int
+    options: list[BreakdownContextOption]
