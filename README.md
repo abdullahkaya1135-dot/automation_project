@@ -89,6 +89,7 @@ IFS_CLIENT_ID=your-ifs-client-id
 IFS_USERNAME=your-ifs-user
 IFS_PASSWORD=your-ifs-password
 IFS_PART_PREFIXES=HM-02,HM-03,HM-04
+IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS=14
 IFS_PRODUCTION_LOSS_QUERY_START_DATE=2026-06-01
 PRODUCTION_PLANNING_DIR=\\fileserver\GENEL\URETIM GUNLUK TAKIP
 PRODUCTION_PLANNING_PATH=\\fileserver\GENEL\URETIM GUNLUK TAKIP\GG.AA.YYYY ÇİZELGE 1.xlsx
@@ -231,6 +232,11 @@ list such as
 `HM-02,HM-03,HM-04` to control which raw-material prefixes are included; the
 legacy `IFS_PART_PREFIX` setting is still accepted for custom single-prefix
 overrides when the list is not set.
+
+Package Label Checklist enriches U01 package stock with printed label archive
+data from `SIMSEK_PALET_ETIKETI_REP`. The archive search window is controlled by
+`IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS`; keep the default `14` unless
+valid packages routinely stay in U01 longer before checklist review.
 
 IFS authentication uses the password grant to obtain a bearer token. Keep
 `IFS_USERNAME`, `IFS_PASSWORD`, `IFS_CLIENT_ID`, and optional `IFS_CLIENT_SECRET`

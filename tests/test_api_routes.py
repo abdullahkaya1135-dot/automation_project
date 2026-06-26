@@ -83,6 +83,7 @@ PAGE_SECTION_EXPECTATIONS = {
         'href="/process"',
         'href="/auxiliary"',
         'href="/amount-control"',
+        'href="/breakdowns"',
         'href="/reports"',
     ),
     "/process": (
@@ -97,6 +98,13 @@ PAGE_SECTION_EXPECTATIONS = {
     "/amount-control": (
         'data-page="amount-control"',
         'id="amount-control-form"',
+    ),
+    "/breakdowns": (
+        'data-page="breakdowns"',
+        'id="breakdown-form"',
+        'name="reason"',
+        'value="00.00-08.00"',
+        'id="breakdown-submissions"',
     ),
     "/reports": (
         'data-page="reports"',
@@ -124,6 +132,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="entry-form"',
         'id="auxiliary-form"',
         'id="amount-control-form"',
+        'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
         'id="generate-whatsapp-status-message"',
@@ -135,6 +144,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="dashboard-heading"',
         'id="auxiliary-form"',
         'id="amount-control-form"',
+        'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
         'id="generate-whatsapp-status-message"',
@@ -147,6 +157,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="tour-context-form"',
         'id="entry-form"',
         'id="amount-control-form"',
+        'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
         'id="generate-whatsapp-status-message"',
@@ -159,6 +170,20 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="tour-context-form"',
         'id="entry-form"',
         'id="auxiliary-form"',
+        'id="breakdown-form"',
+        'id="pending-entries"',
+        'id="create-cycle-report"',
+        'id="generate-whatsapp-status-message"',
+        'id="run-missing-production-starts"',
+        'id="run-ifs-return-candidates"',
+        'id="run-package-label-checklist"',
+    ),
+    "/breakdowns": (
+        'id="dashboard-heading"',
+        'id="tour-context-form"',
+        'id="entry-form"',
+        'id="auxiliary-form"',
+        'id="amount-control-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
         'id="generate-whatsapp-status-message"',
@@ -172,6 +197,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="entry-form"',
         'id="auxiliary-form"',
         'id="amount-control-form"',
+        'id="breakdown-form"',
     ),
 }
 
@@ -331,6 +357,22 @@ def _amount_control_body(**overrides):
                 "duration_minutes": 30,
             },
         ],
+    }
+    body.update(overrides)
+    return body
+
+
+def _breakdown_body(**overrides):
+    body = {
+        "record_date": "2026-06-08",
+        "machine_code": "101",
+        "shift": "00.00-08.00",
+        "reason": "Hydraulic pressure fault",
+        "duration_minutes": 45,
+        "job_order": "WO-1",
+        "produced_product": "Product 101",
+        "stopped_at": "2026-06-08T00:30:00+03:00",
+        "resumed_at": "2026-06-08T01:15:00+03:00",
     }
     body.update(overrides)
     return body
@@ -857,6 +899,9 @@ def test_amount_control_shift_create_list_detail_and_breakdown_links(client, tmp
         assert breakdown is not None
         assert breakdown.entry_id is None
         assert breakdown.amount_control_shift_id == amount_shift["id"]
+        assert breakdown.record_date == "2026-06-08"
+        assert breakdown.shift == "08.00-16.00"
+        assert breakdown.job_order == "WO-1"
 
 
 def test_amount_control_shift_is_idempotent_for_client_request_id(
@@ -960,6 +1005,110 @@ def test_amount_control_shift_validates_payload(client, overrides):
 
 def test_amount_control_shift_detail_returns_404_for_missing_id(client):
     response = client.get("/api/amount-control/shifts/999999")
+
+    assert response.status_code == 404
+
+
+def test_breakdown_create_list_detail_and_idempotent_replay(client, tmp_path):
+    request_body = _breakdown_body(client_request_id="breakdown-client-request-1")
+
+    response = client.post("/api/breakdowns", json=request_body)
+    replay_response = client.post("/api/breakdowns", json=request_body)
+
+    assert response.status_code == 201
+    assert replay_response.status_code == 200
+    payload = response.json()
+    replay_payload = replay_response.json()
+    assert payload["saved_locally"] is True
+    assert payload["idempotent_replay"] is False
+    assert replay_payload["idempotent_replay"] is True
+    breakdown = payload["breakdown"]
+    assert replay_payload["breakdown"]["id"] == breakdown["id"]
+    assert breakdown["client_request_id"] == "breakdown-client-request-1"
+    assert breakdown["record_date"] == "2026-06-08"
+    assert breakdown["machine_code"] == "101"
+    assert breakdown["shift"] == "24.00-08.00"
+    assert breakdown["job_order"] == "WO-1"
+    assert breakdown["produced_product"] == "Product 101"
+    assert breakdown["reason"] == "Hydraulic pressure fault"
+    assert breakdown["stop_reason"] == "Hydraulic pressure fault"
+    assert breakdown["duration_minutes"] == 45
+    assert breakdown["amount_control_shift_id"] is None
+
+    list_response = client.get(
+        "/api/breakdowns",
+        params={
+            "record_date": "2026-06-08",
+            "machine_code": "101",
+            "shift": "00:00-08:00",
+            "job_order": "WO-1",
+        },
+    )
+    assert list_response.status_code == 200
+    listed_breakdowns = list_response.json()["breakdowns"]
+    assert [item["id"] for item in listed_breakdowns] == [breakdown["id"]]
+
+    detail_response = client.get(f"/api/breakdowns/{breakdown['id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["reason"] == "Hydraulic pressure fault"
+
+    settings = Settings(
+        excel_path=str(tmp_path / "process.xlsx"),
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+        backup_dir=str(tmp_path / "backups"),
+    )
+    with create_session(settings) as session:
+        assert session.query(MachineBreakdown).count() == 1
+        persisted = session.query(MachineBreakdown).one()
+        assert persisted.record_date == "2026-06-08"
+        assert persisted.shift == "24.00-08.00"
+        assert persisted.job_order == "WO-1"
+        assert persisted.produced_product == "Product 101"
+        assert persisted.stop_reason == "Hydraulic pressure fault"
+
+
+def test_breakdown_accepts_paper_minimum_payload(client):
+    response = client.post(
+        "/api/breakdowns",
+        json=_breakdown_body(
+            job_order=None,
+            produced_product=None,
+            stopped_at=None,
+            resumed_at=None,
+        ),
+    )
+
+    assert response.status_code == 201
+    breakdown = response.json()["breakdown"]
+    assert breakdown["job_order"] is None
+    assert breakdown["produced_product"] is None
+    assert breakdown["stopped_at"] is None
+    assert breakdown["resumed_at"] is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"record_date": "08.06.2026"},
+        {"machine_code": "999"},
+        {"shift": "00.00-09.00"},
+        {"reason": " "},
+        {"duration_minutes": 0},
+        {
+            "stopped_at": "2026-06-08T11:00:00+03:00",
+            "resumed_at": "2026-06-08T10:00:00+03:00",
+        },
+    ],
+)
+def test_breakdown_validates_payload(client, overrides):
+    response = client.post("/api/breakdowns", json=_breakdown_body(**overrides))
+
+    assert response.status_code == 422
+
+
+def test_breakdown_detail_returns_404_for_missing_id(client):
+    response = client.get("/api/breakdowns/999999")
 
     assert response.status_code == 404
 
@@ -1877,6 +2026,45 @@ def test_page_routes_render_expected_split_sections_and_shared_assets(client):
             assert marker not in response.text
 
 
+def test_breakdown_page_keeps_paper_only_fields(client):
+    response = client.get("/breakdowns")
+
+    assert response.status_code == 200
+    assert 'name="reason"' in response.text
+    assert 'name="duration_minutes"' in response.text
+    assert 'name="stopped_at"' not in response.text
+    assert 'name="resumed_at"' not in response.text
+    assert "Durus baslangici" not in response.text
+    assert "Durus bitisi" not in response.text
+
+
+def test_breakdown_page_orders_fields_for_paper_entry(client):
+    response = client.get("/breakdowns")
+
+    assert response.status_code == 200
+    field_markers = (
+        'id="breakdown-date"',
+        'id="breakdown-machine"',
+        'id="breakdown-job-order"',
+        'id="breakdown-product"',
+        'id="breakdown-shift"',
+        'id="breakdown-duration"',
+        'id="breakdown-reason"',
+    )
+    field_positions = [response.text.index(marker) for marker in field_markers]
+    assert field_positions == sorted(field_positions)
+
+
+def test_breakdown_javascript_uses_machine_code_labels_only():
+    source = Path("app/static/js/modules/breakdowns.js").read_text(encoding="utf-8")
+
+    assert "label: machine.machineCode" in source
+    assert 'formData.get("stopped_at")' not in source
+    assert 'formData.get("resumed_at")' not in source
+    assert "stopped_at:" not in source
+    assert "resumed_at:" not in source
+
+
 def test_reports_javascript_wires_missing_production_check():
     source = Path("app/static/js/modules/main-page.js").read_text(encoding="utf-8")
 
@@ -1895,15 +2083,241 @@ def test_reports_javascript_wires_missing_production_check():
     assert "process_date" in source
 
 
-def test_package_label_checklist_renderer_prefers_onhand_quantity():
+def test_package_label_checklist_renderer_uses_requested_columns():
     source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
-    qty_column_start = source.index('label: "Qty"')
-    qty_column_end = source.index('label: "Location"', qty_column_start)
-    qty_column = source[qty_column_start:qty_column_end]
+    columns_start = source.index("const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES")
+    columns_end = source.index("export function renderEntryList", columns_start)
+    columns = source[columns_start:columns_end]
+    labels = [
+        'label: "Machine"',
+        'label: "JobOrder"',
+        'label: "PartNo"',
+        'label: "Description"',
+        'label: "HandlingUnitId"',
+        'label: "ReceiptDate"',
+        'label: "Label OK"',
+        'label: "Reason"',
+    ]
+    positions = [columns.index(label) for label in labels]
 
-    assert qty_column.index('"qty_onhand"') < qty_column.index('"available_qty"')
-    assert 'label: "Operation Status"' in source
+    assert positions == sorted(positions)
+    assert 'label: "No"' not in columns
+    assert 'label: "Qty"' not in columns
+    assert 'label: "Operation Status"' not in columns
+    assert 'label: "Missing Reason"' not in columns
     assert "packageLabelChecklistMachineText" in source
+    assert "packageLabelChecklistHandlingUnitText" in source
+    assert "packageLabelChecklistReceiptDateText" in source
+    assert 'text.replace(/\\./g, "")' in source
+
+
+def test_package_label_checklist_renderer_marks_future_long_text_columns():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    machine_start = source.index('label: "Machine"')
+    job_order_start = source.index('label: "JobOrder"', machine_start)
+    part_no_start = source.index('label: "PartNo"')
+    description_start = source.index('label: "Description"', part_no_start)
+    handling_unit_start = source.index('label: "HandlingUnitId"', description_start)
+    receipt_date_start = source.index('label: "ReceiptDate"', handling_unit_start)
+    label_ok_start = source.index('label: "Label OK"', receipt_date_start)
+    machine_column = source[machine_start:job_order_start]
+    job_order_column = source[job_order_start:part_no_start]
+    part_no_column = source[part_no_start:description_start]
+    description_column = source[description_start:handling_unit_start]
+    handling_unit_column = source[handling_unit_start:receipt_date_start]
+    receipt_date_column = source[receipt_date_start:label_ok_start]
+    future_part_no = "FUTURE-2099-PACKAGE-LABEL-CHECKLIST-PART-NO-ALPHA-00000001"
+    future_description = (
+        "Future package label checklist description for a new IFS item family "
+        "with deliberately long marketing and technical wording"
+    )
+
+    assert len(future_part_no) > 48
+    assert len(future_description) > 96
+    assert "package-label-checklist-machine-cell" in machine_column
+    assert "package-label-checklist-job-order-cell" in job_order_column
+    assert "mono-cell" in part_no_column
+    assert "package-label-checklist-part-no-col" in part_no_column
+    assert "package-label-checklist-single-line-cell" in part_no_column
+    assert "package-label-checklist-description-col" in description_column
+    assert "package-label-checklist-single-line-cell" in description_column
+    assert "package-label-checklist-handling-unit-cell" in handling_unit_column
+    assert "mono-cell" in receipt_date_column
+    assert "package-label-checklist-single-line-cell" in receipt_date_column
+    assert "package-label-checklist-receipt-date-cell" in receipt_date_column
+    assert "package-label-checklist-receipt-date-col" in receipt_date_column
+
+
+def test_package_label_checklist_print_css_keeps_rows_compact_and_stable():
+    css = Path("app/static/css/app.css").read_text(encoding="utf-8")
+    print_css = css[css.index("@media print"):]
+    table_selector = ".print-only .package-label-checklist-table"
+    cell_selector = (
+        ".print-only .package-label-checklist-table th,\n"
+        "  .print-only .package-label-checklist-table td"
+    )
+    single_line_selector = ".print-only .package-label-checklist-single-line-cell"
+    mono_single_line_selector = (
+        ".print-only .package-label-checklist-single-line-cell.mono-cell"
+    )
+    centered_cell_selector = ".print-only .package-label-checklist-machine-cell"
+    writing_cell_selector = ".print-only .package-label-checklist-writing-cell"
+    centered_cell_classes = [
+        "package-label-checklist-machine-cell",
+        "package-label-checklist-job-order-cell",
+        "package-label-checklist-part-no-cell",
+        "package-label-checklist-description-cell",
+        "package-label-checklist-handling-unit-cell",
+        "package-label-checklist-receipt-date-cell",
+    ]
+    expected_col_widths = {
+        "package-label-checklist-machine-col": "8%",
+        "package-label-checklist-job-order-col": "11%",
+        "package-label-checklist-part-no-col": "18%",
+        "package-label-checklist-description-col": "29%",
+        "package-label-checklist-handling-unit-col": "9%",
+        "package-label-checklist-receipt-date-col": "13%",
+        "package-label-checklist-label-ok-col": "5%",
+        "package-label-checklist-reason-col": "7%",
+    }
+
+    table_rule = print_css[
+        print_css.index(table_selector):print_css.index("}", print_css.index(table_selector))
+    ]
+    cell_rule = print_css[
+        print_css.index(cell_selector):print_css.index("}", print_css.index(cell_selector))
+    ]
+    single_line_rule = print_css[
+        print_css.index(single_line_selector):print_css.index(
+            "}",
+            print_css.index(single_line_selector),
+        )
+    ]
+    mono_single_line_rule = print_css[
+        print_css.index(mono_single_line_selector):print_css.index(
+            "}",
+            print_css.index(mono_single_line_selector),
+        )
+    ]
+    centered_cell_rule = print_css[
+        print_css.index(centered_cell_selector):print_css.index(
+            "}",
+            print_css.index(centered_cell_selector),
+        )
+    ]
+    writing_cell_rule = print_css[
+        print_css.index(writing_cell_selector):print_css.index(
+            "}",
+            print_css.index(writing_cell_selector),
+        )
+    ]
+
+    assert "font-size: 5.8pt;" in table_rule
+    assert "line-height: 1.1;" in table_rule
+    assert "font-size: 5.8pt;" in cell_rule
+    assert "padding: 0.5pt 2pt;" in cell_rule
+    assert "line-height: 1.1;" in cell_rule
+    assert "white-space: nowrap;" in single_line_rule
+    assert "overflow: hidden;" in single_line_rule
+    assert "text-overflow: ellipsis;" in single_line_rule
+    assert "overflow-wrap: normal;" in mono_single_line_rule
+    assert "word-break: normal;" in mono_single_line_rule
+    assert "text-align: center;" in centered_cell_rule
+    for cell_class in centered_cell_classes:
+        assert f".print-only .{cell_class}" in centered_cell_rule
+    assert "height: 14pt;" in writing_cell_rule
+    assert "overflow: hidden;" in writing_cell_rule
+    assert "text-overflow: ellipsis;" in writing_cell_rule
+    assert "white-space: nowrap;" in writing_cell_rule
+    for col_class, width in expected_col_widths.items():
+        selector = f".print-only .{col_class}"
+        col_rule = print_css[
+            print_css.index(selector):print_css.index(
+                "}",
+                print_css.index(selector),
+            )
+        ]
+        assert f"width: {width};" in col_rule
+
+
+def test_package_label_checklist_renderer_formats_receipt_date():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    receipt_column_start = source.index('label: "ReceiptDate"')
+    receipt_column_end = source.index('label: "Label OK"', receipt_column_start)
+    receipt_column = source[receipt_column_start:receipt_column_end]
+    renderer_start = source.index("function packageLabelChecklistReceiptDateText")
+    renderer_end = source.index("function packageLabelChecklistMachineText", renderer_start)
+    renderer = source[renderer_start:renderer_end]
+
+    assert '"receipt_date"' in receipt_column
+    assert '"receiptDate"' in receipt_column
+    assert '"ReceiptDate"' in receipt_column
+    assert "value: packageLabelChecklistReceiptDateText" in receipt_column
+    assert "const value = checklistRowValue(row, column.keys);" in renderer
+    assert "return value === null ? null : formatTimestamp(value);" in renderer
+
+
+def test_package_label_checklist_renderer_prefers_machine_value_for_ambiguous_rows():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    machine_column_start = source.index('label: "Machine"')
+    machine_column_end = source.index('label: "JobOrder"', machine_column_start)
+    machine_column = source[machine_column_start:machine_column_end]
+    renderer_start = source.index("function packageLabelChecklistMachineText")
+    renderer_end = source.index("function packageLabelChecklistStatus", renderer_start)
+    renderer = source[renderer_start:renderer_end]
+
+    assert '"machine_code"' in machine_column
+    assert '"resource_id"' in machine_column
+    assert '"preferred_resource_id"' in machine_column
+    assert '"ResourceId"' in machine_column
+    assert '"PreferredResourceId"' in machine_column
+    assert "row?.operation_match_status ?? row?.match_status ??" in renderer
+    assert "const machine = checklistRowValue(row, column.keys);" in renderer
+    assert 'return machine ?? "Belirsiz";' in renderer
+    assert "return machine;" in renderer
+
+
+def test_package_label_checklist_renderer_groups_shared_cells_with_rowspan():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    columns_start = source.index("const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES")
+    renderer_start = source.index("function renderPackageLabelChecklistTable")
+    renderer_end = source.index("function packageLabelChecklistRows", renderer_start)
+    renderer = source[renderer_start:renderer_end]
+    append_cell_start = source.index("function appendChecklistCell")
+    append_cell_end = source.index("function checklistCellText", append_cell_start)
+    append_cell = source[append_cell_start:append_cell_end]
+
+    assert "const PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT = 4;" in source
+    assert 'label: "HandlingUnitId"' in source[columns_start:renderer_start]
+    assert (
+        "for (const group of packageLabelChecklistGroups(rows))" in renderer
+    )
+    assert "group.rows.forEach((renderedRow, rowIndex) => {" in renderer
+    assert "columnIndex < PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT" in renderer
+    assert "if (rowIndex > 0)" in renderer
+    assert "appendChecklistCell(tr, value, column.className" in renderer
+    assert "group.rows.length" in renderer
+    assert (
+        ".slice(0, PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT)"
+        in renderer
+    )
+    assert "cell.rowSpan = rowSpan;" in append_cell
+
+
+def test_package_label_checklist_print_renderer_omits_summary_header():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    renderer_start = source.index(
+        "export function renderPackageLabelChecklistPrintArea",
+    )
+    renderer_end = source.index("export function renderMissingProductionStarts", renderer_start)
+    renderer = source[renderer_start:renderer_end]
+
+    assert "renderPackageLabelChecklistSummary" not in renderer
+    assert "package-label-checklist-print-title" not in renderer
+    assert 'textContent = "Package Label Checklist"' not in renderer
+    assert "renderPackageLabelChecklistTable(rows)" in renderer
+    assert "Checklist satiri yok." in renderer
+    assert "activatePrintArea(container)" in renderer
 
 
 def test_service_worker_uses_route_specific_navigation_cache_and_shared_assets(

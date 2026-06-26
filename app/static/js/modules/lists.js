@@ -1,11 +1,12 @@
-import { apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
+import { apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
 import {
   renderAmountControlShiftList,
   renderAuxiliarySubmissionList,
+  renderBreakdownList,
   renderEntryList,
   renderListError,
-} from "./render.js?v=20260624-package-label-checklist-cache";
-import { entryTime } from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./render.js?v=20260626-breakdowns-paper-fields";
+import { entryTime } from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 export async function loadEntryLists() {
   await Promise.all([loadRecentEntries(), loadPendingEntries()]);
@@ -18,10 +19,10 @@ export async function loadRecentEntries() {
     renderEntryList(
       container,
       Array.isArray(payload.entries) ? payload.entries : [],
-      "Son kayıt yok.",
+      "Son kayÄ±t yok.",
     );
   } catch (error) {
-    renderListError(container, `Son kayıtlar yüklenemedi: ${error.message}`);
+    renderListError(container, `Son kayÄ±tlar yÃ¼klenemedi: ${error.message}`);
   }
 }
 
@@ -39,9 +40,9 @@ export async function loadPendingEntries() {
       .sort((left, right) => entryTime(right) - entryTime(left))
       .slice(0, 50);
 
-    renderEntryList(container, entries, "Bekleyen kayıt yok.");
+    renderEntryList(container, entries, "Bekleyen kayÄ±t yok.");
   } catch (error) {
-    renderListError(container, `Bekleyen kayıtlar yüklenemedi: ${error.message}`);
+    renderListError(container, `Bekleyen kayÄ±tlar yÃ¼klenemedi: ${error.message}`);
   }
 }
 
@@ -52,12 +53,12 @@ export async function loadAuxiliarySubmissions() {
     renderAuxiliarySubmissionList(
       container,
       Array.isArray(payload.submissions) ? payload.submissions : [],
-      "Son gönderim yok.",
+      "Son gÃ¶nderim yok.",
     );
   } catch (error) {
     renderListError(
       container,
-      `Yardımcı sistemler gönderimleri yüklenemedi: ${error.message}`,
+      `YardÄ±mcÄ± sistemler gÃ¶nderimleri yÃ¼klenemedi: ${error.message}`,
     );
   }
 }
@@ -76,5 +77,20 @@ export async function loadAmountControlShifts() {
       container,
       `Miktar kontrolleri yuklenemedi: ${error.message}`,
     );
+  }
+}
+
+export async function loadBreakdowns() {
+  const container = document.querySelector("#breakdown-submissions");
+  try {
+    const payload = await apiJson("/api/breakdowns?limit=20");
+    const breakdowns = Array.isArray(payload.breakdowns)
+      ? payload.breakdowns
+      : Array.isArray(payload.items)
+        ? payload.items
+        : [];
+    renderBreakdownList(container, breakdowns, "Son ariza kaydi yok.");
+  } catch (error) {
+    renderListError(container, `Ariza kayitlari yuklenemedi: ${error.message}`);
   }
 }

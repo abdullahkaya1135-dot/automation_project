@@ -1,0 +1,39 @@
+﻿machine_code,agiz_mm,gramaj_gr,observation_columns,raw_n,clean_n,outlier_n,n_by_column,raw_min,raw_max,raw_median,raw_mean,raw_stdev,clean_min,clean_max,clean_median,clean_mean,clean_stdev,recommended_cycle,outlier_low_bound,outlier_high_bound,method
+102,28,52,"J,K,L",9,9,0,J:3; K:3; L:3,4,18.73,5,9.224444,7.100053,4,18.73,5,9.224444,7.100053,5,-17.84,40.4,IQR 1.5x filter; recommended_cycle = clean median
+103,28,40,"J,K,L",12,12,0,J:4; K:4; L:4,5,15.94,5,8.610833,5.333961,5,15.94,5,8.610833,5.333961,5,-11.0575,31.7625,IQR 1.5x filter; recommended_cycle = clean median
+104,28,25,"J,K,L",12,12,0,J:4; K:4; L:4,5,15.73,6,8.355833,3.942607,5,15.73,6,8.355833,3.942607,6,-3.945,22.575,IQR 1.5x filter; recommended_cycle = clean median
+131,24,25,"J,K,L",9,9,0,J:3; K:3; L:3,3,20.27,3,8.623333,8.44211,3,20.27,3,8.623333,8.44211,3,-21.105,43.175,IQR 1.5x filter; recommended_cycle = clean median
+132,24,29,"J,K,L",6,6,0,J:2; K:2; L:2,3,20.67,3,8.89,9.124749,3,20.67,3,8.89,9.124749,3,-16.87875,36.13125,IQR 1.5x filter; recommended_cycle = clean median
+134,24,16,"J,K,L",6,6,0,J:2; K:2; L:2,3,15.27,3,7.09,6.336201,3,15.27,3,7.09,6.336201,3,-10.80375,26.00625,IQR 1.5x filter; recommended_cycle = clean median
+135,38,25,"J,K,L",12,12,0,J:4; K:4; L:4,2,20.58,2,8.069167,8.966828,2,20.58,2,8.069167,8.966828,2,-24.835,46.725,IQR 1.5x filter; recommended_cycle = clean median
+138,62,26,"J,K,L",12,12,0,J:4; K:4; L:4,3,12.85,3,6.2325,4.775091,3,12.85,3,6.2325,4.775091,3,-11.415,27.025,IQR 1.5x filter; recommended_cycle = clean median
+141,45,85,"J,K,L",3,3,0,J:1; K:1; L:1,4,28,4,12,13.856406,4,28,4,12,13.856406,4,,,median; no outlier filter because raw_n < 4
+161,38,47,"J,K,L",9,9,0,J:3; K:3; L:3,6,22.51,6,11.503333,8.255,6,22.51,6,11.503333,8.255,6,-18.765,47.275,IQR 1.5x filter; recommended_cycle = clean median
+162,28,52,"J,K,L",3,3,0,J:1; K:1; L:1,6,24,6,12,10.392305,6,24,6,12,10.392305,6,,,median; no outlier filter because raw_n < 4
+164,28,45,"J,K,L",6,6,0,J:2; K:2; L:2,6,21.59,6,11.196667,8.050641,6,21.59,6,11.196667,8.050641,6,-11.53875,35.23125,IQR 1.5x filter; recommended_cycle = clean median
+171,100,45,"J,K,L",6,6,0,J:2; K:2; L:2,3,14.78,3,6.926667,6.083166,3,14.78,3,6.926667,6.083166,3,-10.2525,25.0875,IQR 1.5x filter; recommended_cycle = clean median
+172,28,45,"J,K,L",12,12,0,J:4; K:4; L:4,4,16.64,4,8.099167,6.058557,4,16.64,4,8.099167,6.058557,4,-13.85375,33.75625,IQR 1.5x filter; recommended_cycle = clean median
+173,28,40,"J,K,L",12,12,0,J:4; K:4; L:4,5,19.23,5,9.335833,6.420634,5,19.23,5,9.335833,6.420634,5,-13.4875,35.8125,IQR 1.5x filter; recommended_cycle = clean median
+174,110,95,"J,K,L",9,9,0,J:3; K:3; L:3,3,18.19,3,8.058889,7.588336,3,18.19,3,8.058889,7.588336,3,-19.755,40.925,IQR 1.5x filter; recommended_cycle = clean median
+175,28,35,"J,K,L",6,6,0,J:2; K:2; L:2,5,14.94,5,8.226667,5.001434,5,14.94,5,8.226667,5.001434,5,-5.5975,22.6625,IQR 1.5x filter; recommended_cycle = clean median
+176,28,52,"J,K,L",12,12,0,J:4; K:4; L:4,5,20.3,5,9.614167,6.83742,5,20.3,5,9.614167,6.83742,5,-14.5225,37.5375,IQR 1.5x filter; recommended_cycle = clean median
+177,28,52,"J,K,L",12,12,0,J:4; K:4; L:4,4,18.74,4,8.799167,7.090669,4,18.74,4,8.799167,7.090669,4,-17.15,39.25,IQR 1.5x filter; recommended_cycle = clean median
+182,28,26,"J,K,L",3,3,0,J:1; K:1; L:1,8,16,8,10.666667,4.618802,8,16,8,10.666667,4.618802,8,,,median; no outlier filter because raw_n < 4
+202,20,1,"J,K,L",6,5,1,J:2; K:2; L:2,21.1,212,24,54.516667,77.160623,21.1,24,24,23.02,1.37913,24,20.25,26.25,IQR 1.5x filter; recommended_cycle = clean median
+203,44,6,"J,K,L",3,3,0,J:1; K:1; L:1,8,17.6,8,11.2,5.542563,8,17.6,8,11.2,5.542563,8,,,median; no outlier filter because raw_n < 4
+203,45,5.5,"J,K,L",3,3,0,J:1; K:1; L:1,4,16.1,4,8.033333,6.985938,4,16.1,4,8.033333,6.985938,4,,,median; no outlier filter because raw_n < 4
+204,28,1,"J,K,L",6,6,0,J:2; K:2; L:2,24,25.5,24,24.5,0.774597,24,25.5,24,24.5,0.774597,24,22.3125,26.8125,IQR 1.5x filter; recommended_cycle = clean median
+205,24,3,"J,K,L",6,5,1,J:2; K:2; L:2,12,26.9,12,15.07,5.964076,12,15.52,12,12.704,1.574192,12,8.04,18.6,IQR 1.5x filter; recommended_cycle = clean median
+206,45,10,"J,K,L",3,3,0,J:1; K:1; L:1,6,33.2,8,15.733333,15.159595,6,33.2,8,15.733333,15.159595,8,,,median; no outlier filter because raw_n < 4
+207,28,10,"J,K,L",6,6,0,J:2; K:2; L:2,9,28.95,12,16.466667,9.346853,9,28.95,12,16.466667,9.346853,12,-11.45625,45.09375,IQR 1.5x filter; recommended_cycle = clean median
+209,20,2,"J,K,L",6,6,0,J:2; K:2; L:2,7,27.5,14,16.566667,8.742235,7,27.5,14,16.566667,8.742235,14,-10.0125,44.6875,IQR 1.5x filter; recommended_cycle = clean median
+210,100,13,"J,K,L",6,6,0,J:2; K:2; L:2,3,19.8,4,9.1,8.297228,3,19.8,4,9.1,8.297228,4,-13.775,33.625,IQR 1.5x filter; recommended_cycle = clean median
+211,24,1,"J,K,L",3,3,0,J:1; K:1; L:1,22.1,24,24,23.366667,1.096966,22.1,24,24,23.366667,1.096966,24,,,median; no outlier filter because raw_n < 4
+211,100,13,"J,K,L",3,3,0,J:1; K:1; L:1,21,24,21.4,22.133333,1.628906,21,24,21.4,22.133333,1.628906,21.4,,,median; no outlier filter because raw_n < 4
+212,28,13,"J,K,L",3,3,0,J:1; K:1; L:1,11,21.4,12,14.8,5.737595,11,21.4,12,14.8,5.737595,12,,,median; no outlier filter because raw_n < 4
+301,62,43,"J,K,L",3,3,0,J:1; K:1; L:1,8,36.7,8,17.566667,16.569953,8,36.7,8,17.566667,16.569953,8,,,median; no outlier filter because raw_n < 4
+301,90,17,"J,K,L",3,3,0,J:1; K:1; L:1,4,24.4,4,10.8,11.777945,4,24.4,4,10.8,11.777945,4,,,median; no outlier filter because raw_n < 4
+303,90,61,"J,K,L",3,3,0,J:1; K:1; L:1,3,28.7,4,11.9,14.557816,3,28.7,4,11.9,14.557816,4,,,median; no outlier filter because raw_n < 4
+303,100,45,"J,K,L",3,3,0,J:1; K:1; L:1,8,34.2,8,16.733333,15.126577,8,34.2,8,16.733333,15.126577,8,,,median; no outlier filter because raw_n < 4
+401,90,60,"J,K,L",3,3,0,J:1; K:1; L:1,1,9.08,1,3.693333,4.66499,1,9.08,1,3.693333,4.66499,1,,,median; no outlier filter because raw_n < 4
+501,24,28,"J,K,L",2,2,0,J:1; K:0; L:1,6,15.62,10.81,10.81,6.802367,6,15.62,10.81,10.81,6.802367,10.81,,,median; no outlier filter because raw_n < 4

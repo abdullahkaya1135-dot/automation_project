@@ -767,7 +767,23 @@ class MachineBreakdown(Base):
     __tablename__ = "machine_breakdowns"
     __table_args__ = (
         CheckConstraint(
-            "trim(produced_product) <> ''",
+            "client_request_id IS NULL OR trim(client_request_id) <> ''",
+            name="ck_machine_breakdowns_client_request_id",
+        ),
+        CheckConstraint(
+            "record_date IS NULL OR trim(record_date) <> ''",
+            name="ck_machine_breakdowns_record_date",
+        ),
+        CheckConstraint(
+            "shift IS NULL OR shift IN ('24.00-08.00', '08.00-16.00', '16.00-24.00')",
+            name="ck_machine_breakdowns_shift",
+        ),
+        CheckConstraint(
+            "job_order IS NULL OR trim(job_order) <> ''",
+            name="ck_machine_breakdowns_job_order",
+        ),
+        CheckConstraint(
+            "produced_product IS NULL OR trim(produced_product) <> ''",
             name="ck_machine_breakdowns_produced_product",
         ),
         CheckConstraint(
@@ -788,11 +804,30 @@ class MachineBreakdown(Base):
             "ix_machine_breakdowns_amount_control_shift_id",
             "amount_control_shift_id",
         ),
+        Index(
+            "ix_machine_breakdowns_record_lookup",
+            "record_date",
+            "machine_id",
+            "shift",
+        ),
         Index("ix_machine_breakdowns_stopped_at", "stopped_at"),
         Index("ix_machine_breakdowns_created_at", "created_at"),
+        Index(
+            "ux_machine_breakdowns_client_request_id",
+            "client_request_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    record_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    shift: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    job_order: Mapped[str | None] = mapped_column(Text, nullable=True)
     machine_id: Mapped[int] = mapped_column(
         ForeignKey("machines.id", ondelete="RESTRICT"),
         nullable=False,
@@ -805,7 +840,7 @@ class MachineBreakdown(Base):
         ForeignKey("amount_control_shifts.id", ondelete="SET NULL"),
         nullable=True,
     )
-    produced_product: Mapped[str] = mapped_column(Text, nullable=False)
+    produced_product: Mapped[str | None] = mapped_column(Text, nullable=True)
     stop_reason: Mapped[str] = mapped_column(Text, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

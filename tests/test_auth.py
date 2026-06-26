@@ -17,6 +17,7 @@ PROTECTED_PAGE_MARKERS = {
     "/process": 'id="entry-form"',
     "/auxiliary": 'id="auxiliary-form"',
     "/amount-control": 'id="amount-control-form"',
+    "/breakdowns": 'id="breakdown-form"',
     "/reports": 'id="run-ifs-return-candidates"',
 }
 

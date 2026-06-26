@@ -1,28 +1,35 @@
-import { apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
+import { apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
 import {
   amountControlRequestBodies,
   initializeAmountControlControls,
   resetAmountControlForm,
   updateAmountControlBootstrap,
-} from "./amount-control.js?v=20260624-package-label-checklist-cache";
+} from "./amount-control.js?v=20260626-breakdowns-paper-fields";
+import {
+  breakdownRequestBody,
+  initializeBreakdownControls,
+  resetBreakdownForm,
+  updateBreakdownBootstrap,
+} from "./breakdowns.js?v=20260626-breakdowns-paper-fields";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
-} from "./dates.js?v=20260624-package-label-checklist-cache";
+} from "./dates.js?v=20260626-breakdowns-paper-fields";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
-} from "./ifs-return.js?v=20260624-package-label-checklist-cache";
+} from "./ifs-return.js?v=20260626-breakdowns-paper-fields";
 import {
   handlePackageLabelChecklist,
   handlePrintPackageLabelChecklist,
-} from "./package-label-checklist.js?v=20260624-package-label-checklist-cache";
+} from "./package-label-checklist.js?v=20260626-breakdowns-paper-fields";
 import {
   loadAmountControlShifts,
   loadAuxiliarySubmissions,
+  loadBreakdowns,
   loadEntryLists,
-} from "./lists.js?v=20260624-package-label-checklist-cache";
+} from "./lists.js?v=20260626-breakdowns-paper-fields";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -35,27 +42,27 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260624-package-label-checklist-cache";
+} from "./offline.js?v=20260626-breakdowns-paper-fields";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
-} from "./payloads.js?v=20260624-package-label-checklist-cache";
+} from "./payloads.js?v=20260626-breakdowns-paper-fields";
 import {
   renderListError,
   renderLoading,
   renderMissingProductionStarts,
   renderProductionLossReport,
-} from "./render.js?v=20260624-package-label-checklist-cache";
+} from "./render.js?v=20260626-breakdowns-paper-fields";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
   updateShopOrderOptions,
-} from "./shop-orders.js?v=20260624-package-label-checklist-cache";
+} from "./shop-orders.js?v=20260626-breakdowns-paper-fields";
 import {
   initializeTemperatureShorthandInputs,
   normalizeTemperatureShorthandForm,
-} from "./temperature.js?v=20260624-package-label-checklist-cache";
+} from "./temperature.js?v=20260626-breakdowns-paper-fields";
 import {
   applyAutomaticTourTiming,
   applyTourContext,
@@ -65,7 +72,7 @@ import {
   readStoredTourContext,
   storeTourContext,
   updateContextStatus,
-} from "./tour-context.js?v=20260624-package-label-checklist-cache";
+} from "./tour-context.js?v=20260626-breakdowns-paper-fields";
 import {
   cleanRequired,
   createClientRequestId,
@@ -73,7 +80,7 @@ import {
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 export function initMainPage() {
   const page = document.body?.dataset?.page;
@@ -105,6 +112,10 @@ function initializePage(page) {
   }
   if (page === "amount-control") {
     initializeAmountControlPage();
+    return;
+  }
+  if (page === "breakdowns") {
+    initializeBreakdownPage();
     return;
   }
   if (page === "reports") {
@@ -188,6 +199,26 @@ function initializeAmountControlPage() {
         await loadAmountControlShifts();
       } finally {
         setButtonBusy(amountControlRefreshButton, false);
+      }
+    });
+  }
+}
+
+function initializeBreakdownPage() {
+  const breakdownForm = document.querySelector("#breakdown-form");
+  initializeBreakdownControls();
+  if (breakdownForm) {
+    breakdownForm.addEventListener("submit", handleBreakdownSubmit);
+  }
+
+  const breakdownRefreshButton = document.querySelector("#refresh-breakdowns");
+  if (breakdownRefreshButton) {
+    breakdownRefreshButton.addEventListener("click", async () => {
+      setButtonBusy(breakdownRefreshButton, true, "Yenileniyor");
+      try {
+        await loadBreakdowns();
+      } finally {
+        setButtonBusy(breakdownRefreshButton, false);
       }
     });
   }
@@ -294,6 +325,13 @@ function renderInitialLoading(page) {
       document.querySelector("#amount-control-submissions"),
       "Miktar kontrolleri yukleniyor...",
     );
+    return;
+  }
+  if (page === "breakdowns") {
+    renderLoading(
+      document.querySelector("#breakdown-submissions"),
+      "Ariza kayitlari yukleniyor...",
+    );
   }
 }
 
@@ -323,6 +361,9 @@ function pageDataLoaders(page) {
   if (page === "amount-control") {
     return [loadAmountControlShifts()];
   }
+  if (page === "breakdowns") {
+    return [loadBreakdowns()];
+  }
   return [];
 }
 
@@ -336,6 +377,9 @@ function pageMessageTarget(page) {
   }
   if (page === "amount-control") {
     return document.querySelector("#amount-control-message");
+  }
+  if (page === "breakdowns") {
+    return document.querySelector("#breakdown-message");
   }
   if (page === "reports") {
     return document.querySelector("#sync-message")
@@ -378,6 +422,7 @@ async function loadBootstrap() {
   applyAuxiliaryDate(payload.current_auxiliary_date);
   updateShopOrderOptions(payload.shop_order_source);
   updateAmountControlBootstrap(payload.machines || [], payload.shop_order_source);
+  updateBreakdownBootstrap(payload.machines || [], payload.shop_order_source);
   updateProductionEngineerOptions(payload.production_engineers || []);
 
   const automaticTiming = payload.current_tour_timing || null;
@@ -690,6 +735,52 @@ async function handleAmountControlSubmit(event) {
     setMessage(
       message,
       `Miktar kontrolu telefona kaydedilemedi: ${error.message}`,
+      "error",
+    );
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function handleBreakdownSubmit(event) {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const message = document.querySelector("#breakdown-message");
+  const button = form.querySelector("button[type='submit']");
+
+  if (!form.reportValidity()) {
+    return;
+  }
+
+  let body;
+  try {
+    body = breakdownRequestBody(form);
+  } catch (error) {
+    setMessage(message, error.message, "error");
+    return;
+  }
+
+  const recordedAt = new Date();
+  body.client_request_id = createClientRequestId();
+  body.client_recorded_at = recordedAt.toISOString();
+
+  setMessage(message, "Ariza kaydi telefona kaydediliyor...", "");
+  setButtonBusy(button, true, "Gonderiliyor");
+
+  try {
+    await queueOfflineRecord("breakdown", body);
+    resetBreakdownForm(form);
+    setMessage(
+      message,
+      "Ariza kaydi telefona kaydedildi. Baglanti gelince senkronize edilecek.",
+      "warning",
+    );
+    await syncOutbox({ reason: "breakdown_submit" });
+  } catch (error) {
+    setMessage(
+      message,
+      `Ariza kaydi telefona kaydedilemedi: ${error.message}`,
       "error",
     );
   } finally {

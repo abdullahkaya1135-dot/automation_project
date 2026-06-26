@@ -8,6 +8,7 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+node_modules/
 logs/
 runtime-logs/
 *.log

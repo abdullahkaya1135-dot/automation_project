@@ -22,6 +22,7 @@ from app.models import (
     MachineBreakdown,
     ProductionLossIfsActual,
     ProductionLossReport,
+    TourContext,
 )
 
 
@@ -822,6 +823,298 @@ def test_create_production_loss_report_uses_realized_entry_cycle_for_loss_calcul
     snapshot = get_production_loss_report(settings, result.report_id)
     assert snapshot is not None
     assert snapshot["rows"][0]["daily_total_quantity"] == 180
+
+
+def test_create_production_loss_report_splits_standalone_timed_breakdown_by_shift(
+    tmp_path,
+    monkeypatch,
+):
+    settings = _settings(tmp_path)
+    init_db(settings)
+    with create_session(settings) as session:
+        machine = session.query(Machine).filter_by(machine_code="174").one()
+        context = TourContext(
+            date="08.06.2026",
+            ambient_temp="24",
+            production_engineer="Operator",
+            shift_chief="Selman",
+            shift="08.00-16.00",
+        )
+        entry = Entry(
+            tour_context=context,
+            col_a="08.06.2026",
+            col_f="174",
+            col_g="PET 28MM 35GR",
+            col_h="WO-1",
+            col_k="1",
+            col_l="60",
+            process_date="2026-06-08",
+            machine_code="174",
+            sync_status="synced",
+            submitted_at=datetime(2026, 6, 8, 10, 0),
+        )
+        session.add(
+            MachineBreakdown(
+                machine=machine,
+                entry=entry,
+                produced_product="PET 28MM 35GR",
+                stop_reason="Standalone stop",
+                duration_minutes=60,
+                stopped_at=datetime(2026, 6, 8, 4, 30),
+                resumed_at=datetime(2026, 6, 8, 5, 30),
+            )
+        )
+        session.commit()
+
+    _stub_production_loss_fetches(
+        monkeypatch,
+        actual_rows=[
+            _ifs_actual_row(
+                job_order="WO-1",
+                actual_start="2026-06-08T07:00:00+03:00",
+                actual_finish="2026-06-08T09:00:00+03:00",
+                net_machine_minutes=120,
+            )
+        ],
+        operation_history_rows=[
+            _operation_history_row(
+                transaction_id="TX-1",
+                job_order="WO-1",
+                quantity=10,
+                time_of_production="2026-06-08T04:30:00Z",
+            ),
+            _operation_history_row(
+                transaction_id="TX-2",
+                job_order="WO-1",
+                quantity=20,
+                time_of_production="2026-06-08T05:30:00Z",
+            ),
+        ],
+        expected_order_numbers=["WO-1"],
+    )
+
+    result = create_production_loss_report(
+        settings,
+        date_from="2026-06-08",
+        date_to="2026-06-08",
+    )
+
+    row = result.rows[0]
+    assert row["shift_2400_0800_actual_quantity"] == 10
+    assert row["shift_2400_0800_machine_minutes"] == "30"
+    assert row["shift_2400_0800_optimum_quantity"] == "30"
+    assert row["shift_2400_0800_loss_quantity"] == "20"
+    assert row["shift_0800_1600_actual_quantity"] == 20
+    assert row["shift_0800_1600_machine_minutes"] == "30"
+    assert row["shift_0800_1600_optimum_quantity"] == "30"
+    assert row["shift_0800_1600_loss_quantity"] == "10"
+    assert row["net_machine_minutes"] == "60"
+    assert row["gross_elapsed_minutes"] == "120"
+    assert row["production_loss_net"] == "30"
+    assert row["production_loss_gross"] == "90"
+    assert row["break_loss_quantity"] == "60"
+    assert row["local_breakdown_minutes"] == 60
+
+
+def test_create_production_loss_report_allocates_untimed_standalone_breakdown_by_unique_shift(
+    tmp_path,
+    monkeypatch,
+):
+    settings = _settings(tmp_path)
+    init_db(settings)
+    _seed_process_entry(settings, job_order="WO-1", cycle_time="60", active_cavities="1")
+    _seed_process_entry(settings, job_order="WO-2", cycle_time="60", active_cavities="1")
+    _seed_process_entry(settings, job_order="WO-3", cycle_time="60", active_cavities="1")
+    with create_session(settings) as session:
+        machine = session.query(Machine).filter_by(machine_code="174").one()
+        unique_context = TourContext(
+            date="08.06.2026",
+            ambient_temp="24",
+            production_engineer="Operator",
+            shift_chief="Selman",
+            shift="08.00-16.00",
+        )
+        ambiguous_context = TourContext(
+            date="08.06.2026",
+            ambient_temp="24",
+            production_engineer="Operator",
+            shift_chief="Selman",
+            shift="16.00-24.00",
+        )
+        unique_entry = Entry(
+            tour_context=unique_context,
+            col_a="08.06.2026",
+            col_f="174",
+            col_g="PET 28MM 35GR",
+            process_date="2026-06-08",
+            machine_code="174",
+            sync_status="synced",
+        )
+        ambiguous_entry = Entry(
+            tour_context=ambiguous_context,
+            col_a="08.06.2026",
+            col_f="174",
+            col_g="PET 28MM 35GR",
+            process_date="2026-06-08",
+            machine_code="174",
+            sync_status="synced",
+        )
+        session.add_all(
+            [
+                MachineBreakdown(
+                    machine=machine,
+                    entry=unique_entry,
+                    produced_product="PET 28MM 35GR",
+                    stop_reason="No order unique shift",
+                    duration_minutes=20,
+                ),
+                MachineBreakdown(
+                    machine=machine,
+                    entry=ambiguous_entry,
+                    produced_product="PET 28MM 35GR",
+                    stop_reason="No order ambiguous shift",
+                    duration_minutes=40,
+                ),
+            ]
+        )
+        session.commit()
+
+    _stub_production_loss_fetches(
+        monkeypatch,
+        actual_rows=[
+            _ifs_actual_row(
+                job_order="WO-1",
+                actual_start="2026-06-08T08:00:00+03:00",
+                actual_finish="2026-06-08T09:00:00+03:00",
+            ),
+            _ifs_actual_row(
+                job_order="WO-2",
+                actual_start="2026-06-08T16:00:00+03:00",
+                actual_finish="2026-06-08T17:00:00+03:00",
+            ),
+            _ifs_actual_row(
+                job_order="WO-3",
+                actual_start="2026-06-08T17:00:00+03:00",
+                actual_finish="2026-06-08T18:00:00+03:00",
+            ),
+        ],
+        operation_history_rows=[
+            _operation_history_row(
+                transaction_id="TX-1",
+                job_order="WO-1",
+                time_of_production="2026-06-08T05:30:00Z",
+            ),
+            _operation_history_row(
+                transaction_id="TX-2",
+                job_order="WO-2",
+                time_of_production="2026-06-08T13:30:00Z",
+            ),
+            _operation_history_row(
+                transaction_id="TX-3",
+                job_order="WO-3",
+                time_of_production="2026-06-08T14:30:00Z",
+            ),
+        ],
+        expected_order_numbers=["WO-1", "WO-2", "WO-3"],
+    )
+
+    result = create_production_loss_report(
+        settings,
+        date_from="2026-06-08",
+        date_to="2026-06-08",
+    )
+
+    rows = {row["job_order"]: row for row in result.rows}
+    assert rows["WO-1"]["local_breakdown_minutes"] == 20
+    assert rows["WO-1"]["shift_0800_1600_machine_minutes"] == "40"
+    assert rows["WO-2"]["local_breakdown_minutes"] == 0
+    assert rows["WO-2"]["shift_1600_2400_machine_minutes"] == "60"
+    assert rows["WO-3"]["local_breakdown_minutes"] == 0
+    assert rows["WO-3"]["shift_1600_2400_machine_minutes"] == "60"
+
+
+def test_create_production_loss_report_does_not_double_count_linked_breakdown(
+    tmp_path,
+    monkeypatch,
+):
+    settings = _settings(tmp_path)
+    init_db(settings)
+    with create_session(settings) as session:
+        machine = session.query(Machine).filter_by(machine_code="174").one()
+        context = TourContext(
+            date="08.06.2026",
+            ambient_temp="24",
+            production_engineer="Operator",
+            shift_chief="Selman",
+            shift="08.00-16.00",
+        )
+        entry = Entry(
+            tour_context=context,
+            col_a="08.06.2026",
+            col_f="174",
+            col_g="PET 28MM 35GR",
+            col_h="WO-1",
+            col_k="1",
+            col_l="60",
+            process_date="2026-06-08",
+            machine_code="174",
+            sync_status="synced",
+            submitted_at=datetime(2026, 6, 8, 10, 0),
+        )
+        amount_shift = AmountControlShift(
+            record_date="2026-06-08",
+            machine=machine,
+            job_order="WO-1",
+            shift="08.00-16.00",
+            worker_names="Operator One",
+            produced_quantity=100,
+        )
+        session.add_all(
+            [
+                amount_shift,
+                MachineBreakdown(
+                    machine=machine,
+                    entry=entry,
+                    amount_control_shift=amount_shift,
+                    produced_product="PET 28MM 35GR",
+                    stop_reason="Linked stop",
+                    duration_minutes=15,
+                ),
+            ]
+        )
+        session.commit()
+
+    _stub_production_loss_fetches(
+        monkeypatch,
+        actual_rows=[
+            _ifs_actual_row(
+                job_order="WO-1",
+                actual_start="2026-06-08T08:00:00+03:00",
+                actual_finish="2026-06-08T09:00:00+03:00",
+            )
+        ],
+        operation_history_rows=[
+            _operation_history_row(
+                transaction_id="TX-1",
+                job_order="WO-1",
+                time_of_production="2026-06-08T05:30:00Z",
+            )
+        ],
+        expected_order_numbers=["WO-1"],
+    )
+
+    result = create_production_loss_report(
+        settings,
+        date_from="2026-06-08",
+        date_to="2026-06-08",
+    )
+
+    row = result.rows[0]
+    assert row["local_breakdown_minutes"] == 15
+    assert row["shift_0800_1600_machine_minutes"] == "45"
+    assert row["production_loss_net"] == "-55"
+    assert row["production_loss_gross"] == "-40"
+    assert row["break_loss_quantity"] == "15"
 
 
 def test_create_production_loss_report_uses_realized_operation_statistics_window(

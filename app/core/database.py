@@ -79,6 +79,7 @@ _ENTRY_CANONICAL_FIELDS_MIGRATION = "entries_canonical_fields_v2"
 _MACHINE_BREAKDOWNS_AMOUNT_CONTROL_MIGRATION = (
     "machine_breakdowns_amount_control_shift_fk_v1"
 )
+_MACHINE_BREAKDOWNS_STANDALONE_MIGRATION = "machine_breakdowns_standalone_fields_v1"
 _PRODUCTION_LOSS_SHIFT_QUANTITY_COLUMN_PAIRS = (
     ("shift_2400_0800_actual_quantity", "shift_2400_0800_quantity"),
     ("shift_0800_1600_actual_quantity", "shift_0800_1600_quantity"),
@@ -382,6 +383,21 @@ def init_db(settings: Settings | None = None) -> None:
         _seed_machine_groups(connection)
         seed_cycle_table_from_workbook(connection, settings)
         _migrate_machine_breakdowns_amount_control_shift(connection)
+        _migrate_machine_breakdowns_standalone_fields(connection)
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "ux_machine_breakdowns_client_request_id "
+                "ON machine_breakdowns (client_request_id)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS "
+                "ix_machine_breakdowns_record_lookup "
+                "ON machine_breakdowns (record_date, machine_id, shift)"
+            )
+        )
         connection.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS "
@@ -530,6 +546,148 @@ def _migrate_machine_breakdowns_amount_control_shift(connection) -> None:
         connection.execute(
             text(
                 f"CREATE INDEX IF NOT EXISTS {index_name} "
+                f"ON machine_breakdowns ({columns})"
+            )
+        )
+    _mark_migration_applied(connection, migration_name)
+
+
+def _migrate_machine_breakdowns_standalone_fields(connection) -> None:
+    migration_name = _MACHINE_BREAKDOWNS_STANDALONE_MIGRATION
+    column_info = {
+        row["name"]: row
+        for row in connection.execute(
+            text("PRAGMA table_info(machine_breakdowns)")
+        ).mappings()
+    }
+    required_columns = {
+        "client_request_id",
+        "client_recorded_at",
+        "record_date",
+        "shift",
+        "job_order",
+        "amount_control_shift_id",
+    }
+    schema_ready = required_columns.issubset(column_info)
+    produced_product = column_info.get("produced_product")
+    produced_product_nullable = (
+        produced_product is not None and not produced_product["notnull"]
+    )
+    if schema_ready and produced_product_nullable:
+        _mark_migration_applied(connection, migration_name)
+        return
+
+    target_columns = (
+        "id",
+        "client_request_id",
+        "client_recorded_at",
+        "record_date",
+        "shift",
+        "job_order",
+        "machine_id",
+        "entry_id",
+        "amount_control_shift_id",
+        "produced_product",
+        "stop_reason",
+        "duration_minutes",
+        "stopped_at",
+        "resumed_at",
+        "created_at",
+        "updated_at",
+    )
+    existing_columns = set(column_info)
+    select_columns = [
+        column_name if column_name in existing_columns else "NULL"
+        for column_name in target_columns
+    ]
+
+    connection.execute(
+        text("ALTER TABLE machine_breakdowns RENAME TO machine_breakdowns_old")
+    )
+    connection.execute(
+        text(
+            "CREATE TABLE machine_breakdowns ("
+            "id INTEGER NOT NULL, "
+            "client_request_id VARCHAR(64), "
+            "client_recorded_at DATETIME, "
+            "record_date VARCHAR(10), "
+            "shift VARCHAR(16), "
+            "job_order TEXT, "
+            "machine_id INTEGER NOT NULL, "
+            "entry_id INTEGER, "
+            "amount_control_shift_id INTEGER, "
+            "produced_product TEXT, "
+            "stop_reason TEXT NOT NULL, "
+            "duration_minutes INTEGER NOT NULL, "
+            "stopped_at DATETIME, "
+            "resumed_at DATETIME, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL, "
+            "PRIMARY KEY (id), "
+            "CONSTRAINT ck_machine_breakdowns_client_request_id "
+            "CHECK (client_request_id IS NULL OR trim(client_request_id) <> ''), "
+            "CONSTRAINT ck_machine_breakdowns_record_date "
+            "CHECK (record_date IS NULL OR trim(record_date) <> ''), "
+            "CONSTRAINT ck_machine_breakdowns_shift "
+            "CHECK (shift IS NULL OR shift IN ('24.00-08.00', '08.00-16.00', '16.00-24.00')), "
+            "CONSTRAINT ck_machine_breakdowns_job_order "
+            "CHECK (job_order IS NULL OR trim(job_order) <> ''), "
+            "CONSTRAINT ck_machine_breakdowns_produced_product "
+            "CHECK (produced_product IS NULL OR trim(produced_product) <> ''), "
+            "CONSTRAINT ck_machine_breakdowns_stop_reason "
+            "CHECK (trim(stop_reason) <> ''), "
+            "CONSTRAINT ck_machine_breakdowns_duration_minutes "
+            "CHECK (duration_minutes > 0), "
+            "CONSTRAINT ck_machine_breakdowns_stop_time_order "
+            "CHECK (stopped_at IS NULL OR resumed_at IS NULL OR resumed_at >= stopped_at), "
+            "FOREIGN KEY(machine_id) REFERENCES machines (id) ON DELETE RESTRICT, "
+            "FOREIGN KEY(entry_id) REFERENCES entries (id) ON DELETE SET NULL, "
+            "FOREIGN KEY(amount_control_shift_id) "
+            "REFERENCES amount_control_shifts (id) ON DELETE SET NULL"
+            ")"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO machine_breakdowns ("
+            + ", ".join(target_columns)
+            + ") SELECT "
+            + ", ".join(select_columns)
+            + " FROM machine_breakdowns_old"
+        )
+    )
+    connection.execute(
+        text(
+            "UPDATE machine_breakdowns SET "
+            "record_date = COALESCE(record_date, ("
+            "SELECT record_date FROM amount_control_shifts "
+            "WHERE amount_control_shifts.id = machine_breakdowns.amount_control_shift_id"
+            ")), "
+            "shift = COALESCE(shift, ("
+            "SELECT shift FROM amount_control_shifts "
+            "WHERE amount_control_shifts.id = machine_breakdowns.amount_control_shift_id"
+            ")), "
+            "job_order = COALESCE(job_order, ("
+            "SELECT job_order FROM amount_control_shifts "
+            "WHERE amount_control_shifts.id = machine_breakdowns.amount_control_shift_id"
+            ")) "
+            "WHERE amount_control_shift_id IS NOT NULL"
+        )
+    )
+    connection.execute(text("DROP TABLE machine_breakdowns_old"))
+    for index_name, columns in (
+        ("ix_machine_breakdowns_machine_id", "machine_id"),
+        ("ix_machine_breakdowns_entry_id", "entry_id"),
+        ("ix_machine_breakdowns_amount_control_shift_id", "amount_control_shift_id"),
+        ("ix_machine_breakdowns_record_lookup", "record_date, machine_id, shift"),
+        ("ix_machine_breakdowns_stopped_at", "stopped_at"),
+        ("ix_machine_breakdowns_created_at", "created_at"),
+        ("ux_machine_breakdowns_client_request_id", "client_request_id"),
+    ):
+        unique = "UNIQUE " if index_name.startswith("ux_") else ""
+        connection.execute(
+            text(
+                f"CREATE {unique}INDEX IF NOT EXISTS {index_name} "
                 f"ON machine_breakdowns ({columns})"
             )
         )

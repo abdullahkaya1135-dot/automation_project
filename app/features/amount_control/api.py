@@ -126,6 +126,9 @@ def create_amount_control_shift(
             amount_shift.machine_breakdowns.append(
                 MachineBreakdown(
                     machine=machine,
+                    record_date=record_date,
+                    shift=shift,
+                    job_order=job_order,
                     produced_product=required_text(
                         breakdown_payload.produced_product,
                         "uretilen urun",

@@ -1,11 +1,14 @@
-import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260624-package-label-checklist-cache";
-import { localIsoDate } from "./dates.js?v=20260624-package-label-checklist-cache";
+import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260626-breakdowns-paper-fields";
+import { localIsoDate } from "./dates.js?v=20260626-breakdowns-paper-fields";
+import {
+  machineOptionsFromBootstrap,
+  normalizeShopOrderOptions,
+} from "./bootstrap-options.js?v=20260626-breakdowns-paper-fields";
 import {
   cleanOptional,
   cleanRequired,
-  compareOptionText,
   uniqueSorted,
-} from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 let amountControlMachines = [];
 let amountControlShopOrders = [];
@@ -26,15 +29,7 @@ export function initializeAmountControlControls() {
 
 export function updateAmountControlBootstrap(machines, shopOrderSource) {
   amountControlShopOrders = normalizeShopOrderOptions(shopOrderSource?.options);
-  amountControlMachines = normalizeMachineOptions(machines);
-  if (!amountControlMachines.length) {
-    amountControlMachines = uniqueSorted(
-      amountControlShopOrders.map((option) => option.resourceId),
-    ).map((machineCode) => ({ machineCode, label: machineCode }));
-  }
-  amountControlMachines.sort((left, right) => (
-    compareOptionText(left.machineCode, right.machineCode)
-  ));
+  amountControlMachines = machineOptionsFromBootstrap(machines, shopOrderSource);
   populateAmountControlMachineSelect();
   updateAmountControlJobOrders();
 }
@@ -189,49 +184,6 @@ function breakdownRequestBodies(shiftSection) {
       };
     },
   );
-}
-
-function normalizeMachineOptions(machines) {
-  if (!Array.isArray(machines)) {
-    return [];
-  }
-  const seen = new Set();
-  const normalized = [];
-  for (const machine of machines) {
-    const machineCode = cleanOptional(machine?.machine_code);
-    if (!machineCode || seen.has(machineCode)) {
-      continue;
-    }
-    seen.add(machineCode);
-    const hallName = cleanOptional(machine?.hall_name);
-    normalized.push({
-      machineCode,
-      label: hallName ? `${machineCode} / ${hallName}` : machineCode,
-    });
-  }
-  return normalized;
-}
-
-function normalizeShopOrderOptions(options) {
-  if (!Array.isArray(options)) {
-    return [];
-  }
-  const seen = new Set();
-  const normalized = [];
-  for (const option of options) {
-    const orderNo = cleanOptional(option?.order_no);
-    const resourceId = cleanOptional(option?.resource_id);
-    if (!orderNo || !resourceId) {
-      continue;
-    }
-    const key = `${resourceId}\u0000${orderNo}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    normalized.push({ orderNo, resourceId });
-  }
-  return normalized;
 }
 
 function populateAmountControlMachineSelect() {

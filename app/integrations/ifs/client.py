@@ -27,6 +27,7 @@ SIMSEK_PALET_ETIKETI_REPORT_ID = "SIMSEK_PALET_ETIKETI_REP"
 DEFAULT_LABEL_REPORT_IDS = (SIMSEK_PALET_ETIKETI_REPORT_ID,)
 DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES = ("MM-PET",)
 DEFAULT_LABEL_STOCK_PART_PREFIXES = ("MM",)
+PACKAGE_LABEL_PART_PREFIXES = ("MM", "YM")
 ARCHIVE_SELECT_FIELDS = (
     "ResultKey",
     "ReportId",
@@ -162,6 +163,21 @@ OPERATION_SELECT_FIELDS = (
     "OperationNoDesc",
     "RemainingQty",
 )
+PACKAGE_LABEL_OPERATION_MACHINE_FIELDS = (
+    "PreferredResourceId",
+    "ResourceId",
+    "MachineId",
+    "MachineCode",
+    "preferred_resource_id",
+    "resource_id",
+    "machine_id",
+    "machine_code",
+)
+PACKAGE_LABEL_ARCHIVE_MATCH_STATUSES = {
+    "order_package": "matched_by_order_package",
+    "package_id": "matched_by_package_id",
+    "order_lot_part": "matched_by_lot_part",
+}
 OPERATION_STATISTICS_SELECT_FIELDS = (
     "OrderNo",
     "ReleaseNo",
@@ -1902,9 +1918,10 @@ async def fetch_shop_order_operations(
 
 
 def _package_label_stock_filter(settings: Settings) -> str:
+    part_filter = _part_no_prefix_filter_for_prefixes(PACKAGE_LABEL_PART_PREFIXES)
     return (
         f"Contract eq {_odata_string(settings.ifs_contract)} "
-        "and startswith(PartNo,'MM') "
+        f"and {part_filter} "
         "and not startswith(PartNo,'MM-PET') "
         "and startswith(LocationNo,'U01') "
         "and QtyOnhand gt 0"
@@ -1912,7 +1929,14 @@ def _package_label_stock_filter(settings: Settings) -> str:
 
 
 def _package_label_job_order(row: Mapping[str, Any]) -> str | None:
-    for field_name in ("OrderNo", "order_no", "ShopOrderNo", "shop_order_no"):
+    for field_name in (
+        "OrderNo",
+        "order_no",
+        "JobOrder",
+        "job_order",
+        "ShopOrderNo",
+        "shop_order_no",
+    ):
         value = str(row.get(field_name) or "").strip()
         if value:
             return value
@@ -1926,9 +1950,9 @@ def _package_label_job_order(row: Mapping[str, Any]) -> str | None:
 def _package_label_operation_match(
     stock_row: Mapping[str, Any],
     operations: Sequence[Mapping[str, Any]],
-) -> tuple[Mapping[str, Any] | None, str, int]:
+) -> tuple[Mapping[str, Any] | None, str, int, list[Mapping[str, Any]]]:
     if not operations:
-        return None, "not_found", 0
+        return None, "not_found", 0, []
 
     part_no = _identity_value(stock_row.get("PartNo"))
     part_matches = [
@@ -1939,8 +1963,10 @@ def _package_label_operation_match(
     candidates = sorted(part_matches or list(operations), key=_operation_choice_sort_key)
     if len(candidates) == 1:
         status_text = "matched" if part_matches else "matched_by_job_order"
-        return candidates[0], status_text, 1
-    return None, "ambiguous", len(candidates)
+        return candidates[0], status_text, 1, candidates
+    if _operation_consensus_machine_code(candidates):
+        return candidates[0], "matched_by_machine_consensus", len(candidates), candidates
+    return None, "ambiguous", len(candidates), candidates
 
 
 def _operation_choice_sort_key(operation: Mapping[str, Any]) -> tuple[int, str]:
@@ -1948,7 +1974,89 @@ def _operation_choice_sort_key(operation: Mapping[str, Any]) -> tuple[int, str]:
         operation_no = int(operation.get("OperationNo"))
     except (TypeError, ValueError):
         operation_no = 999999
-    return operation_no, _identity_value(operation.get("PreferredResourceId"))
+    return operation_no, _identity_value(_operation_machine_code(operation))
+
+
+def _operation_machine_value(
+    operation: Mapping[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    if operation is None:
+        return None, None
+    for field_name in PACKAGE_LABEL_OPERATION_MACHINE_FIELDS:
+        value = _identity_value(operation.get(field_name))
+        if value:
+            return value, field_name
+    return None, None
+
+
+def _operation_machine_code(operation: Mapping[str, Any] | None) -> str | None:
+    machine_code, _field_name = _operation_machine_value(operation)
+    return machine_code
+
+
+def _operation_machine_field(operation: Mapping[str, Any] | None) -> str | None:
+    _machine_code, field_name = _operation_machine_value(operation)
+    return field_name
+
+
+def _operation_no_value(operation: Mapping[str, Any]) -> str:
+    return _identity_value(operation.get("OperationNo") or operation.get("operation_no"))
+
+
+def _operation_candidate_machine_codes(
+    operations: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    return sorted(
+        {
+            machine_code
+            for operation in operations
+            if (machine_code := _operation_machine_code(operation))
+        }
+    )
+
+
+def _operation_candidate_operation_nos(
+    operations: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    return sorted(
+        {
+            operation_no
+            for operation in operations
+            if (operation_no := _operation_no_value(operation))
+        },
+        key=lambda value: (0, int(value)) if value.isdigit() else (1, value),
+    )
+
+
+def _operation_consensus_machine_code(
+    operations: Sequence[Mapping[str, Any]],
+) -> str | None:
+    if not operations:
+        return None
+    machine_codes = [_operation_machine_code(operation) for operation in operations]
+    unique_machine_codes = {
+        machine_code for machine_code in machine_codes if machine_code
+    }
+    if len(unique_machine_codes) == 1 and len(machine_codes) == len(operations):
+        return next(iter(unique_machine_codes))
+    return None
+
+
+def _package_label_archive_window(settings: Settings) -> tuple[datetime, datetime]:
+    tzinfo = _settings_timezone(settings)
+    now_local = datetime.now(tzinfo)
+    lookback_days = max(
+        1,
+        int(getattr(settings, "ifs_package_label_checklist_archive_lookback_days", 1)),
+    )
+    start_date = now_local.date() - timedelta(days=lookback_days - 1)
+    start_local = datetime.combine(start_date, time.min, tzinfo=tzinfo)
+    end_local = datetime.combine(
+        now_local.date() + timedelta(days=1),
+        time.min,
+        tzinfo=tzinfo,
+    )
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
 
 
 def _package_label_stock_rows(
@@ -1970,29 +2078,171 @@ def _package_label_stock_sort_key(row: Mapping[str, Any]) -> tuple[str, str, str
     )
 
 
+def _package_label_package_key(value: Any) -> str:
+    text = _identity_value(value)
+    if not text:
+        return ""
+    parts = text.split(".")
+    if (
+        len(parts) > 1
+        and parts[0].isdigit()
+        and 1 <= len(parts[0]) <= 3
+        and all(part.isdigit() and len(part) == 3 for part in parts[1:])
+    ):
+        return "".join(parts)
+    return text
+
+
+def _package_label_archive_package_id(row: Mapping[str, Any]) -> str:
+    for field_name in (
+        "package_id",
+        "PackageId",
+        "HandlingUnitId",
+        "handling_unit_id",
+    ):
+        value = _package_label_package_key(row.get(field_name))
+        if value:
+            return value
+    return ""
+
+
+def _package_label_archive_index(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[Any, list[Mapping[str, Any]]]]:
+    index: dict[str, dict[Any, list[Mapping[str, Any]]]] = {
+        "package_id": {},
+        "order_package": {},
+        "order_lot_part": {},
+    }
+
+    def append(index_name: str, key: Any, row: Mapping[str, Any]) -> None:
+        if not key:
+            return
+        index[index_name].setdefault(key, []).append(row)
+
+    for row in rows:
+        job_order = _package_label_job_order(row)
+        package_id = _package_label_archive_package_id(row)
+        lot_batch_no = _identity_value(row.get("lot_batch_no") or row.get("LotBatchNo"))
+        part_no = _identity_value(row.get("part_no") or row.get("PartNo"))
+
+        append("package_id", package_id, row)
+        if job_order and package_id:
+            append("order_package", (job_order, package_id), row)
+        if job_order and lot_batch_no and part_no:
+            append("order_lot_part", (job_order, lot_batch_no, part_no), row)
+    return index
+
+
+def _archive_label_machine_code(rows: Sequence[Mapping[str, Any]]) -> str | None:
+    machine_codes = sorted(
+        {
+            machine_code
+            for row in rows
+            if (machine_code := _identity_value(row.get("machine_code")))
+        }
+    )
+    return machine_codes[0] if len(machine_codes) == 1 else None
+
+
+def _package_label_archive_match(
+    stock_row: Mapping[str, Any],
+    job_order: str | None,
+    archive_index: Mapping[str, Mapping[Any, Sequence[Mapping[str, Any]]]],
+) -> tuple[str | None, str | None, str, int]:
+    package_id = _package_label_package_key(stock_row.get("HandlingUnitId"))
+    lot_batch_no = _identity_value(stock_row.get("LotBatchNo"))
+    part_no = _identity_value(stock_row.get("PartNo"))
+    key_candidates: list[tuple[str, Any]] = []
+    if job_order and package_id:
+        key_candidates.append(("order_package", (job_order, package_id)))
+    if package_id:
+        key_candidates.append(("package_id", package_id))
+    if job_order and lot_batch_no and part_no:
+        key_candidates.append(("order_lot_part", (job_order, lot_batch_no, part_no)))
+
+    for source, key in key_candidates:
+        rows = list(archive_index.get(source, {}).get(key, ()))
+        if not rows:
+            continue
+        machine_code = _archive_label_machine_code(rows)
+        if machine_code:
+            return (
+                machine_code,
+                source,
+                PACKAGE_LABEL_ARCHIVE_MATCH_STATUSES[source],
+                len(rows),
+            )
+        return None, source, "ambiguous", len(rows)
+    return None, None, "not_found", 0
+
+
 def _package_label_checklist_row(
     stock_row: Mapping[str, Any],
     operations_by_order: Mapping[str, Sequence[Mapping[str, Any]]],
     failed_operation_orders: set[str],
+    archive_index: Mapping[str, Mapping[Any, Sequence[Mapping[str, Any]]]],
+    archive_lookup_failed: bool,
 ) -> dict[str, Any]:
     payload = serialize_package_label_checklist_row(stock_row)
     job_order = _package_label_job_order(stock_row)
     if job_order in failed_operation_orders:
-        operation, match_status, match_count = None, "lookup_failed", 0
+        operation, match_status, match_count, candidates = None, "lookup_failed", 0, []
     elif job_order:
-        operation, match_status, match_count = _package_label_operation_match(
+        operation, match_status, match_count, candidates = _package_label_operation_match(
             stock_row,
             operations_by_order.get(job_order, ()),
         )
     else:
-        operation, match_status, match_count = None, "no_job_order", 0
+        operation, match_status, match_count, candidates = None, "no_job_order", 0, []
+
+    if archive_lookup_failed:
+        archive_machine_code = None
+        archive_match_key = None
+        archive_match_status = "lookup_failed"
+        archive_match_count = 0
+    else:
+        (
+            archive_machine_code,
+            archive_match_key,
+            archive_match_status,
+            archive_match_count,
+        ) = _package_label_archive_match(
+            stock_row,
+            job_order,
+            archive_index,
+        )
+    operation_machine_code = _operation_machine_code(operation)
+    consensus_machine_code = (
+        _operation_consensus_machine_code(candidates)
+        if operation_machine_code is None
+        else None
+    )
+    if archive_machine_code:
+        machine_code = archive_machine_code
+        machine_code_source = "archive_label"
+        machine_resolution_status = "resolved"
+    elif operation_machine_code:
+        machine_code = operation_machine_code
+        machine_code_source = (
+            "operation_consensus"
+            if match_status == "matched_by_machine_consensus"
+            else "operation_match"
+        )
+        machine_resolution_status = "resolved"
+    elif consensus_machine_code:
+        machine_code = consensus_machine_code
+        machine_code_source = "operation_consensus"
+        machine_resolution_status = "resolved"
+    else:
+        machine_code = None
+        machine_code_source = "unresolved"
+        machine_resolution_status = match_status
 
     payload.update(
         {
             "job_order": job_order,
-            "machine_code": (
-                operation.get("PreferredResourceId") if operation is not None else None
-            ),
+            "machine_code": machine_code,
             "work_center_no": (
                 operation.get("WorkCenterNo") if operation is not None else None
             ),
@@ -2008,6 +2258,16 @@ def _package_label_checklist_row(
             "operation_match_status": match_status,
             "operation_ambiguous": match_status == "ambiguous",
             "operation_match_count": match_count,
+            "operation_machine_code": operation_machine_code,
+            "operation_machine_field": _operation_machine_field(operation),
+            "candidate_machine_codes": _operation_candidate_machine_codes(candidates),
+            "candidate_operation_nos": _operation_candidate_operation_nos(candidates),
+            "machine_code_source": machine_code_source,
+            "machine_resolution_status": machine_resolution_status,
+            "archive_label_machine_code": archive_machine_code,
+            "archive_label_match_key": archive_match_key,
+            "archive_label_match_status": archive_match_status,
+            "archive_label_match_count": archive_match_count,
         }
     )
     return payload
@@ -2021,7 +2281,7 @@ async def fetch_package_label_checklist(
     page_size: int = 5000,
     concurrency: int = PLANNING_IFS_CONCURRENCY,
 ) -> dict[str, Any]:
-    """Build the morning package-label checklist from MM U01 stock."""
+    """Build the morning package-label checklist from package U01 stock."""
 
     _require_settings(
         settings,
@@ -2063,6 +2323,27 @@ async def fetch_package_label_checklist(
                 if (job_order := _package_label_job_order(row)) and job_order != "0"
             )
         )
+        archive_start_utc, archive_end_utc = _package_label_archive_window(settings)
+        archive_error: str | None = None
+        archive_rows: list[dict[str, Any]] = []
+        if stock_rows:
+            try:
+                archive_rows = await fetch_label_archive_event_rows(
+                    settings,
+                    date_from_utc=archive_start_utc,
+                    date_to_utc=archive_end_utc,
+                    report_ids=getattr(
+                        settings,
+                        "ifs_label_report_ids",
+                        DEFAULT_LABEL_REPORT_IDS,
+                    ),
+                    client=http_client,
+                    access_token=token,
+                    concurrency=max(1, concurrency),
+                )
+            except IFSClientError as exc:
+                archive_error = str(exc) or exc.__class__.__name__
+        archive_index = _package_label_archive_index(archive_rows)
 
         async def fetch_order_operations(
             job_order: str,
@@ -2099,18 +2380,46 @@ async def fetch_package_label_checklist(
                 stock_row,
                 operations_by_order,
                 failed_operation_orders,
+                archive_index,
+                archive_error is not None,
             )
             for stock_row in stock_rows
         ]
         status_counts: dict[str, int] = {}
+        archive_status_counts: dict[str, int] = {}
+        machine_resolution_counts: dict[str, int] = {}
         for row in rows:
             status_text = str(row.get("operation_match_status") or "unknown")
             status_counts[status_text] = status_counts.get(status_text, 0) + 1
+            archive_status = str(row.get("archive_label_match_status") or "unknown")
+            archive_status_counts[archive_status] = (
+                archive_status_counts.get(archive_status, 0) + 1
+            )
+            resolution_text = str(row.get("machine_code_source") or "unknown")
+            machine_resolution_counts[resolution_text] = (
+                machine_resolution_counts.get(resolution_text, 0) + 1
+            )
+        operation_matched_count = (
+            status_counts.get("matched", 0)
+            + status_counts.get("matched_by_job_order", 0)
+            + status_counts.get("matched_by_machine_consensus", 0)
+        )
+        archive_matched_count = sum(
+            count
+            for status_text, count in archive_status_counts.items()
+            if status_text.startswith("matched")
+        )
 
         summary: dict[str, Any] = {
             "generated_at": _generated_at(settings),
             "stock_count": len(stock_rows),
             "source_stock_count": len(raw_stock_rows),
+            "archive_label_count": len(archive_rows),
+            "archive_label_ifs_error": archive_error,
+            "archive_label_error": archive_error,
+            "archive_label_lookup_failed": archive_error is not None,
+            "archive_label_window_from": _odata_datetime_utc(archive_start_utc),
+            "archive_label_window_to": _odata_datetime_utc(archive_end_utc),
             "excluded_prefix": "MM-PET",
             "excluded_count": len(raw_stock_rows) - len(stock_rows),
             "row_count": len(rows),
@@ -2118,11 +2427,14 @@ async def fetch_package_label_checklist(
             "operation_count": sum(
                 len(operations) for operations in operations_by_order.values()
             ),
-            "matched_count": status_counts.get("matched", 0)
-            + status_counts.get("matched_by_job_order", 0),
+            "matched_count": operation_matched_count,
             "part_matched_count": status_counts.get("matched", 0),
             "job_order_matched_count": status_counts.get(
                 "matched_by_job_order",
+                0,
+            ),
+            "operation_consensus_count": status_counts.get(
+                "matched_by_machine_consensus",
                 0,
             ),
             "ambiguous_count": status_counts.get("ambiguous", 0),
@@ -2131,6 +2443,22 @@ async def fetch_package_label_checklist(
             "operation_lookup_failed_count": len(failed_operation_errors),
             "operation_lookup_failed_orders": sorted(failed_operation_errors),
             "match_status_counts": status_counts,
+            "archive_label_matched_count": archive_matched_count,
+            "archive_label_ambiguous_count": archive_status_counts.get(
+                "ambiguous",
+                0,
+            ),
+            "archive_label_match_status_counts": archive_status_counts,
+            "archive_machine_resolved_count": machine_resolution_counts.get(
+                "archive_label",
+                0,
+            ),
+            "machine_unresolved_count": machine_resolution_counts.get(
+                "unresolved",
+                0,
+            ),
+            "machine_resolution_counts": machine_resolution_counts,
+            "machine_code_source_counts": machine_resolution_counts,
         }
         if failed_operation_errors:
             failed_orders = ", ".join(sorted(failed_operation_errors))
@@ -2541,10 +2869,13 @@ def serialize_stock_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def serialize_package_label_checklist_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    payload = {
         output_name: row.get(source_name)
         for source_name, output_name in PACKAGE_LABEL_STOCK_FIELD_MAP.items()
     }
+    if payload["handling_unit_id"] is not None:
+        payload["handling_unit_id"] = str(payload["handling_unit_id"]).strip()
+    return payload
 
 
 def serialize_operation_row(row: Mapping[str, Any]) -> dict[str, Any]:

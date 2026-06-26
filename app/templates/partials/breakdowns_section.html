@@ -1,0 +1,66 @@
+      <section class="work-section" aria-labelledby="breakdowns-heading">
+        <div class="section-heading row-heading">
+          <div>
+            <h2 id="breakdowns-heading">Ariza Kaydi</h2>
+            <p id="breakdown-message" class="form-message" aria-live="polite"></p>
+          </div>
+          <button id="refresh-breakdowns" type="button" class="secondary-action">Yenile</button>
+        </div>
+
+        <form id="breakdown-form" class="stacked-form">
+          <div class="field-grid">
+            <div class="field">
+              <label for="breakdown-date">Tarih</label>
+              <input id="breakdown-date" name="record_date" type="date" required>
+            </div>
+
+            <div class="field">
+              <label for="breakdown-machine">Makine</label>
+              <select id="breakdown-machine" name="machine_code" required disabled>
+                <option value="">Makine listesi yukleniyor</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="breakdown-job-order">Is emri</label>
+              <input id="breakdown-job-order" name="job_order" type="text" list="breakdown-job-order-options" autocomplete="off">
+              <datalist id="breakdown-job-order-options"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="breakdown-product">Urun</label>
+              <input id="breakdown-product" name="produced_product" type="text" list="breakdown-product-options" autocomplete="off">
+              <datalist id="breakdown-product-options"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="breakdown-shift">Vardiya</label>
+              <select id="breakdown-shift" name="shift" required>
+                <option value="">Vardiya secin</option>
+                <option value="00.00-08.00">00.00-08.00</option>
+                <option value="08.00-16.00">08.00-16.00</option>
+                <option value="16.00-24.00">16.00-24.00</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="breakdown-duration">Sure (dk)</label>
+              <input id="breakdown-duration" name="duration_minutes" type="number" inputmode="numeric" min="1" step="1" required>
+            </div>
+
+            <div class="field span-two">
+              <label for="breakdown-reason">Durus nedeni</label>
+              <input id="breakdown-reason" name="reason" type="text" autocomplete="off" required>
+            </div>
+          </div>
+
+          <button type="submit" class="primary-action">Arizayi kaydet</button>
+        </form>
+
+        <div class="section-heading row-heading subsection-heading">
+          <h3>Son arizalar</h3>
+        </div>
+        <div id="breakdown-submissions" class="entry-list" aria-live="polite">
+          <p class="empty-state">Son ariza kaydi yok.</p>
+        </div>
+      </section>

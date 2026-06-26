@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
+import { apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
 import {
   renderIfsReturnCandidates,
   renderIfsReturnPrintArea,
   renderListError,
   renderLoading,
-} from "./render.js?v=20260624-package-label-checklist-cache";
-import { setButtonBusy, setMessage } from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./render.js?v=20260626-breakdowns-paper-fields";
+import { setButtonBusy, setMessage } from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 let latestIfsReturnCandidatesPayload = null;
 
@@ -14,7 +14,7 @@ export async function handleIfsReturnCandidates(event) {
   const message = document.querySelector("#ifs-return-message");
   const container = document.querySelector("#ifs-return-results");
 
-  setMessage(message, "IFS kontrolü çalışıyor...", "");
+  setMessage(message, "IFS kontrolÃ¼ Ã§alÄ±ÅŸÄ±yor...", "");
   renderLoading(container, "IFS verileri okunuyor...");
   setIfsReturnPrintPayload(null);
   setButtonBusy(button, true, "Kontrol ediliyor");
@@ -25,13 +25,13 @@ export async function handleIfsReturnCandidates(event) {
     setIfsReturnPrintPayload(payload);
     const candidateCount = Number(payload.return_candidate_count || 0);
     if (candidateCount > 0) {
-      setMessage(message, `${candidateCount} iade adayı bulundu.`, "warning");
+      setMessage(message, `${candidateCount} iade adayÄ± bulundu.`, "warning");
     } else {
-      setMessage(message, "İade adayı bulunmadı.", "success");
+      setMessage(message, "Ä°ade adayÄ± bulunmadÄ±.", "success");
     }
   } catch (error) {
-    setMessage(message, `IFS kontrolü başarısız: ${error.message}`, "error");
-    renderListError(container, `IFS kontrolü başarısız: ${error.message}`);
+    setMessage(message, `IFS kontrolÃ¼ baÅŸarÄ±sÄ±z: ${error.message}`, "error");
+    renderListError(container, `IFS kontrolÃ¼ baÅŸarÄ±sÄ±z: ${error.message}`);
     setIfsReturnPrintPayload(null);
   } finally {
     setButtonBusy(button, false);

@@ -1,4 +1,4 @@
-import { setButtonBusy } from "./utils.js?v=20260624-package-label-checklist-cache";
+import { setButtonBusy } from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 export function initLogin() {
   const loginForm = document.querySelector("#login-form");
@@ -18,7 +18,7 @@ export function initLogin() {
       error.hidden = true;
       error.textContent = "";
     }
-    setButtonBusy(submitButton, true, "Giriş yapılıyor");
+    setButtonBusy(submitButton, true, "GiriÅŸ yapÄ±lÄ±yor");
 
     try {
       const response = await fetch("/api/login", {
@@ -37,12 +37,12 @@ export function initLogin() {
       }
 
       if (error) {
-        error.textContent = "PIN geçersiz.";
+        error.textContent = "PIN geÃ§ersiz.";
         error.hidden = false;
       }
     } catch (_error) {
       if (error) {
-        error.textContent = "Giriş başarısız. Bağlantıyı kontrol edip tekrar deneyin.";
+        error.textContent = "GiriÅŸ baÅŸarÄ±sÄ±z. BaÄŸlantÄ±yÄ± kontrol edip tekrar deneyin.";
         error.hidden = false;
       }
     } finally {

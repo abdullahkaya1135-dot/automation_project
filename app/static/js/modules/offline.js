@@ -1,4 +1,4 @@
-import { ApiError, apiJson } from "../api.js?v=20260624-package-label-checklist-cache";
+import { ApiError, apiJson } from "../api.js?v=20260626-breakdowns-paper-fields";
 import {
   OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
@@ -8,19 +8,19 @@ import {
   OFFLINE_STATUS_SERVER_SAVED,
   OFFLINE_STATUS_SYNCING,
   OFFLINE_STATUS_VALIDATION_FAILED,
-} from "./constants.js?v=20260624-package-label-checklist-cache";
+} from "./constants.js?v=20260626-breakdowns-paper-fields";
 import {
   applyTourContext,
   readStoredTourContext,
   storeTourContext,
-} from "./tour-context.js?v=20260624-package-label-checklist-cache";
+} from "./tour-context.js?v=20260626-breakdowns-paper-fields";
 import {
   createClientRequestId,
   downloadTextFile,
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 let offlineDbPromise = null;
 let offlineSyncInProgress = false;
@@ -89,7 +89,7 @@ export async function writeBootstrapCache(payload) {
       updated_at: new Date().toISOString(),
     });
     transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error || new Error("Bootstrap önbelleği yazılamadı."));
+    transaction.onerror = () => reject(transaction.error || new Error("Bootstrap Ã¶nbelleÄŸi yazÄ±lamadÄ±."));
   });
 }
 
@@ -119,11 +119,11 @@ export async function syncOutbox(_options = {}) {
       ].includes(record.status));
 
     if (!records.length) {
-      setMessage(message, "Telefonda bekleyen kayıt yok.", "success");
+      setMessage(message, "Telefonda bekleyen kayÄ±t yok.", "success");
       return;
     }
 
-    setMessage(message, "Telefon kayıtları sunucuya gönderiliyor...", "");
+    setMessage(message, "Telefon kayÄ±tlarÄ± sunucuya gÃ¶nderiliyor...", "");
     for (const record of records) {
       const body = await syncBodyForRecord(record);
       if (!body) {
@@ -159,7 +159,7 @@ export async function syncOutbox(_options = {}) {
 
         await updateOfflineRecord(record.client_request_id, {
           status: OFFLINE_STATUS_RETRYABLE,
-          last_error: error.message || "Bağlantı hatası",
+          last_error: error.message || "BaÄŸlantÄ± hatasÄ±",
         });
         break;
       }
@@ -173,20 +173,20 @@ export async function syncOutbox(_options = {}) {
     if (failedCount > 0) {
       setMessage(
         message,
-        `${savedCount} kayıt sunucuya gönderildi, ${failedCount} kayıt beklemede kaldı.`,
+        `${savedCount} kayÄ±t sunucuya gÃ¶nderildi, ${failedCount} kayÄ±t beklemede kaldÄ±.`,
         "warning",
       );
     } else if (skippedCount > 0) {
       setMessage(
         message,
-        `${savedCount} kayıt gönderildi. ${skippedCount} kayıt önce tur senkronizasyonunu bekliyor.`,
+        `${savedCount} kayÄ±t gÃ¶nderildi. ${skippedCount} kayÄ±t Ã¶nce tur senkronizasyonunu bekliyor.`,
         "warning",
       );
     } else {
-      setMessage(message, `${savedCount} telefon kaydı sunucuya gönderildi.`, "success");
+      setMessage(message, `${savedCount} telefon kaydÄ± sunucuya gÃ¶nderildi.`, "success");
     }
   } catch (error) {
-    setMessage(message, `Telefon senkronizasyonu başarısız: ${error.message}`, "warning");
+    setMessage(message, `Telefon senkronizasyonu baÅŸarÄ±sÄ±z: ${error.message}`, "warning");
   } finally {
     offlineSyncInProgress = false;
     await updatePhoneSyncStatus();
@@ -207,7 +207,7 @@ export async function updatePhoneSyncStatus() {
     );
     updateStatusPill(serverStatus, `Sunucuya kaydedilen: ${serverSavedCount}`, "success");
   } catch (error) {
-    updateStatusPill(pendingStatus, "Telefon veritabanı yok", "error");
+    updateStatusPill(pendingStatus, "Telefon veritabanÄ± yok", "error");
     updateStatusPill(serverStatus, error.message, "error");
   }
 }
@@ -268,7 +268,7 @@ function openOfflineDb() {
     return offlineDbPromise;
   }
   if (!("indexedDB" in window)) {
-    offlineDbPromise = Promise.reject(new Error("Bu tarayıcı IndexedDB desteklemiyor."));
+    offlineDbPromise = Promise.reject(new Error("Bu tarayÄ±cÄ± IndexedDB desteklemiyor."));
     return offlineDbPromise;
   }
 
@@ -292,7 +292,7 @@ function openOfflineDb() {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Telefon veritabanı açılamadı."));
+    request.onerror = () => reject(request.error || new Error("Telefon veritabanÄ± aÃ§Ä±lamadÄ±."));
   });
   return offlineDbPromise;
 }
@@ -300,7 +300,7 @@ function openOfflineDb() {
 function idbRequest(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Telefon veritabanı isteği başarısız."));
+    request.onerror = () => reject(request.error || new Error("Telefon veritabanÄ± isteÄŸi baÅŸarÄ±sÄ±z."));
   });
 }
 
@@ -323,7 +323,7 @@ async function putOfflineRecord(record) {
     const transaction = db.transaction("outbox", "readwrite");
     transaction.objectStore("outbox").put(record);
     transaction.oncomplete = () => resolve(record);
-    transaction.onerror = () => reject(transaction.error || new Error("Telefon kaydı yazılamadı."));
+    transaction.onerror = () => reject(transaction.error || new Error("Telefon kaydÄ± yazÄ±lamadÄ±."));
   });
 }
 
@@ -377,7 +377,10 @@ function offlineEndpointForType(type) {
   if (type === "amount_control_shift") {
     return "/api/amount-control/shifts";
   }
-  throw new Error(`Bilinmeyen telefon kayıt tipi: ${type}`);
+  if (type === "breakdown") {
+    return "/api/breakdowns";
+  }
+  throw new Error(`Bilinmeyen telefon kayÄ±t tipi: ${type}`);
 }
 
 function serverIdFromSyncPayload(type, payload) {
@@ -392,6 +395,9 @@ function serverIdFromSyncPayload(type, payload) {
   }
   if (type === "amount_control_shift") {
     return payload?.shift?.id || payload?.id || null;
+  }
+  if (type === "breakdown") {
+    return payload?.breakdown?.id || payload?.id || null;
   }
   return null;
 }

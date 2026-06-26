@@ -5,7 +5,7 @@ import {
   setInputValue,
   updateStatusPill,
   uniqueSorted,
-} from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 let shopOrderPairs = [];
 
@@ -38,7 +38,7 @@ export function updateShopOrderOptions(source) {
 
   const previousMachine = machineSelect.value;
   if (!shopOrderPairs.length) {
-    setSelectOptions(machineSelect, [], "Makine listesi bulunamadı", "");
+    setSelectOptions(machineSelect, [], "Makine listesi bulunamadÄ±", "");
     setWorkOrderInput(workOrderInput, "", "");
     setShopOrderSelectsEnabled(false);
     clearOperationPrefills();
@@ -135,18 +135,18 @@ function updateShopOrderSourceStatus(source, pairCount) {
       || uniqueSorted(shopOrderPairs.map((pair) => pair.resourceId)).length;
     const sourceLabel = String(source?.source || "").startsWith("ifs") ? "IFS" : "Dosya";
     if (source?.offline_cached_at) {
-      updateStatusPill(status, `${orderCount} iş emri (offline)`, "warning");
-      status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eşleşme / ${formatTimestamp(source.offline_cached_at)}`;
+      updateStatusPill(status, `${orderCount} iÅŸ emri (offline)`, "warning");
+      status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eÅŸleÅŸme / ${formatTimestamp(source.offline_cached_at)}`;
       return;
     }
-    updateStatusPill(status, `${orderCount} iş emri`, "success");
-    status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eşleşme`;
+    updateStatusPill(status, `${orderCount} iÅŸ emri`, "success");
+    status.title = `${sourceLabel}: ${machineCount} makine / ${pairCount} eÅŸleÅŸme`;
     return;
   }
 
   updateStatusPill(
     status,
-    source?.source === "ifs" ? "IFS iş emri yok" : "İş emri listesi yok",
+    source?.source === "ifs" ? "IFS iÅŸ emri yok" : "Ä°ÅŸ emri listesi yok",
     "warning",
   );
   status.title = source?.last_error || "";
@@ -160,7 +160,7 @@ function populateMachineSelect(selectedValue) {
   setSelectOptions(
     machineSelect,
     uniqueSorted(shopOrderPairs.map((pair) => pair.resourceId)),
-    "Makine seçin",
+    "Makine seÃ§in",
     selectedValue,
   );
 }

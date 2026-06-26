@@ -112,6 +112,9 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
             index["name"] for index in inspector.get_indexes("amount_control_shifts")
         }
         breakdown_foreign_keys = inspector.get_foreign_keys("machine_breakdowns")
+        breakdown_indexes = {
+            index["name"] for index in inspector.get_indexes("machine_breakdowns")
+        }
         production_loss_row_foreign_keys = inspector.get_foreign_keys(
             "production_loss_report_rows"
         )
@@ -211,6 +214,11 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
     } <= entry_columns
     assert {
         "id",
+        "client_request_id",
+        "client_recorded_at",
+        "record_date",
+        "shift",
+        "job_order",
         "machine_id",
         "entry_id",
         "amount_control_shift_id",
@@ -399,11 +407,19 @@ def test_sqlite_model_creates_required_tables_and_columns(tmp_path):
         "ix_production_loss_label_events_archive_time",
     } <= production_loss_label_event_indexes
     assert {
+        "ck_machine_breakdowns_client_request_id",
+        "ck_machine_breakdowns_record_date",
+        "ck_machine_breakdowns_shift",
+        "ck_machine_breakdowns_job_order",
         "ck_machine_breakdowns_produced_product",
         "ck_machine_breakdowns_stop_reason",
         "ck_machine_breakdowns_duration_minutes",
         "ck_machine_breakdowns_stop_time_order",
     } <= breakdown_check_constraints
+    assert {
+        "ux_machine_breakdowns_client_request_id",
+        "ix_machine_breakdowns_record_lookup",
+    } <= breakdown_indexes
 
 
 def test_init_db_seeds_production_engineers(tmp_path):
@@ -1014,6 +1030,16 @@ def test_machine_breakdown_rejects_invalid_machine_and_duration(tmp_path):
         session.add(
             MachineBreakdown(
                 machine_id=machine_id,
+                produced_product="",
+                stop_reason="Hydraulic pressure fault",
+                duration_minutes=15,
+            )
+        )
+
+    with pytest.raises(DatabaseCommitError), session_scope(settings) as session:
+        session.add(
+            MachineBreakdown(
+                machine_id=machine_id,
                 produced_product="Product 101",
                 stop_reason="Hydraulic pressure fault",
                 duration_minutes=0,
@@ -1029,6 +1055,36 @@ def test_machine_breakdown_rejects_invalid_machine_and_duration(tmp_path):
                 duration_minutes=15,
             )
         )
+
+
+def test_machine_breakdown_allows_paper_minimum_standalone_record(tmp_path):
+    settings = Settings(
+        excel_path="dummy.xlsx",
+        app_pin="1234",
+        sqlite_path=str(tmp_path / "process_entries.sqlite3"),
+    )
+    init_db(settings)
+
+    with session_scope(settings) as session:
+        machine = session.query(Machine).filter_by(machine_code="101").one()
+        session.add(
+            MachineBreakdown(
+                machine=machine,
+                record_date="2026-06-17",
+                shift="24.00-08.00",
+                stop_reason="Hydraulic pressure fault",
+                duration_minutes=45,
+            )
+        )
+
+    with create_session(settings) as session:
+        breakdown = session.query(MachineBreakdown).one()
+        assert breakdown.machine.machine_code == "101"
+        assert breakdown.record_date == "2026-06-17"
+        assert breakdown.shift == "24.00-08.00"
+        assert breakdown.job_order is None
+        assert breakdown.produced_product is None
+        assert breakdown.stop_reason == "Hydraulic pressure fault"
 
 
 def test_amount_control_shift_enforces_business_rules(tmp_path):
@@ -1264,13 +1320,22 @@ def test_init_db_migrates_machine_breakdowns_amount_control_link(tmp_path):
 
     with create_session(settings) as session:
         inspector = inspect(session.get_bind())
-        columns = {
-            column["name"] for column in inspector.get_columns("machine_breakdowns")
-        }
+        breakdown_column_info = inspector.get_columns("machine_breakdowns")
+        columns = {column["name"] for column in breakdown_column_info}
         foreign_keys = inspector.get_foreign_keys("machine_breakdowns")
         breakdown = session.query(MachineBreakdown).one()
 
     assert "amount_control_shift_id" in columns
+    assert {
+        "client_request_id",
+        "client_recorded_at",
+        "record_date",
+        "shift",
+        "job_order",
+    } <= columns
+    assert {
+        column["name"]: column["nullable"] for column in breakdown_column_info
+    }["produced_product"] is True
     assert breakdown.produced_product == "Product 101"
     assert breakdown.entry_id == 1
     assert breakdown.amount_control_shift_id is None
@@ -1290,6 +1355,85 @@ def test_init_db_migrates_machine_breakdowns_amount_control_link(tmp_path):
             "SET NULL",
         ),
     }
+
+
+def test_init_db_backfills_breakdown_context_from_amount_control_shift(tmp_path):
+    sqlite_path = tmp_path / "process_entries.sqlite3"
+    connection = sqlite3.connect(sqlite_path)
+    try:
+        connection.execute(
+            "CREATE TABLE machines ("
+            "id INTEGER PRIMARY KEY, "
+            "machine_code VARCHAR(16) NOT NULL, "
+            "hall_number INTEGER NOT NULL, "
+            "hall_name VARCHAR(32) NOT NULL, "
+            "display_order INTEGER NOT NULL, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE amount_control_shifts ("
+            "id INTEGER PRIMARY KEY, "
+            "record_date VARCHAR(10) NOT NULL, "
+            "machine_id INTEGER NOT NULL, "
+            "job_order TEXT NOT NULL, "
+            "shift VARCHAR(16) NOT NULL, "
+            "worker_names TEXT NOT NULL, "
+            "produced_quantity INTEGER NOT NULL, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE machine_breakdowns ("
+            "id INTEGER PRIMARY KEY, "
+            "machine_id INTEGER NOT NULL, "
+            "entry_id INTEGER, "
+            "amount_control_shift_id INTEGER, "
+            "produced_product TEXT NOT NULL, "
+            "stop_reason TEXT NOT NULL, "
+            "duration_minutes INTEGER NOT NULL, "
+            "stopped_at DATETIME, "
+            "resumed_at DATETIME, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO machines ("
+            "id, machine_code, hall_number, hall_name, display_order, created_at, updated_at"
+            ") VALUES (1, '101', 1, 'Hole 1', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO amount_control_shifts ("
+            "id, record_date, machine_id, job_order, shift, worker_names, "
+            "produced_quantity, created_at, updated_at"
+            ") VALUES (1, '2026-06-17', 1, 'WO-1', '08.00-16.00', "
+            "'Operator One', 1200, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO machine_breakdowns ("
+            "id, machine_id, amount_control_shift_id, produced_product, "
+            "stop_reason, duration_minutes, created_at, updated_at"
+            ") VALUES (1, 1, 1, 'Product 101', 'Mold change', 30, "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    settings = Settings(
+        excel_path="dummy.xlsx",
+        app_pin="1234",
+        sqlite_path=str(sqlite_path),
+    )
+    init_db(settings)
+
+    with create_session(settings) as session:
+        breakdown = session.query(MachineBreakdown).one()
+
+    assert breakdown.amount_control_shift_id == 1
+    assert breakdown.record_date == "2026-06-17"
+    assert breakdown.shift == "08.00-16.00"
+    assert breakdown.job_order == "WO-1"
 
 
 def test_session_scope_commits_and_rolls_back_safely(tmp_path):

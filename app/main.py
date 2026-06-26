@@ -10,6 +10,7 @@ from .features.amount_control.api import router as amount_control_router
 from .features.auth.api import router as auth_router
 from .features.auxiliary_systems.api import router as auxiliary_router
 from .features.bootstrap.api import router as bootstrap_router
+from .features.breakdowns.api import router as breakdowns_router
 from .features.cycle_reports.api import router as reports_router
 from .features.health.api import router as health_router
 from .features.ifs.api import router as ifs_router
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     fastapi_app.include_router(auth_router)
     fastapi_app.include_router(bootstrap_router)
     fastapi_app.include_router(entries_router)
+    fastapi_app.include_router(breakdowns_router)
     fastapi_app.include_router(amount_control_router)
     fastapi_app.include_router(auxiliary_router)
     fastapi_app.include_router(reports_router)

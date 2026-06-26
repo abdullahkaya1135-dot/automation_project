@@ -15,7 +15,7 @@ TEMPLATES = Jinja2Templates(directory=TEMPLATES_DIR)
 MANIFEST_URL = "/manifest.webmanifest"
 SERVICE_WORKER_URL = "/service-worker.js"
 STATIC_URL_PREFIX = "/static/"
-STATIC_ASSET_VERSION = "20260624-package-label-checklist-cache"
+STATIC_ASSET_VERSION = "20260626-breakdowns-paper-fields"
 SERVICE_WORKER_CACHE_NAME = f"process-offline-shell-{STATIC_ASSET_VERSION}"
 
 
@@ -41,6 +41,12 @@ AMOUNT_CONTROL_PAGE = PageRoute(
     "Miktar Kontrol",
     "amount-control",
 )
+BREAKDOWNS_PAGE = PageRoute(
+    "/breakdowns",
+    "pages/breakdowns.html",
+    "Ariza Kaydi",
+    "breakdowns",
+)
 REPORTS_PAGE = PageRoute("/reports", "pages/reports.html", "Senkron & Raporlar", "reports")
 LOGIN_PAGE_PATH = "/login"
 
@@ -49,6 +55,7 @@ PROTECTED_PAGE_ROUTES = (
     PROCESS_PAGE,
     AUXILIARY_PAGE,
     AMOUNT_CONTROL_PAGE,
+    BREAKDOWNS_PAGE,
     REPORTS_PAGE,
 )
 PROTECTED_PAGE_PATHS = tuple(route.path for route in PROTECTED_PAGE_ROUTES)
@@ -154,6 +161,11 @@ def auxiliary(request: Request):
 @router.get(AMOUNT_CONTROL_PAGE.path, response_class=HTMLResponse)
 def amount_control(request: Request):
     return protected_page(request, AMOUNT_CONTROL_PAGE.path)
+
+
+@router.get(BREAKDOWNS_PAGE.path, response_class=HTMLResponse)
+def breakdowns(request: Request):
+    return protected_page(request, BREAKDOWNS_PAGE.path)
 
 
 @router.get(REPORTS_PAGE.path, response_class=HTMLResponse)

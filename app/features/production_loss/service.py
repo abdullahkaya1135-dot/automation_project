@@ -249,6 +249,14 @@ class ShiftAggregate:
 
 
 @dataclass(frozen=True)
+class StandaloneBreakdownContext:
+    record_date: str
+    machine_code: str
+    fallback_shift: str
+    job_order: str | None
+
+
+@dataclass(frozen=True)
 class ProcessMeta:
     product: str | None
     active_cavities: Decimal | None
@@ -403,6 +411,12 @@ def create_production_loss_report(
             ifs_actuals,
         )
         _apply_amount_control_breakdowns_to_unique_aggregates(
+            settings,
+            start_date,
+            end_date,
+            aggregates,
+        )
+        _apply_standalone_breakdowns_to_unique_aggregates(
             settings,
             start_date,
             end_date,
@@ -873,21 +887,52 @@ def _apply_amount_control_breakdowns_to_unique_aggregates(
     end_date: Date,
     aggregates: Sequence[ShiftAggregate],
 ) -> None:
+    _apply_amount_control_breakdowns(
+        settings,
+        start_date,
+        end_date,
+        _unique_aggregates_by_date_machine_job(aggregates),
+    )
+
+
+def _apply_standalone_breakdowns_to_unique_aggregates(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+    aggregates: Sequence[ShiftAggregate],
+) -> None:
+    if not aggregates:
+        return
+    _apply_standalone_breakdowns(
+        settings,
+        start_date,
+        end_date,
+        _unique_aggregates_by_date_machine_job(aggregates),
+        _unique_aggregates_by_date_machine_shift(aggregates),
+    )
+
+
+def _unique_aggregates_by_date_machine_job(
+    aggregates: Sequence[ShiftAggregate],
+) -> dict[tuple[str, str, str], ShiftAggregate]:
     grouped: dict[tuple[str, str, str], list[ShiftAggregate]] = defaultdict(list)
     for aggregate in aggregates:
         grouped[
             (aggregate.record_date, aggregate.machine_code, aggregate.job_order)
         ].append(aggregate)
+    return {key: values[0] for key, values in grouped.items() if len(values) == 1}
 
-    unique_aggregates = {
-        key: values[0] for key, values in grouped.items() if len(values) == 1
-    }
-    _apply_amount_control_breakdowns(
-        settings,
-        start_date,
-        end_date,
-        unique_aggregates,
-    )
+
+def _unique_aggregates_by_date_machine_shift(
+    aggregates: Sequence[ShiftAggregate],
+) -> dict[tuple[str, str, str], ShiftAggregate]:
+    grouped: dict[tuple[str, str, str], list[ShiftAggregate]] = defaultdict(list)
+    for aggregate in aggregates:
+        for shift_label, quantity in aggregate.shift_quantities.items():
+            if quantity > 0:
+                key = (aggregate.record_date, aggregate.machine_code, shift_label)
+                grouped[key].append(aggregate)
+    return {key: values[0] for key, values in grouped.items() if len(values) == 1}
 
 
 def _aggregate_with_effective_machine(
@@ -1174,6 +1219,12 @@ def _load_operation_history_shift_aggregates(
 
     aggregates = _aggregates_from_operation_history_events(settings, events)
     _apply_amount_control_breakdowns(settings, start_date, end_date, aggregates)
+    _apply_standalone_breakdowns_to_unique_aggregates(
+        settings,
+        start_date,
+        end_date,
+        list(aggregates.values()),
+    )
     return (
         sorted(
             aggregates.values(),
@@ -1899,6 +1950,157 @@ def _apply_amount_control_breakdowns(
                     aggregate.local_breakdown_minutes += minutes
 
 
+def _apply_standalone_breakdowns(
+    settings: Settings,
+    start_date: Date,
+    end_date: Date,
+    aggregates_by_job: Mapping[tuple[str, str, str], ShiftAggregate],
+    aggregates_by_shift: Mapping[tuple[str, str, str], ShiftAggregate],
+) -> None:
+    if not aggregates_by_job and not aggregates_by_shift:
+        return
+    tzinfo = shifts.request_timezone(settings)
+    with create_session(settings) as session:
+        rows = session.scalars(
+            select(MachineBreakdown)
+            .options(
+                selectinload(MachineBreakdown.machine),
+                selectinload(MachineBreakdown.entry).selectinload(
+                    Entry.tour_context
+                ),
+            )
+            .where(MachineBreakdown.amount_control_shift_id.is_(None))
+        ).all()
+
+    for breakdown in rows:
+        context = _standalone_breakdown_context(breakdown, tzinfo)
+        if context is None:
+            continue
+        breakdown_date = Date.fromisoformat(context.record_date)
+        if breakdown_date < start_date or breakdown_date > end_date:
+            continue
+        minutes_by_shift = _breakdown_minutes_by_shift(
+            context.record_date,
+            context.fallback_shift,
+            breakdown,
+            tzinfo,
+        )
+        if context.job_order:
+            aggregate = aggregates_by_job.get(
+                (context.record_date, context.machine_code, context.job_order)
+            )
+            if aggregate is None:
+                continue
+            _add_breakdown_minutes(aggregate, minutes_by_shift)
+            continue
+
+        for shift_label, minutes in minutes_by_shift.items():
+            aggregate = aggregates_by_shift.get(
+                (context.record_date, context.machine_code, shift_label)
+            )
+            if aggregate is not None:
+                _add_breakdown_minutes(aggregate, {shift_label: minutes})
+
+
+def _standalone_breakdown_context(
+    breakdown: MachineBreakdown,
+    tzinfo: Any,
+) -> StandaloneBreakdownContext | None:
+    machine_code = normalize_machine_code(breakdown.machine.machine_code)
+    if machine_code is None:
+        return None
+
+    record_date = _standalone_breakdown_record_date(breakdown, tzinfo)
+    fallback_shift = _standalone_breakdown_shift(breakdown)
+    has_timing = _has_usable_breakdown_timing(breakdown, tzinfo)
+    if record_date is None or (
+        fallback_shift not in shifts.SHIFT_OPTIONS and not has_timing
+    ):
+        return None
+
+    return StandaloneBreakdownContext(
+        record_date=record_date,
+        machine_code=machine_code,
+        fallback_shift=fallback_shift,
+        job_order=_standalone_breakdown_job_order(breakdown),
+    )
+
+
+def _standalone_breakdown_record_date(
+    breakdown: MachineBreakdown,
+    tzinfo: Any,
+) -> str | None:
+    entry = breakdown.entry
+    candidates = [
+        getattr(breakdown, "record_date", None),
+        entry.process_date if entry is not None else None,
+        entry.tour_context.date
+        if entry is not None and entry.tour_context is not None
+        else None,
+        entry.col_a if entry is not None else None,
+    ]
+    for candidate in candidates:
+        record_date = _normalized_breakdown_record_date(candidate)
+        if record_date:
+            return record_date
+
+    stopped = _stored_utc_to_local_timezone(breakdown.stopped_at, tzinfo)
+    if stopped is not None:
+        return stopped.date().isoformat()
+    return None
+
+
+def _normalized_breakdown_record_date(value: Any) -> str | None:
+    record_date = normalize_process_date(value)
+    if not record_date:
+        return None
+    try:
+        Date.fromisoformat(record_date)
+    except ValueError:
+        return None
+    return record_date
+
+
+def _standalone_breakdown_shift(breakdown: MachineBreakdown) -> str:
+    entry = breakdown.entry
+    shift_label = _clean_text(getattr(breakdown, "shift", None))
+    if shift_label in shifts.SHIFT_OPTIONS:
+        return shift_label
+    if entry is not None and entry.tour_context is not None:
+        shift_label = _clean_text(entry.tour_context.shift)
+        if shift_label in shifts.SHIFT_OPTIONS:
+            return shift_label
+    return ""
+
+
+def _standalone_breakdown_job_order(breakdown: MachineBreakdown) -> str | None:
+    job_order = _identifier(getattr(breakdown, "job_order", None))
+    if job_order:
+        return job_order
+    if breakdown.entry is not None:
+        return _identifier(breakdown.entry.col_h)
+    return None
+
+
+def _has_usable_breakdown_timing(
+    breakdown: MachineBreakdown,
+    tzinfo: Any,
+) -> bool:
+    stopped = _stored_utc_to_local_timezone(breakdown.stopped_at, tzinfo)
+    resumed = _stored_utc_to_local_timezone(breakdown.resumed_at, tzinfo)
+    return stopped is not None and resumed is not None and resumed > stopped
+
+
+def _add_breakdown_minutes(
+    aggregate: ShiftAggregate,
+    minutes_by_shift: Mapping[str, int],
+) -> None:
+    for shift_label, minutes in minutes_by_shift.items():
+        if shift_label in aggregate.shift_breakdown_minutes:
+            aggregate.shift_breakdown_minutes[shift_label] += minutes
+            aggregate.local_breakdown_minutes += minutes
+
+
 def _breakdown_minutes_by_shift(
     record_date: str,
     fallback_shift: str,
@@ -1923,7 +2125,7 @@ def _breakdown_minutes_by_shift(
         minutes = int(overlap) if overlap is not None else 0
         if minutes > 0:
             minutes_by_shift[shift_label] = minutes
-    return minutes_by_shift or {fallback_shift: duration}
+    return minutes_by_shift
 
 
 def _read_shift_aggregates(

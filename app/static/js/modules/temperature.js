@@ -1,4 +1,4 @@
-import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260624-package-label-checklist-cache";
+import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260626-breakdowns-paper-fields";
 
 export function initializeTemperatureShorthandInputs() {
   for (const selector of TEMPERATURE_SHORTHAND_SELECTORS) {

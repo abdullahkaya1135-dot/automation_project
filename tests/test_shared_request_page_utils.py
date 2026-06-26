@@ -240,16 +240,16 @@ def test_app_shell_urls_cover_static_js_import_graph():
 
 def test_static_js_import_versions_match_current_asset_version():
     version_pattern = re.compile(r"""\?v=([^"')]+)""")
-    js_paths = [
-        Path("app/static/js/app.js"),
-        Path("app/static/js/api.js"),
-        *sorted(Path("app/static/js/modules").glob("*.js")),
-    ]
+    js_paths = sorted(pages.STATIC_DIR.joinpath("js").rglob("*.js"))
+    versioned_imports = []
 
     for js_path in js_paths:
         source = js_path.read_text(encoding="utf-8")
         for version in version_pattern.findall(source):
+            versioned_imports.append((js_path, version))
             assert version == pages.STATIC_ASSET_VERSION
+
+    assert versioned_imports
 
 
 def test_service_worker_injects_current_route_and_shell_constants():

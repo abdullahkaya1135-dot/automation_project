@@ -30,6 +30,7 @@ DEFAULT_IFS_PART_PREFIX = "HM-02"
 DEFAULT_IFS_PART_PREFIXES = ("HM-02", "HM-03", "HM-04")
 DEFAULT_IFS_LABEL_PART_PREFIXES = ("MM",)
 DEFAULT_IFS_LABEL_REPORT_IDS = ("SIMSEK_PALET_ETIKETI_REP",)
+DEFAULT_IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS = 14
 DEFAULT_IFS_PRODUCTION_LOSS_QUERY_START_DATE = "2026-06-01"
 DEFAULT_PRODUCTION_PLANNING_DIR = "\\\\fileserver\\GENEL\\URETIM GUNLUK TAKIP"
 DEFAULT_PRODUCTION_PLANNING_PATH = (
@@ -67,6 +68,9 @@ class Settings:
     ifs_part_prefixes: tuple[str, ...] = DEFAULT_IFS_PART_PREFIXES
     ifs_label_part_prefixes: tuple[str, ...] = DEFAULT_IFS_LABEL_PART_PREFIXES
     ifs_label_report_ids: tuple[str, ...] = DEFAULT_IFS_LABEL_REPORT_IDS
+    ifs_package_label_checklist_archive_lookback_days: int = (
+        DEFAULT_IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS
+    )
     ifs_u1_location: str = "U1"
     ifs_production_loss_query_start_date: str = (
         DEFAULT_IFS_PRODUCTION_LOSS_QUERY_START_DATE
@@ -107,6 +111,10 @@ class Settings:
             raise SettingsError("PORT 1 ile 65535 arasında olmalıdır.")
         if self.backup_keep_count < 1:
             raise SettingsError("BACKUP_KEEP_COUNT en az 1 olmalıdır.")
+        if self.ifs_package_label_checklist_archive_lookback_days < 1:
+            raise SettingsError(
+                "IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS en az 1 olmalidir."
+            )
 
 
 def _int_setting(name: str, default: str) -> int:
@@ -232,6 +240,10 @@ def get_settings(*, validate: bool = True) -> Settings:
                 )
             )
             or DEFAULT_IFS_LABEL_REPORT_IDS
+        ),
+        ifs_package_label_checklist_archive_lookback_days=_int_setting(
+            "IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS",
+            str(DEFAULT_IFS_PACKAGE_LABEL_CHECKLIST_ARCHIVE_LOOKBACK_DAYS),
         ),
         ifs_u1_location=_string_setting("IFS_U1_LOCATION", "U1") or "U1",
         ifs_production_loss_query_start_date=(

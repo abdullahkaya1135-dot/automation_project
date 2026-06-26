@@ -568,11 +568,24 @@ button:disabled {
 }
 
 .package-label-checklist-table {
-  min-width: 1120px;
+  min-width: 1020px;
 }
 
-.package-label-checklist-number {
-  text-align: center;
+.package-label-checklist-group-cell,
+.package-label-checklist-table td[rowspan]:not([rowspan="1"]) {
+  border-right: 1px solid #d6dee5;
+  background: #f8fafb;
+  color: #26323b;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.package-label-checklist-group-start > td {
+  box-shadow: inset 0 1px 0 #c2ccd5;
+}
+
+.package-label-checklist-table tr:has(> td[rowspan]:not([rowspan="1"])) > td {
+  box-shadow: inset 0 1px 0 #c2ccd5;
 }
 
 .package-label-checklist-writing-cell {
@@ -727,12 +740,91 @@ button:disabled {
 
   .print-only .package-label-checklist-table {
     table-layout: fixed;
-    font-size: 8.5pt;
+    font-size: 5.8pt;
+    line-height: 1.1;
+  }
+
+  .print-only .package-label-checklist-table th,
+  .print-only .package-label-checklist-table td {
+    font-size: 5.8pt;
+    padding: 0.5pt 2pt;
+    line-height: 1.1;
+  }
+
+  .print-only .package-label-checklist-machine-col {
+    width: 8%;
+  }
+
+  .print-only .package-label-checklist-job-order-col {
+    width: 11%;
+  }
+
+  .print-only .package-label-checklist-part-no-col {
+    width: 18%;
+  }
+
+  .print-only .package-label-checklist-description-col {
+    width: 29%;
+  }
+
+  .print-only .package-label-checklist-handling-unit-col {
+    width: 9%;
+  }
+
+  .print-only .package-label-checklist-receipt-date-col {
+    width: 13%;
+  }
+
+  .print-only .package-label-checklist-label-ok-col {
+    width: 5%;
+  }
+
+  .print-only .package-label-checklist-reason-col {
+    width: 7%;
+  }
+
+  .print-only .package-label-checklist-single-line-cell {
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .print-only .package-label-checklist-single-line-cell.mono-cell {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .print-only .package-label-checklist-machine-cell,
+  .print-only .package-label-checklist-job-order-cell,
+  .print-only .package-label-checklist-part-no-cell,
+  .print-only .package-label-checklist-description-cell,
+  .print-only .package-label-checklist-handling-unit-cell,
+  .print-only .package-label-checklist-receipt-date-cell {
+    text-align: center;
+  }
+
+  .print-only .package-label-checklist-group-cell,
+  .print-only .package-label-checklist-table td[rowspan]:not([rowspan="1"]) {
+    border-right-color: #333333;
+    background: #f8f8f8;
+  }
+
+  .print-only .package-label-checklist-group-start > td {
+    box-shadow: inset 0 1pt 0 #333333;
+  }
+
+  .print-only .package-label-checklist-table tr:has(> td[rowspan]:not([rowspan="1"])) > td {
+    box-shadow: inset 0 1pt 0 #333333;
   }
 
   .print-only .package-label-checklist-writing-cell {
     min-width: 0;
-    height: 22pt;
+    min-height: 14pt;
+    height: 14pt;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .print-only .empty-state {
@@ -761,7 +853,7 @@ button:disabled {
     left: 0;
     z-index: 20;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0;
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);

@@ -1,10 +1,10 @@
-import { SYNC_LABELS } from "./constants.js?v=20260624-package-label-checklist-cache";
-import { dateForDisplay } from "./dates.js?v=20260624-package-label-checklist-cache";
+import { SYNC_LABELS } from "./constants.js?v=20260626-breakdowns-paper-fields";
+import { dateForDisplay } from "./dates.js?v=20260626-breakdowns-paper-fields";
 import {
   displayValue,
   formatTimestamp,
   updateStatusPill,
-} from "./utils.js?v=20260624-package-label-checklist-cache";
+} from "./utils.js?v=20260626-breakdowns-paper-fields";
 
 const PRODUCTION_LOSS_SHIFT_COLUMNS = [
   {
@@ -26,28 +26,34 @@ const PRODUCTION_LOSS_SHIFT_COLUMNS = [
 
 const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES = [
   {
-    label: "No",
-    keys: ["no", "row_no", "line_no", "sequence", "index"],
-    className: "mono-cell package-label-checklist-number",
-  },
-  {
-    label: "Handling Unit",
+    label: "Machine",
     keys: [
-      "handling_unit",
-      "handling_unit_id",
-      "handling_unit_no",
-      "handlingUnit",
-      "handlingUnitId",
-      "handlingUnitNo",
-      "sscc",
-      "package_id",
+      "machine",
+      "machine_code",
+      "machineCode",
+      "resource_id",
+      "resourceId",
+      "ResourceId",
+      "preferred_resource_id",
+      "preferredResourceId",
+      "PreferredResourceId",
     ],
-    className: "mono-cell",
+    className: "mono-cell package-label-checklist-machine-cell",
+    colClassName: "package-label-checklist-machine-col",
+    value: packageLabelChecklistMachineText,
   },
   {
-    label: "Part No",
+    label: "JobOrder",
+    keys: ["job_order", "job_order_no", "order_no", "shop_order_no", "source_ref1"],
+    className: "mono-cell package-label-checklist-job-order-cell",
+    colClassName: "package-label-checklist-job-order-col",
+  },
+  {
+    label: "PartNo",
     keys: ["part_no", "partNo", "material_part_no", "materialPartNo"],
-    className: "mono-cell",
+    className:
+      "mono-cell package-label-checklist-single-line-cell package-label-checklist-part-no-cell",
+    colClassName: "package-label-checklist-part-no-col",
   },
   {
     label: "Description",
@@ -58,50 +64,33 @@ const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES = [
       "material_description",
       "part_desc",
     ],
+    className:
+      "package-label-checklist-single-line-cell package-label-checklist-description-cell",
+    colClassName: "package-label-checklist-description-col",
   },
   {
-    label: "Qty",
+    label: "HandlingUnitId",
     keys: [
-      "qty",
-      "qty_onhand",
-      "quantity",
-      "available_qty",
-      "label_quantity",
-      "qty_per_package",
-      "package_qty",
+      "handling_unit",
+      "handling_unit_id",
+      "handling_unit_no",
+      "handlingUnit",
+      "handlingUnitId",
+      "handlingUnitNo",
+      "sscc",
+      "package_id",
     ],
+    className: "mono-cell package-label-checklist-handling-unit-cell",
+    colClassName: "package-label-checklist-handling-unit-col",
+    value: packageLabelChecklistHandlingUnitText,
   },
   {
-    label: "Location",
-    keys: ["location", "location_no", "locationNo", "warehouse_location"],
-    className: "mono-cell",
-  },
-  {
-    label: "Lot/Batch",
-    keys: ["lot_batch", "lot_batch_no", "lotBatchNo", "lot_no", "batch_no", "lot"],
-    className: "mono-cell",
-  },
-  {
-    label: "Job Order",
-    keys: ["job_order", "job_order_no", "order_no", "shop_order_no", "source_ref1"],
-    className: "mono-cell",
-  },
-  {
-    label: "Machine",
-    keys: [
-      "machine",
-      "machine_code",
-      "machineCode",
-      "resource_id",
-      "preferred_resource_id",
-    ],
-    className: "mono-cell",
-    value: packageLabelChecklistMachineText,
-  },
-  {
-    label: "Operation Status",
-    keys: ["operation_match_status", "match_status"],
-    value: packageLabelChecklistOperationStatusText,
+    label: "ReceiptDate",
+    keys: ["receipt_date", "receiptDate", "ReceiptDate"],
+    className:
+      "mono-cell package-label-checklist-single-line-cell package-label-checklist-receipt-date-cell",
+    colClassName: "package-label-checklist-receipt-date-col",
+    value: packageLabelChecklistReceiptDateText,
   },
   {
     label: "Label OK",
@@ -114,19 +103,17 @@ const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES = [
       "label_status",
     ],
     className: "package-label-checklist-writing-cell",
+    colClassName: "package-label-checklist-label-ok-col",
     value: packageLabelChecklistStatusText,
   },
   {
-    label: "Missing Reason",
+    label: "Reason",
     keys: ["missing_reason", "missingReason", "label_missing_reason", "reason"],
     className: "package-label-checklist-writing-cell",
-  },
-  {
-    label: "Notes",
-    keys: ["notes", "note", "comment", "remarks"],
-    className: "package-label-checklist-writing-cell",
+    colClassName: "package-label-checklist-reason-col",
   },
 ];
+const PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT = 4;
 
 export function renderEntryList(container, entries, emptyText) {
   if (!container) {
@@ -188,6 +175,26 @@ export function renderAmountControlShiftList(container, shifts, emptyText) {
   container.replaceChildren(fragment);
 }
 
+export function renderBreakdownList(container, breakdowns, emptyText) {
+  if (!container) {
+    return;
+  }
+
+  if (!breakdowns.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = emptyText;
+    container.replaceChildren(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const breakdown of breakdowns) {
+    fragment.appendChild(renderBreakdownRow(breakdown));
+  }
+  container.replaceChildren(fragment);
+}
+
 export function renderIfsReturnCandidates(container, payload) {
   if (!container) {
     return;
@@ -202,7 +209,7 @@ export function renderIfsReturnCandidates(container, payload) {
   if (!candidates.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "İade adayı yok.";
+    empty.textContent = "Ä°ade adayÄ± yok.";
     fragment.appendChild(empty);
     container.replaceChildren(fragment);
     return;
@@ -230,7 +237,7 @@ export function renderIfsReturnPrintArea(payload) {
   if (!candidates.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "İade adayı yok.";
+    empty.textContent = "Ä°ade adayÄ± yok.";
     container.replaceChildren(empty);
     activatePrintArea(container);
     return;
@@ -276,11 +283,6 @@ export function renderPackageLabelChecklistPrintArea(payload) {
 
   const rows = packageLabelChecklistRows(payload);
   const fragment = document.createDocumentFragment();
-  const title = document.createElement("h1");
-  title.className = "package-label-checklist-print-title";
-  title.textContent = "Package Label Checklist";
-  fragment.appendChild(title);
-  fragment.appendChild(renderPackageLabelChecklistSummary(payload, rows));
 
   if (!rows.length) {
     const empty = document.createElement("p");
@@ -555,10 +557,10 @@ function renderIfsReturnCandidateTable(candidates) {
   const headerRow = document.createElement("tr");
   for (const label of [
     "Malzeme",
-    "Malzeme adı",
+    "Malzeme adÄ±",
     "Lokasyon",
     "Lot",
-    "Kullanılabilir",
+    "KullanÄ±labilir",
     "Eldeki",
     "Birim",
   ]) {
@@ -594,6 +596,13 @@ function renderPackageLabelChecklistTable(rows) {
   const table = document.createElement("table");
   table.className = "data-table package-label-checklist-table";
 
+  const colgroup = document.createElement("colgroup");
+  for (const column of PACKAGE_LABEL_CHECKLIST_ROW_SOURCES) {
+    const col = document.createElement("col");
+    col.className = column.colClassName;
+    colgroup.appendChild(col);
+  }
+
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
   for (const column of PACKAGE_LABEL_CHECKLIST_ROW_SOURCES) {
@@ -605,21 +614,69 @@ function renderPackageLabelChecklistTable(rows) {
   thead.appendChild(headerRow);
 
   const tbody = document.createElement("tbody");
-  rows.forEach((row, index) => {
-    const tr = document.createElement("tr");
-    for (const column of PACKAGE_LABEL_CHECKLIST_ROW_SOURCES) {
-      appendChecklistCell(
-        tr,
-        packageLabelChecklistCellValue(row, column, index),
-        column.className,
-      );
-    }
-    tbody.appendChild(tr);
-  });
+  for (const group of packageLabelChecklistGroups(rows)) {
+    group.rows.forEach((renderedRow, rowIndex) => {
+      const tr = document.createElement("tr");
+      if (rowIndex === 0) {
+        tr.classList.add("package-label-checklist-group-start");
+      }
+      renderedRow.values.forEach((value, columnIndex) => {
+        const column = PACKAGE_LABEL_CHECKLIST_ROW_SOURCES[columnIndex];
+        if (columnIndex < PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT) {
+          if (rowIndex > 0) {
+            return;
+          }
+          appendChecklistCell(
+            tr,
+            value,
+            checklistCellClassName(column.className, "package-label-checklist-group-cell"),
+            group.rows.length,
+          );
+          return;
+        }
+        appendChecklistCell(tr, value, column.className);
+      });
+      tbody.appendChild(tr);
+    });
+  }
 
-  table.append(thead, tbody);
+  table.append(colgroup, thead, tbody);
   tableWrap.appendChild(table);
   return tableWrap;
+}
+
+function packageLabelChecklistGroups(rows) {
+  const groups = [];
+  const groupByKey = new Map();
+
+  for (const row of rows) {
+    const renderedRow = packageLabelChecklistRenderedRow(row);
+    const key = packageLabelChecklistGroupKey(renderedRow);
+    let group = groupByKey.get(key);
+    if (!group) {
+      group = { rows: [] };
+      groupByKey.set(key, group);
+      groups.push(group);
+    }
+    group.rows.push(renderedRow);
+  }
+
+  return groups;
+}
+
+function packageLabelChecklistRenderedRow(row) {
+  return {
+    values: PACKAGE_LABEL_CHECKLIST_ROW_SOURCES.map((column) =>
+      packageLabelChecklistCellValue(row, column),
+    ),
+  };
+}
+
+function packageLabelChecklistGroupKey(renderedRow) {
+  return renderedRow.values
+    .slice(0, PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT)
+    .map(checklistCellText)
+    .join("\u0000");
 }
 
 function packageLabelChecklistRows(payload) {
@@ -704,16 +761,13 @@ function uniqueChecklistValueCount(rows, keys) {
   ).size;
 }
 
-function packageLabelChecklistCellValue(row, column, index) {
+function packageLabelChecklistCellValue(row, column) {
   if (typeof column.value === "function") {
-    return column.value(row, column, index);
+    return column.value(row, column);
   }
   const value = checklistRowValue(row, column.keys);
   if (value !== null) {
     return value;
-  }
-  if (column.label === "No") {
-    return index + 1;
   }
   return null;
 }
@@ -739,39 +793,32 @@ function packageLabelChecklistStatusText(row) {
   return null;
 }
 
+function packageLabelChecklistHandlingUnitText(row, column) {
+  const value = checklistRowValue(row, column.keys);
+  if (value === null) {
+    return null;
+  }
+  const text = String(value).trim();
+  return /^\d{1,3}(\.\d{3})+$/.test(text) ? text.replace(/\./g, "") : text;
+}
+
+function packageLabelChecklistReceiptDateText(row, column) {
+  const value = checklistRowValue(row, column.keys);
+  return value === null ? null : formatTimestamp(value);
+}
+
 function packageLabelChecklistMachineText(row, column) {
-  const status = String(row?.operation_match_status || "").trim().toLowerCase();
+  const status = String(
+    row?.operation_match_status ?? row?.match_status ?? "",
+  ).trim().toLowerCase();
+  const machine = checklistRowValue(row, column.keys);
   if (status === "ambiguous") {
-    return "Belirsiz";
+    return machine ?? "Belirsiz";
   }
   if (status === "lookup_failed") {
     return null;
   }
-  return checklistRowValue(row, column.keys);
-}
-
-function packageLabelChecklistOperationStatusText(row) {
-  const status = String(row?.operation_match_status || "").trim().toLowerCase();
-  const matchCount = Number(row?.operation_match_count || 0);
-  if (status === "matched") {
-    return "Eslesmis";
-  }
-  if (status === "matched_by_job_order") {
-    return "Is emrine gore eslesmis";
-  }
-  if (status === "ambiguous") {
-    return matchCount > 0 ? `Belirsiz (${matchCount} aday)` : "Belirsiz";
-  }
-  if (status === "not_found") {
-    return "Makine yok";
-  }
-  if (status === "no_job_order") {
-    return "Is emri yok";
-  }
-  if (status === "lookup_failed") {
-    return "IFS operasyonu okunamadi";
-  }
-  return checklistRowValue(row, ["operation_match_status", "match_status"]);
+  return machine;
 }
 
 function packageLabelChecklistStatus(row) {
@@ -816,11 +863,11 @@ function renderMissingProductionTable(machines) {
   for (const label of [
     "Salon",
     "Makine",
-    "İş emri",
-    "Ürün",
-    "Çevrim",
-    "Son kayıt",
-    "Kayıt",
+    "Ä°ÅŸ emri",
+    "ÃœrÃ¼n",
+    "Ã‡evrim",
+    "Son kayÄ±t",
+    "KayÄ±t",
   ]) {
     const th = document.createElement("th");
     th.scope = "col";
@@ -890,10 +937,10 @@ function renderIfsSummary(payload) {
       "Aktif HM-02/03/04",
       payload?.active_used_part_count ?? payload?.active_used_hm02_part_count,
     ],
-    ["Çizelge iş emri", payload?.planning_order_count],
-    ["Çizelge operasyon", payload?.planning_operation_count],
+    ["Ã‡izelge iÅŸ emri", payload?.planning_order_count],
+    ["Ã‡izelge operasyon", payload?.planning_operation_count],
     [
-      "Çizelge HM-02/03/04",
+      "Ã‡izelge HM-02/03/04",
       payload?.planning_used_part_count ?? payload?.planning_used_hm02_part_count,
     ],
     ["Toplam malzeme", payload?.used_material_count],
@@ -901,7 +948,7 @@ function renderIfsSummary(payload) {
       "Toplam HM-02/03/04",
       payload?.used_part_count ?? payload?.used_hm02_part_count,
     ],
-    ["İade adayı", payload?.return_candidate_count],
+    ["Ä°ade adayÄ±", payload?.return_candidate_count],
   ];
 
   for (const [label, value] of items) {
@@ -928,7 +975,7 @@ function renderIfsSummary(payload) {
   if (payload?.planning_source_name || payload?.planning_source_path) {
     const planningSource = document.createElement("p");
     planningSource.className = "entry-meta ifs-planning-source";
-    planningSource.textContent = `Çizelge dosyası: ${
+    planningSource.textContent = `Ã‡izelge dosyasÄ±: ${
       payload.planning_source_name || payload.planning_source_path
     }`;
     if (payload?.planning_source_path) {
@@ -949,15 +996,26 @@ function appendTableCell(row, value, className) {
   row.appendChild(cell);
 }
 
-function appendChecklistCell(row, value, className) {
+function appendChecklistCell(row, value, className, rowSpan) {
   const cell = document.createElement("td");
   if (className) {
     cell.className = className;
   }
-  cell.textContent = value === null || value === undefined || value === ""
+  if (rowSpan) {
+    cell.rowSpan = rowSpan;
+  }
+  cell.textContent = checklistCellText(value);
+  row.appendChild(cell);
+}
+
+function checklistCellText(value) {
+  return value === null || value === undefined || value === ""
     ? ""
     : displayValue(value);
-  row.appendChild(cell);
+}
+
+function checklistCellClassName(...classNames) {
+  return classNames.filter(Boolean).join(" ");
 }
 
 function activatePrintArea(container) {
@@ -1062,7 +1120,7 @@ function renderEntryRow(entry) {
   const status = document.createElement("span");
   updateSyncStatusPill(status, entry.sync_status);
   if (entry.excel_row_number) {
-    status.title = `Excel satırı ${entry.excel_row_number}`;
+    status.title = `Excel satÄ±rÄ± ${entry.excel_row_number}`;
   }
 
   row.append(details, status);
@@ -1093,7 +1151,7 @@ function renderAuxiliarySubmissionRow(submission) {
   const status = document.createElement("span");
   updateSyncStatusPill(status, submission.sync_status);
   if (submission.excel_start_row && submission.excel_end_row) {
-    status.title = `Excel satırları ${submission.excel_start_row}-${submission.excel_end_row}`;
+    status.title = `Excel satÄ±rlarÄ± ${submission.excel_start_row}-${submission.excel_end_row}`;
   }
 
   row.append(details, status);
@@ -1122,6 +1180,32 @@ function renderAmountControlShiftRow(amountShift) {
   return row;
 }
 
+function renderBreakdownRow(breakdown) {
+  const row = document.createElement("article");
+  row.className = "entry-row";
+
+  const details = document.createElement("div");
+  const title = document.createElement("p");
+  title.className = "entry-title";
+  title.textContent = breakdownTitle(breakdown);
+
+  const meta = document.createElement("p");
+  meta.className = "entry-meta";
+  meta.textContent = breakdownMeta(breakdown);
+
+  details.append(title, meta);
+
+  const status = document.createElement("span");
+  updateStatusPill(
+    status,
+    `${displayValue(breakdown.duration_minutes)} dk`,
+    "warning",
+  );
+
+  row.append(details, status);
+  return row;
+}
+
 function entryTitle(entry) {
   const payload = entry.payload || {};
   const machine = payload.col_f || "Makine";
@@ -1132,16 +1216,16 @@ function entryTitle(entry) {
 function entryMeta(entry) {
   const payload = entry.payload || {};
   const pieces = [
-    payload.col_j ? `Toplam göz ${payload.col_j}` : "",
-    payload.col_k ? `Çalışan göz ${payload.col_k}` : "",
-    entry.excel_row_number ? `Excel satırı ${entry.excel_row_number}` : "",
+    payload.col_j ? `Toplam gÃ¶z ${payload.col_j}` : "",
+    payload.col_k ? `Ã‡alÄ±ÅŸan gÃ¶z ${payload.col_k}` : "",
+    entry.excel_row_number ? `Excel satÄ±rÄ± ${entry.excel_row_number}` : "",
     formatTimestamp(entry.submitted_at || entry.created_at),
   ].filter(Boolean);
   return pieces.join(" / ");
 }
 
 function auxiliarySubmissionTitle(submission) {
-  return `Yardımcı sistemler / ${submission.recorded_date || "Tarih yok"}`;
+  return `YardÄ±mcÄ± sistemler / ${submission.recorded_date || "Tarih yok"}`;
 }
 
 function auxiliarySubmissionMeta(submission) {
@@ -1171,6 +1255,26 @@ function amountControlShiftMeta(amountShift) {
     amountShift.worker_names ? `Calisanlar: ${amountShift.worker_names}` : "",
     breakdownCount ? `${breakdownCount} ariza` : "",
     formatTimestamp(amountShift.created_at),
+  ].filter(Boolean);
+  return pieces.join(" / ");
+}
+
+function breakdownTitle(breakdown) {
+  return [
+    dateForDisplay(breakdown.record_date),
+    breakdown.machine_code,
+    breakdown.shift,
+    breakdown.stop_reason || breakdown.reason,
+  ].filter(Boolean).join(" / ");
+}
+
+function breakdownMeta(breakdown) {
+  const pieces = [
+    breakdown.job_order ? `Is emri: ${breakdown.job_order}` : "",
+    breakdown.produced_product ? `Urun: ${breakdown.produced_product}` : "",
+    breakdown.stopped_at ? `Baslangic: ${formatTimestamp(breakdown.stopped_at)}` : "",
+    breakdown.resumed_at ? `Bitis: ${formatTimestamp(breakdown.resumed_at)}` : "",
+    formatTimestamp(breakdown.created_at),
   ].filter(Boolean);
   return pieces.join(" / ");
 }
