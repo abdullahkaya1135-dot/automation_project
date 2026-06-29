@@ -1,13 +1,13 @@
-import { ACTIVE_CONTEXT_KEY } from "./constants.js?v=20260629-shift-manager-labels-v1";
+import { ACTIVE_CONTEXT_KEY } from "./constants.js?v=20260629-label-material-availability-v1";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
-} from "./dates.js?v=20260629-shift-manager-labels-v1";
+} from "./dates.js?v=20260629-label-material-availability-v1";
 import {
   setInputValue,
   updateStatusPill,
-} from "./utils.js?v=20260629-shift-manager-labels-v1";
+} from "./utils.js?v=20260629-label-material-availability-v1";
 
 export function updateContextStatus(context) {
   const status = document.querySelector("#context-status");

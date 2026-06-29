@@ -1,14 +1,14 @@
-import { apiJson } from "../api.js?v=20260629-shift-manager-labels-v1";
+import { apiJson } from "../api.js?v=20260629-label-material-availability-v1";
 import {
   renderListError,
   renderLoading,
-} from "./render.js?v=20260629-shift-manager-labels-v1";
+} from "./render.js?v=20260629-label-material-availability-v1";
 import {
   displayValue,
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260629-shift-manager-labels-v1";
+} from "./utils.js?v=20260629-label-material-availability-v1";
 
 const NEAR_COMPLETE_THRESHOLD = 3;
 const NOTIFICATION_CHECKBOX_SELECTOR = "input[data-shift-manager-notified]";

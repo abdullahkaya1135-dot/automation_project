@@ -14,6 +14,7 @@ from app.core.config import Settings
 from app.integrations.ifs.client import (
     IFSClientError,
     fetch_inventory_part_descriptions,
+    fetch_label_material_availability,
     fetch_operation_history_rows,
     fetch_operation_hm02_materials,
     fetch_package_label_checklist,
@@ -1856,6 +1857,243 @@ def test_fetch_used_hm02_materials_collects_materials_for_all_operations():
         "HM-03-B",
         "HM-04-C",
     ]
+
+
+def test_fetch_label_material_availability_blocks_by_aggregated_u1_available_qty():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = unquote(request.url.raw_path.decode()).split("?", 1)[0]
+        if "GetOperations" in path:
+            assert "OperStatusCode" in request.url.params["$select"]
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2615",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 10,
+                            "OperStatusCode": "InProcess",
+                            "PreferredResourceId": "135",
+                            "WorkCenterNo": "WC-1",
+                            "PartNo": "MM-PET-A",
+                            "PartNoDesc": "Bottle A",
+                        },
+                        {
+                            "OrderNo": "2616",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 20,
+                            "OperStatusCode": "InProcess",
+                            "PreferredResourceId": "136",
+                            "WorkCenterNo": "WC-2",
+                            "PartNo": "MM-PET-B",
+                            "PartNoDesc": "Bottle B",
+                        },
+                        {
+                            "OrderNo": "2617",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 30,
+                            "OperStatusCode": "Released",
+                            "PreferredResourceId": "137",
+                        },
+                    ]
+                },
+            )
+        if "OperationMaterialArray" in path and "OrderNo='2615'" in path:
+            assert request.url.params["$filter"] == (
+                "(startswith(PartNo,'HM') or startswith(PartNo,'YM'))"
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2615",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 10,
+                            "LineItemNo": 1,
+                            "PartNo": "HM-A",
+                            "IssueToLoc": "U1",
+                            "QtyRemainingToReserve": 7,
+                            "QtyAvailable": 100,
+                        },
+                        {
+                            "OrderNo": "2615",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 10,
+                            "LineItemNo": 2,
+                            "PartNo": "HM-B",
+                            "IssueToLoc": None,
+                            "QtyRemainingToReserve": 99,
+                            "QtyAvailable": 0,
+                        },
+                        {
+                            "OrderNo": "2615",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 10,
+                            "LineItemNo": 3,
+                            "PartNo": "YM-C",
+                            "IssueToLoc": "U2",
+                            "QtyRemainingToReserve": 5,
+                            "QtyAvailable": 5,
+                        },
+                    ]
+                },
+            )
+        if "OperationMaterialArray" in path and "OrderNo='2616'" in path:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "OrderNo": "2616",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 20,
+                            "LineItemNo": 1,
+                            "PartNo": "HM-A",
+                            "IssueToLoc": "U1",
+                            "QtyRemainingToReserve": 6,
+                            "QtyAvailable": 50,
+                        },
+                        {
+                            "OrderNo": "2616",
+                            "ReleaseNo": "*",
+                            "SequenceNo": "*",
+                            "OperationNo": 20,
+                            "LineItemNo": 2,
+                            "PartNo": "YM-D",
+                            "IssueToLoc": "U1",
+                            "QtyRemainingToReserve": 1,
+                            "QtyAvailable": 0,
+                        },
+                    ]
+                },
+            )
+        if "OperationMaterialArray" in path and "OrderNo='2617'" in path:
+            return httpx.Response(500, text="Released operation should be ignored")
+        if path.endswith("/InventoryPartInStockHandling.svc/InventoryPartInStockSet"):
+            stock_filter = request.url.params["$filter"]
+            assert "LocationNo eq 'U1'" in stock_filter
+            assert "AvailableQty gt 0" not in stock_filter
+            assert "PartNo eq 'HM-A'" in stock_filter
+            assert "PartNo eq 'HM-B'" in stock_filter
+            assert "PartNo eq 'YM-C'" in stock_filter
+            assert "PartNo eq 'YM-D'" in stock_filter
+            assert request.url.params["$select"] == ",".join(ifs_client.STOCK_SELECT_FIELDS)
+            return httpx.Response(
+                200,
+                json={
+                    "@odata.count": 3,
+                    "value": [
+                        {
+                            "Contract": "S01",
+                            "PartNo": "HM-A",
+                            "LocationNo": "U1",
+                            "AvailableQty": 10,
+                            "QtyOnhand": 20,
+                            "ObjId": "stock-1",
+                        },
+                        {
+                            "Contract": "S01",
+                            "PartNo": "HM-B",
+                            "LocationNo": "U1",
+                            "AvailableQty": 0,
+                            "QtyOnhand": 0,
+                            "ObjId": "stock-2",
+                        },
+                        {
+                            "Contract": "S01",
+                            "PartNo": "YM-D",
+                            "LocationNo": "U1",
+                            "AvailableQty": 1,
+                            "QtyOnhand": 1,
+                            "ObjId": "stock-3",
+                        },
+                    ],
+                },
+            )
+        return httpx.Response(404, text=f"Unexpected URL: {request.url}")
+
+    async def run() -> dict:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_label_material_availability(
+                settings,
+                client=client,
+                access_token="test-token",
+                concurrency=1,
+            )
+
+    payload = asyncio.run(run())
+
+    request_paths = [unquote(request.url.raw_path.decode()) for request in requests]
+    assert not any("OrderNo='2617'" in path for path in request_paths)
+    assert payload["summary"]["monitor_only"] is True
+    assert payload["summary"]["material_prefixes"] == ["HM", "YM"]
+    assert payload["summary"]["active_operation_status"] == "InProcess"
+    assert payload["summary"]["blocking_stock_field"] == "AvailableQty"
+    assert payload["summary"]["demand_field"] == "QtyRemainingToReserve"
+    assert payload["summary"]["source_operation_count"] == 3
+    assert payload["summary"]["operation_count"] == 2
+    assert payload["summary"]["checked_row_count"] == 5
+    assert payload["summary"]["blocked_row_count"] == 2
+    assert payload["summary"]["blocked_parts"] == ["HM-A"]
+    assert payload["summary"]["status_counts"] == {
+        "blocked_insufficient_u1_available": 2,
+        "ignored_non_u1_issue_location": 1,
+        "issue_location_unknown": 1,
+        "ok": 1,
+    }
+    assert payload["part_summaries"] == [
+        {
+            "part_no": "HM-A",
+            "u1_demand_qty_remaining_to_reserve": 13,
+            "u1_available_qty": 10,
+            "u1_qty_onhand": 20,
+            "u1_shortage_qty": 3,
+            "is_blocked": True,
+        },
+        {
+            "part_no": "HM-B",
+            "u1_demand_qty_remaining_to_reserve": 0,
+            "u1_available_qty": 0,
+            "u1_qty_onhand": 0,
+            "u1_shortage_qty": 0,
+            "is_blocked": False,
+        },
+        {
+            "part_no": "YM-C",
+            "u1_demand_qty_remaining_to_reserve": 0,
+            "u1_available_qty": 0,
+            "u1_qty_onhand": 0,
+            "u1_shortage_qty": 0,
+            "is_blocked": False,
+        },
+        {
+            "part_no": "YM-D",
+            "u1_demand_qty_remaining_to_reserve": 1,
+            "u1_available_qty": 1,
+            "u1_qty_onhand": 1,
+            "u1_shortage_qty": 0,
+            "is_blocked": False,
+        },
+    ]
+    assert [row["part_no"] for row in payload["blocked_rows"]] == ["HM-A", "HM-A"]
+    assert {row["order_no"] for row in payload["blocked_rows"]} == {"2615", "2616"}
+    by_part = {row["part_no"]: row for row in payload["checked_rows"]}
+    assert by_part["HM-B"]["status"] == "issue_location_unknown"
+    assert by_part["YM-C"]["status"] == "ignored_non_u1_issue_location"
+    assert by_part["YM-D"]["status"] == "ok"
+    assert by_part["YM-D"]["material_qty_available_reference"] == 0
 
 
 def test_fetch_planning_used_hm02_materials_collects_visible_order_materials():

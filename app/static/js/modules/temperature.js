@@ -1,4 +1,4 @@
-import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260629-shift-manager-labels-v1";
+import { TEMPERATURE_SHORTHAND_SELECTORS } from "./constants.js?v=20260629-label-material-availability-v1";
 
 export function initializeTemperatureShorthandInputs() {
   for (const selector of TEMPERATURE_SHORTHAND_SELECTORS) {

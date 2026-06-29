@@ -5,7 +5,7 @@ import {
   setInputValue,
   updateStatusPill,
   uniqueSorted,
-} from "./utils.js?v=20260629-shift-manager-labels-v1";
+} from "./utils.js?v=20260629-label-material-availability-v1";
 
 let shopOrderPairs = [];
 

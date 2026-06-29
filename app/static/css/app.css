@@ -580,6 +580,47 @@ button:disabled {
   min-width: 1020px;
 }
 
+.label-material-availability-table {
+  min-width: 1120px;
+}
+
+.label-material-availability-title {
+  margin: 6px 0 0;
+  color: #172026;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.label-material-availability-status-cell {
+  white-space: nowrap;
+}
+
+.label-material-availability-status-cell .status-pill {
+  min-height: 24px;
+  padding: 2px 8px;
+  font-size: 0.76rem;
+}
+
+.label-material-availability-number-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.label-material-availability-machine-cell,
+.label-material-availability-order-cell,
+.label-material-availability-op-cell {
+  white-space: nowrap;
+}
+
+.label-material-availability-part-cell,
+.label-material-availability-product-cell {
+  overflow-wrap: anywhere;
+}
+
+.label-material-availability-row-blocked > td {
+  background: #fff8f6;
+}
+
 .shift-manager-table {
   min-width: 1120px;
 }

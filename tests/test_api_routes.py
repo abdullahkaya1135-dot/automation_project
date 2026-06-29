@@ -123,6 +123,10 @@ PAGE_SECTION_EXPECTATIONS = {
         'id="run-ifs-return-candidates"',
         'id="print-ifs-return-candidates"',
         'id="ifs-return-print-area"',
+        'id="label-material-availability-heading"',
+        'id="label-material-availability-message"',
+        'id="run-label-material-availability"',
+        'id="label-material-availability-results"',
         'id="run-package-label-checklist"',
         'id="print-package-label-checklist"',
         'id="package-label-checklist-print-area"',
@@ -141,6 +145,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-label-material-availability"',
         'id="run-package-label-checklist"',
     ),
     "/process": (
@@ -154,6 +159,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-label-material-availability"',
         'id="run-package-label-checklist"',
     ),
     "/auxiliary": (
@@ -168,6 +174,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-label-material-availability"',
         'id="run-package-label-checklist"',
     ),
     "/amount-control": (
@@ -182,6 +189,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-label-material-availability"',
         'id="run-package-label-checklist"',
     ),
     "/breakdowns": (
@@ -196,6 +204,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
+        'id="run-label-material-availability"',
         'id="run-package-label-checklist"',
     ),
     "/reports": (
@@ -1686,6 +1695,111 @@ def test_ifs_package_label_checklist_endpoint_returns_summary_and_rows(
     }
 
 
+def test_ifs_label_material_availability_endpoint_returns_monitor_payload(
+    client,
+    monkeypatch,
+):
+    async def fake_fetch(_settings):
+        return {
+            "summary": {
+                "generated_at": "2026-06-29T10:00:00+03:00",
+                "monitor_only": True,
+                "material_prefixes": ["HM", "YM"],
+                "active_operation_status": "InProcess",
+                "u1_location": "U1",
+                "blocking_stock_field": "AvailableQty",
+                "demand_field": "QtyRemainingToReserve",
+                "material_qty_available_reference_field": "QtyAvailable",
+                "source_operation_count": 2,
+                "operation_count": 2,
+                "checked_row_count": 1,
+                "blocked_row_count": 1,
+                "part_count": 1,
+                "blocked_part_count": 1,
+                "stock_row_count": 1,
+                "stock_part_count": 1,
+                "status_counts": {"blocked_insufficient_u1_available": 1},
+                "blocked_parts": ["HM-A"],
+            },
+            "part_summaries": [
+                {
+                    "part_no": "HM-A",
+                    "u1_demand_qty_remaining_to_reserve": 13,
+                    "u1_available_qty": 10,
+                    "u1_qty_onhand": 20,
+                    "u1_shortage_qty": 3,
+                    "is_blocked": True,
+                }
+            ],
+            "stock_rows": [
+                {
+                    "contract": "S01",
+                    "part_no": "HM-A",
+                    "material_name": "Material A",
+                    "location_no": "U1",
+                    "available_qty": 10,
+                    "qty_onhand": 20,
+                }
+            ],
+            "checked_rows": [
+                {
+                    "order_no": "2615",
+                    "release_no": "*",
+                    "sequence_no": "*",
+                    "line_item_no": 1,
+                    "operation_no": 10,
+                    "part_no": "HM-A",
+                    "issue_to_location": "U1",
+                    "qty_remaining_to_reserve": 13,
+                    "qty_available": 100,
+                    "material_qty_available_reference": 100,
+                    "status": "blocked_insufficient_u1_available",
+                    "is_blocked": True,
+                    "hard_check_applicable": True,
+                    "u1_available_qty": 10,
+                    "u1_demand_qty_remaining_to_reserve": 13,
+                    "u1_shortage_qty": 3,
+                }
+            ],
+            "blocked_rows": [
+                {
+                    "order_no": "2615",
+                    "release_no": "*",
+                    "sequence_no": "*",
+                    "line_item_no": 1,
+                    "operation_no": 10,
+                    "part_no": "HM-A",
+                    "issue_to_location": "U1",
+                    "qty_remaining_to_reserve": 13,
+                    "qty_available": 100,
+                    "material_qty_available_reference": 100,
+                    "status": "blocked_insufficient_u1_available",
+                    "is_blocked": True,
+                    "hard_check_applicable": True,
+                    "u1_available_qty": 10,
+                    "u1_demand_qty_remaining_to_reserve": 13,
+                    "u1_shortage_qty": 3,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.features.ifs.api.fetch_label_material_availability",
+        fake_fetch,
+    )
+
+    response = client.get("/api/ifs/label-material-availability")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["monitor_only"] is True
+    assert payload["summary"]["material_prefixes"] == ["HM", "YM"]
+    assert payload["summary"]["blocking_stock_field"] == "AvailableQty"
+    assert payload["summary"]["blocked_row_count"] == 1
+    assert payload["checked_rows"][0]["material_qty_available_reference"] == 100
+    assert payload["blocked_rows"][0]["part_no"] == "HM-A"
+
+
 def test_ifs_operations_endpoint_returns_pet_ongoing_operations(client, monkeypatch):
     async def fake_fetch(_settings):
         return [
@@ -2241,20 +2355,28 @@ def test_breakdown_javascript_clears_stale_job_product_on_date_context_change():
 
 def test_reports_javascript_wires_missing_production_check():
     source = Path("app/static/js/modules/main-page.js").read_text(encoding="utf-8")
+    material_source = Path(
+        "app/static/js/modules/label-material-availability.js"
+    ).read_text(encoding="utf-8")
 
     assert "#generate-whatsapp-status-message" in source
     assert "#copy-whatsapp-status-message" in source
     assert "#whatsapp-status-message-text" in source
     assert "#run-missing-production-starts" in source
+    assert "#run-label-material-availability" in source
+    assert "#label-material-availability-message" in source
     assert "#run-package-label-checklist" in source
     assert "#print-package-label-checklist" in source
     assert "#production-loss-form" in source
     assert "#sync-process-date" in source
     assert "/api/ifs/whatsapp-status-message" in source
     assert "/api/ifs/missing-production-starts?" in source
+    assert "label-material-availability.js" in source
     assert "package-label-checklist.js" in source
     assert "/api/production-loss-reports" in source
     assert "process_date" in source
+    assert "/api/ifs/label-material-availability" in material_source
+    assert "renderLabelMaterialAvailability" in material_source
 
 
 def test_package_label_checklist_renderer_uses_requested_columns():
@@ -2283,6 +2405,55 @@ def test_package_label_checklist_renderer_uses_requested_columns():
     assert "packageLabelChecklistHandlingUnitText" in source
     assert "packageLabelChecklistReceiptDateText" in source
     assert 'text.replace(/\\./g, "")' in source
+
+
+def test_label_material_availability_renderer_shows_part_totals_and_audit_rows():
+    source = Path("app/static/js/modules/render.js").read_text(encoding="utf-8")
+    columns_start = source.index("const LABEL_MATERIAL_AVAILABILITY_COLUMNS")
+    columns_end = source.index("export function renderEntryList", columns_start)
+    columns = source[columns_start:columns_end]
+    labels = [
+        'label: "Status"',
+        'label: "Machine"',
+        'label: "Order"',
+        'label: "Op"',
+        'label: "Material"',
+        'label: "Issue Loc"',
+        'label: "Row Demand"',
+        'label: "U1 Demand"',
+        'label: "U1 Available"',
+        'label: "Shortage"',
+        'label: "IFS QtyAvailable"',
+        'label: "Product"',
+    ]
+    positions = [columns.index(label) for label in labels]
+
+    assert positions == sorted(positions)
+    assert "const LABEL_MATERIAL_AVAILABILITY_PART_COLUMNS" in source
+    assert "payload?.part_summaries" in source
+    assert "payload?.blocked_rows" in source
+    assert "payload?.checked_rows" in source
+    assert "Parca Toplamlari" in source
+    assert "U1 Uygunluk Uyarilari" in source
+    assert "Tum Kontrol Satirlari" in source
+    assert "label-material-availability-row-blocked" in source
+    assert "blocked_insufficient_u1_available" in source
+    assert "issue_location_unknown" in source
+    assert "ignored_non_u1_issue_location" in source
+    assert "updateStatusPill(pill, status.label, status.kind)" in source
+
+
+def test_label_material_availability_css_keeps_monitor_tables_scannable():
+    css = Path("app/static/css/app.css").read_text(encoding="utf-8")
+
+    assert ".label-material-availability-table" in css
+    assert "min-width: 1120px;" in css
+    assert ".label-material-availability-status-cell .status-pill" in css
+    assert "font-size: 0.76rem;" in css
+    assert ".label-material-availability-number-cell" in css
+    assert "text-align: right;" in css
+    assert ".label-material-availability-row-blocked > td" in css
+    assert "background: #fff8f6;" in css
 
 
 def test_package_label_checklist_renderer_marks_future_long_text_columns():

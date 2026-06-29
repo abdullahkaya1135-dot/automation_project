@@ -1,14 +1,14 @@
-import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260629-shift-manager-labels-v1";
-import { localIsoDate } from "./dates.js?v=20260629-shift-manager-labels-v1";
+import { AMOUNT_CONTROL_SHIFTS } from "./constants.js?v=20260629-label-material-availability-v1";
+import { localIsoDate } from "./dates.js?v=20260629-label-material-availability-v1";
 import {
   machineOptionsFromBootstrap,
   normalizeShopOrderOptions,
-} from "./bootstrap-options.js?v=20260629-shift-manager-labels-v1";
+} from "./bootstrap-options.js?v=20260629-label-material-availability-v1";
 import {
   cleanOptional,
   cleanRequired,
   uniqueSorted,
-} from "./utils.js?v=20260629-shift-manager-labels-v1";
+} from "./utils.js?v=20260629-label-material-availability-v1";
 
 let amountControlMachines = [];
 let amountControlShopOrders = [];

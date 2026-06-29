@@ -7,6 +7,7 @@ from ...domain.request_settings import settings_from_request
 from ...integrations.ifs.client import (
     IFSClientError,
     IFSConfigurationError,
+    fetch_label_material_availability,
     fetch_package_label_checklist,
     fetch_pet_ongoing_operations,
     fetch_u1_hm02_stock,
@@ -64,6 +65,15 @@ async def ifs_package_label_checklist(request: Request) -> dict[str, Any]:
     settings = settings_from_request(request)
     try:
         return await fetch_package_label_checklist(settings)
+    except (IFSConfigurationError, IFSClientError) as exc:
+        raise _ifs_http_exception(exc) from exc
+
+
+@router.get("/label-material-availability")
+async def ifs_label_material_availability(request: Request) -> dict[str, Any]:
+    settings = settings_from_request(request)
+    try:
+        return await fetch_label_material_availability(settings)
     except (IFSConfigurationError, IFSClientError) as exc:
         raise _ifs_http_exception(exc) from exc
 

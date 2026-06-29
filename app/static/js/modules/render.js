@@ -1,10 +1,10 @@
-import { SYNC_LABELS } from "./constants.js?v=20260629-shift-manager-labels-v1";
-import { dateForDisplay } from "./dates.js?v=20260629-shift-manager-labels-v1";
+import { SYNC_LABELS } from "./constants.js?v=20260629-label-material-availability-v1";
+import { dateForDisplay } from "./dates.js?v=20260629-label-material-availability-v1";
 import {
   displayValue,
   formatTimestamp,
   updateStatusPill,
-} from "./utils.js?v=20260629-shift-manager-labels-v1";
+} from "./utils.js?v=20260629-label-material-availability-v1";
 
 const PRODUCTION_LOSS_SHIFT_COLUMNS = [
   {
@@ -114,6 +114,101 @@ const PACKAGE_LABEL_CHECKLIST_ROW_SOURCES = [
   },
 ];
 const PACKAGE_LABEL_CHECKLIST_GROUP_COLUMN_COUNT = 4;
+const LABEL_MATERIAL_AVAILABILITY_COLUMNS = [
+  {
+    label: "Status",
+    key: "status",
+    className: "label-material-availability-status-cell",
+  },
+  {
+    label: "Machine",
+    key: "preferred_resource_id",
+    className: "mono-cell label-material-availability-machine-cell",
+  },
+  {
+    label: "Order",
+    key: "order_no",
+    className: "mono-cell label-material-availability-order-cell",
+  },
+  {
+    label: "Op",
+    key: "operation_no",
+    className: "mono-cell label-material-availability-op-cell",
+  },
+  {
+    label: "Material",
+    key: "part_no",
+    className: "mono-cell label-material-availability-part-cell",
+  },
+  {
+    label: "Issue Loc",
+    key: "issue_to_location",
+    className: "mono-cell",
+  },
+  {
+    label: "Row Demand",
+    key: "qty_remaining_to_reserve",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "U1 Demand",
+    key: "u1_demand_qty_remaining_to_reserve",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "U1 Available",
+    key: "u1_available_qty",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "Shortage",
+    key: "u1_shortage_qty",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "IFS QtyAvailable",
+    key: "material_qty_available_reference",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "Product",
+    key: "operation_part_description",
+    className: "label-material-availability-product-cell",
+  },
+];
+const LABEL_MATERIAL_AVAILABILITY_PART_COLUMNS = [
+  {
+    label: "Status",
+    key: "status",
+    className: "label-material-availability-status-cell",
+  },
+  {
+    label: "Material",
+    key: "part_no",
+    className: "mono-cell label-material-availability-part-cell",
+  },
+  {
+    label: "U1 Demand",
+    key: "u1_demand_qty_remaining_to_reserve",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "U1 Available",
+    key: "u1_available_qty",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "U1 Onhand",
+    key: "u1_qty_onhand",
+    className: "label-material-availability-number-cell",
+  },
+  {
+    label: "Shortage",
+    key: "u1_shortage_qty",
+    className: "label-material-availability-number-cell",
+  },
+];
+
 
 export function renderEntryList(container, entries, emptyText) {
   if (!container) {
@@ -295,6 +390,63 @@ export function renderPackageLabelChecklistPrintArea(payload) {
 
   container.replaceChildren(fragment);
   activatePrintArea(container);
+}
+
+export function renderLabelMaterialAvailability(container, payload) {
+  if (!container) {
+    return;
+  }
+
+  const checkedRows = labelMaterialAvailabilityCheckedRows(payload);
+  const blockedRows = labelMaterialAvailabilityBlockedRows(payload);
+  const partSummaries = labelMaterialAvailabilityPartSummaries(payload);
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(renderLabelMaterialAvailabilitySummary(payload));
+
+  if (partSummaries.length) {
+    fragment.appendChild(
+      renderLabelMaterialAvailabilitySection(
+        "Parca Toplamlari",
+        partSummaries,
+        "label-material-availability-parts",
+        LABEL_MATERIAL_AVAILABILITY_PART_COLUMNS,
+      ),
+    );
+  }
+
+  if (blockedRows.length) {
+    fragment.appendChild(
+      renderLabelMaterialAvailabilitySection(
+        "U1 Uygunluk Uyarilari",
+        blockedRows,
+        "label-material-availability-blocked",
+        LABEL_MATERIAL_AVAILABILITY_COLUMNS,
+      ),
+    );
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "U1 uygunluk uyarisi yok.";
+    fragment.appendChild(empty);
+  }
+
+  if (checkedRows.length) {
+    fragment.appendChild(
+      renderLabelMaterialAvailabilitySection(
+        "Tum Kontrol Satirlari",
+        checkedRows,
+        "label-material-availability-checked",
+        LABEL_MATERIAL_AVAILABILITY_COLUMNS,
+      ),
+    );
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Kontrol edilecek aktif HM/YM malzeme satiri yok.";
+    fragment.appendChild(empty);
+  }
+
+  container.replaceChildren(fragment);
 }
 
 export function renderMissingProductionStarts(container, payload) {
@@ -985,6 +1137,155 @@ function renderIfsSummary(payload) {
   }
 
   return summary;
+}
+
+function renderLabelMaterialAvailabilitySummary(payload) {
+  const summaryPayload = payload?.summary || {};
+  const summary = document.createElement("div");
+  summary.className = "ifs-summary label-material-availability-summary";
+  const prefixes = Array.isArray(summaryPayload.material_prefixes)
+    ? summaryPayload.material_prefixes.join(", ")
+    : summaryPayload.material_prefixes;
+
+  const items = [
+    ["Monitor", summaryPayload.monitor_only ? "Aktif" : "Bilinmiyor"],
+    ["Prefix", prefixes],
+    ["Aktif operasyon", summaryPayload.operation_count],
+    ["Kontrol satiri", summaryPayload.checked_row_count],
+    ["U1 uyarisi", summaryPayload.blocked_row_count],
+    ["Parca", summaryPayload.part_count],
+    ["U1 stok satiri", summaryPayload.stock_row_count],
+    ["Stok alani", summaryPayload.blocking_stock_field],
+    ["Talep alani", summaryPayload.demand_field],
+    ["Durum", summaryPayload.active_operation_status],
+  ];
+
+  for (const [label, value] of items) {
+    const item = document.createElement("div");
+    item.className = "ifs-summary-item";
+
+    const itemLabel = document.createElement("span");
+    itemLabel.textContent = label;
+
+    const itemValue = document.createElement("strong");
+    itemValue.textContent = displayValue(value);
+
+    item.append(itemLabel, itemValue);
+    summary.appendChild(item);
+  }
+
+  if (summaryPayload.generated_at) {
+    const generatedAt = document.createElement("p");
+    generatedAt.className = "entry-meta ifs-generated-at";
+    generatedAt.textContent = `Son kontrol: ${formatTimestamp(summaryPayload.generated_at)}`;
+    summary.appendChild(generatedAt);
+  }
+
+  return summary;
+}
+
+function renderLabelMaterialAvailabilitySection(titleText, rows, className, columns) {
+  const section = document.createElement("section");
+  section.className = `label-material-availability-result ${className}`;
+
+  const title = document.createElement("h3");
+  title.className = "label-material-availability-title";
+  title.textContent = `${titleText} (${rows.length})`;
+  section.appendChild(title);
+  section.appendChild(renderLabelMaterialAvailabilityTable(rows, columns));
+  return section;
+}
+
+function renderLabelMaterialAvailabilityTable(rows, columns) {
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-scroll";
+
+  const table = document.createElement("table");
+  table.className = "data-table label-material-availability-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = column.label;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement("tbody");
+  for (const materialRow of rows) {
+    const tr = document.createElement("tr");
+    if (materialRow?.is_blocked) {
+      tr.classList.add("label-material-availability-row-blocked");
+    }
+    for (const column of columns) {
+      if (column.key === "status") {
+        appendLabelMaterialAvailabilityStatusCell(tr, materialRow);
+      } else {
+        appendTableCell(tr, materialRow?.[column.key], column.className);
+      }
+    }
+    tbody.appendChild(tr);
+  }
+
+  table.append(thead, tbody);
+  tableWrap.appendChild(table);
+  return tableWrap;
+}
+
+function appendLabelMaterialAvailabilityStatusCell(row, materialRow) {
+  const cell = document.createElement("td");
+  cell.className = "label-material-availability-status-cell";
+  const pill = document.createElement("span");
+  const status = labelMaterialAvailabilityStatus(materialRow);
+  updateStatusPill(pill, status.label, status.kind);
+  cell.appendChild(pill);
+  row.appendChild(cell);
+}
+
+function labelMaterialAvailabilityStatus(row) {
+  if (row?.is_blocked) {
+    return { label: "U1 yetersiz", kind: "warning" };
+  }
+  const status = String(row?.status || "").trim();
+  if (status === "blocked_insufficient_u1_available") {
+    return { label: "U1 yetersiz", kind: "warning" };
+  }
+  if (status === "issue_location_unknown") {
+    return { label: "Lokasyon yok", kind: "warning" };
+  }
+  if (status === "ignored_non_u1_issue_location") {
+    return { label: "U1 disi", kind: "muted" };
+  }
+  if (status === "ok") {
+    return { label: "OK", kind: "success" };
+  }
+  return { label: status || "Bilinmiyor", kind: "muted" };
+}
+
+function labelMaterialAvailabilityCheckedRows(payload) {
+  if (Array.isArray(payload?.checked_rows)) {
+    return payload.checked_rows;
+  }
+  if (Array.isArray(payload?.rows)) {
+    return payload.rows;
+  }
+  return [];
+}
+
+function labelMaterialAvailabilityBlockedRows(payload) {
+  if (Array.isArray(payload?.blocked_rows)) {
+    return payload.blocked_rows;
+  }
+  return labelMaterialAvailabilityCheckedRows(payload).filter((row) => row?.is_blocked);
+}
+
+function labelMaterialAvailabilityPartSummaries(payload) {
+  if (Array.isArray(payload?.part_summaries)) {
+    return payload.part_summaries;
+  }
+  return [];
 }
 
 function appendTableCell(row, value, className) {

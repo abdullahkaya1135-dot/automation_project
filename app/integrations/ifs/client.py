@@ -2,9 +2,11 @@ import asyncio
 import base64
 import binascii
 import logging
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, time, timedelta
 from datetime import date as Date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import quote, urlencode
 from xml.etree import ElementTree
@@ -28,6 +30,8 @@ DEFAULT_LABEL_REPORT_IDS = (SIMSEK_PALET_ETIKETI_REPORT_ID,)
 DEFAULT_OPERATION_HISTORY_PRODUCT_PREFIXES = ("MM-PET",)
 DEFAULT_LABEL_STOCK_PART_PREFIXES = ("MM",)
 PACKAGE_LABEL_PART_PREFIXES = ("MM", "YM")
+LABEL_MATERIAL_AVAILABILITY_PREFIXES = ("HM", "YM")
+LABEL_MATERIAL_AVAILABILITY_ACTIVE_STATUS = "InProcess"
 ARCHIVE_SELECT_FIELDS = (
     "ResultKey",
     "ReportId",
@@ -1552,6 +1556,7 @@ async def fetch_pet_ongoing_operations(
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
     include_inventory_part_pack_size: bool = False,
+    include_operation_status: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch ongoing operations from the configured PET dispatch list."""
 
@@ -1571,8 +1576,11 @@ async def fetch_pet_ongoing_operations(
         token = access_token or await obtain_access_token(settings, client=http_client)
         headers = {"Authorization": f"Bearer {token}"}
         url = _projection_url(settings, _pet_operations_path(settings))
+        select_fields = OPERATION_SELECT_FIELDS
+        if include_operation_status:
+            select_fields = (*select_fields, "OperStatusCode")
         params = {
-            "$select": ",".join(OPERATION_SELECT_FIELDS),
+            "$select": ",".join(select_fields),
             "$top": "1000",
         }
         if include_inventory_part_pack_size:
@@ -1667,6 +1675,27 @@ async def fetch_operation_hm02_materials(
 ) -> list[dict[str, Any]]:
     """Fetch configured material-prefix lines for one dispatch-list operation."""
 
+    return await fetch_operation_materials_by_prefixes(
+        settings,
+        operation,
+        _part_no_prefixes(settings),
+        client=client,
+        access_token=access_token,
+        endpoint_category="operation-hm02-materials",
+    )
+
+
+async def fetch_operation_materials_by_prefixes(
+    settings: Settings,
+    operation: Mapping[str, Any],
+    prefixes: Sequence[str],
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    endpoint_category: str = "operation-materials",
+) -> list[dict[str, Any]]:
+    """Fetch material lines with the supplied PartNo prefixes for one operation."""
+
     _require_settings(
         settings,
         (("ifs_base_url", "IFS_BASE_URL"),),
@@ -1679,17 +1708,91 @@ async def fetch_operation_hm02_materials(
         headers = {"Authorization": f"Bearer {token}"}
         url = _projection_url(settings, _operation_materials_path(operation))
         params = {
-            "$filter": _part_no_prefix_filter(settings),
+            "$filter": _part_no_prefix_filter_for_prefixes(prefixes),
             "$select": ",".join(MATERIAL_SELECT_FIELDS),
             "$top": "1000",
         }
         return await _get_all(
             http_client,
             url,
-            endpoint_category="operation-hm02-materials",
+            endpoint_category=endpoint_category,
             headers=headers,
             params=params,
         )
+    finally:
+        if close_client:
+            await http_client.aclose()
+
+
+async def fetch_u1_stock_for_part_numbers(
+    settings: Settings,
+    part_numbers: Sequence[str],
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    page_size: int = 1000,
+    batch_size: int = 50,
+) -> list[dict[str, Any]]:
+    """Fetch fresh U1 inventory rows for exact demanded part numbers.
+
+    Availability checks intentionally use InventoryPartInStockSet.AvailableQty.
+    Rows are not filtered by positive availability so zero/negative availability
+    stays visible to the monitor.
+    """
+
+    cleaned_part_numbers = list(
+        dict.fromkeys(
+            part_no for value in part_numbers if (part_no := str(value or "").strip())
+        )
+    )
+    if not cleaned_part_numbers:
+        return []
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+            ("ifs_u1_location", "IFS_U1_LOCATION"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = _projection_url(
+            settings,
+            "InventoryPartInStockHandling.svc/InventoryPartInStockSet",
+        )
+        rows: list[dict[str, Any]] = []
+        for batch in _batched(cleaned_part_numbers, batch_size):
+            part_filter = _part_no_equals_filter(batch)
+            if not part_filter:
+                continue
+            rows.extend(
+                await _get_paged_by_top_skip(
+                    http_client,
+                    url,
+                    endpoint_category="label-material-availability-u1-stock",
+                    headers=headers,
+                    params={
+                        "$filter": (
+                            f"Contract eq {_odata_string(settings.ifs_contract)} "
+                            f"and LocationNo eq {_odata_string(settings.ifs_u1_location)} "
+                            f"and {part_filter}"
+                        ),
+                        "$select": ",".join(STOCK_SELECT_FIELDS),
+                        "$expand": "PartNoRef($select=Description)",
+                        "$orderby": "PartNo asc,ObjId asc",
+                        "$count": "true",
+                    },
+                    page_size=page_size,
+                    dedupe_field="ObjId",
+                )
+            )
+        return rows
     finally:
         if close_client:
             await http_client.aclose()
@@ -1797,6 +1900,346 @@ async def _fetch_hm02_materials_for_operations(
         if str(material.get("PartNo") or "").strip()
     ]
     return _deduplicated_materials(materials)
+
+
+async def _fetch_materials_by_prefixes_for_operations(
+    settings: Settings,
+    operations: Sequence[Mapping[str, Any]],
+    prefixes: Sequence[str],
+    *,
+    client: httpx.AsyncClient,
+    access_token: str,
+    concurrency: int = PLANNING_IFS_CONCURRENCY,
+) -> list[dict[str, Any]]:
+    async def fetch_materials(operation: Mapping[str, Any]) -> list[dict[str, Any]]:
+        return await fetch_operation_materials_by_prefixes(
+            settings,
+            operation,
+            prefixes,
+            client=client,
+            access_token=access_token,
+            endpoint_category="label-material-availability-operation-materials",
+        )
+
+    material_groups = await _gather_limited(
+        list(operations),
+        fetch_materials,
+        concurrency=concurrency,
+    )
+    materials = [
+        material
+        for group in material_groups
+        for material in group
+        if str(material.get("PartNo") or "").strip()
+    ]
+    return _deduplicated_materials(materials)
+
+
+def _decimal_value(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, Decimal):
+        return value if value.is_finite() else None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        number = Decimal(text.replace(",", "."))
+    except InvalidOperation:
+        return None
+    return number if number.is_finite() else None
+
+
+def _decimal_or_zero(value: Any) -> Decimal:
+    return _decimal_value(value) or Decimal("0")
+
+
+def _number_payload(value: Decimal | None) -> int | float | None:
+    if value is None:
+        return None
+    if value == value.to_integral_value():
+        return int(value)
+    return float(value)
+
+
+def _normalized_location(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text.upper() if text else None
+
+
+def _operation_key(row: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        _identity_value(row.get("OrderNo")),
+        _identity_value(row.get("ReleaseNo")),
+        _identity_value(row.get("SequenceNo")),
+        _identity_value(row.get("OperationNo")),
+    )
+
+
+def _stock_available_by_part(
+    stock_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for row in stock_rows:
+        part_no = str(row.get("PartNo") or "").strip()
+        if not part_no:
+            continue
+        totals[part_no] = totals.get(part_no, Decimal("0")) + _decimal_or_zero(
+            row.get("AvailableQty")
+        )
+    return totals
+
+
+def _stock_onhand_by_part(
+    stock_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for row in stock_rows:
+        part_no = str(row.get("PartNo") or "").strip()
+        if not part_no:
+            continue
+        totals[part_no] = totals.get(part_no, Decimal("0")) + _decimal_or_zero(
+            row.get("QtyOnhand")
+        )
+    return totals
+
+
+def _u1_demand_by_part(
+    materials: Sequence[Mapping[str, Any]],
+    *,
+    u1_location: str,
+) -> dict[str, Decimal]:
+    u1_location_key = _normalized_location(u1_location)
+    totals: dict[str, Decimal] = {}
+    for row in materials:
+        part_no = str(row.get("PartNo") or "").strip()
+        if not part_no:
+            continue
+        if _normalized_location(row.get("IssueToLoc")) != u1_location_key:
+            continue
+        totals[part_no] = totals.get(part_no, Decimal("0")) + _decimal_or_zero(
+            row.get("QtyRemainingToReserve")
+        )
+    return totals
+
+
+def _operation_context_by_key(
+    operations: Sequence[Mapping[str, Any]],
+) -> dict[tuple[str, str, str, str], Mapping[str, Any]]:
+    return {_operation_key(operation): operation for operation in operations}
+
+
+def _label_material_part_summaries(
+    part_numbers: Sequence[str],
+    demand_by_part: Mapping[str, Decimal],
+    available_by_part: Mapping[str, Decimal],
+    onhand_by_part: Mapping[str, Decimal],
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for part_no in sorted(dict.fromkeys(part_numbers)):
+        demand_qty = demand_by_part.get(part_no, Decimal("0"))
+        available_qty = available_by_part.get(part_no, Decimal("0"))
+        onhand_qty = onhand_by_part.get(part_no, Decimal("0"))
+        shortage_qty = max(demand_qty - available_qty, Decimal("0"))
+        summaries.append(
+            {
+                "part_no": part_no,
+                "u1_demand_qty_remaining_to_reserve": _number_payload(demand_qty),
+                "u1_available_qty": _number_payload(available_qty),
+                "u1_qty_onhand": _number_payload(onhand_qty),
+                "u1_shortage_qty": _number_payload(shortage_qty),
+                "is_blocked": shortage_qty > 0,
+            }
+        )
+    return summaries
+
+
+def _label_material_availability_rows(
+    materials: Sequence[Mapping[str, Any]],
+    operations: Sequence[Mapping[str, Any]],
+    stock_rows: Sequence[Mapping[str, Any]],
+    *,
+    u1_location: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    u1_location_key = _normalized_location(u1_location)
+    part_numbers = [
+        part_no
+        for material in materials
+        if (part_no := str(material.get("PartNo") or "").strip())
+    ]
+    demand_by_part = _u1_demand_by_part(materials, u1_location=u1_location)
+    available_by_part = _stock_available_by_part(stock_rows)
+    onhand_by_part = _stock_onhand_by_part(stock_rows)
+    operation_by_key = _operation_context_by_key(operations)
+    blocked_parts = {
+        part_no
+        for part_no, demand_qty in demand_by_part.items()
+        if demand_qty > available_by_part.get(part_no, Decimal("0"))
+    }
+    rows: list[dict[str, Any]] = []
+    blocked_rows: list[dict[str, Any]] = []
+
+    for material in materials:
+        row = serialize_material_row(material)
+        part_no = str(material.get("PartNo") or "").strip()
+        issue_location_key = _normalized_location(material.get("IssueToLoc"))
+        operation = operation_by_key.get(_operation_key(material), {})
+        demand_qty = demand_by_part.get(part_no, Decimal("0"))
+        available_qty = available_by_part.get(part_no, Decimal("0"))
+        onhand_qty = onhand_by_part.get(part_no, Decimal("0"))
+        shortage_qty = max(demand_qty - available_qty, Decimal("0"))
+
+        hard_check_applicable = issue_location_key == u1_location_key
+        if issue_location_key is None:
+            status_text = "issue_location_unknown"
+            is_blocked = False
+        elif not hard_check_applicable:
+            status_text = "ignored_non_u1_issue_location"
+            is_blocked = False
+        elif part_no in blocked_parts:
+            status_text = "blocked_insufficient_u1_available"
+            is_blocked = True
+        else:
+            status_text = "ok"
+            is_blocked = False
+
+        row.update(
+            {
+                "status": status_text,
+                "is_blocked": is_blocked,
+                "hard_check_applicable": hard_check_applicable,
+                "u1_location": u1_location,
+                "u1_demand_qty_remaining_to_reserve": _number_payload(demand_qty),
+                "u1_available_qty": _number_payload(available_qty),
+                "u1_qty_onhand": _number_payload(onhand_qty),
+                "u1_shortage_qty": _number_payload(shortage_qty),
+                "material_qty_available_reference": row.get("qty_available"),
+                "operation_status_code": operation.get("OperStatusCode"),
+                "preferred_resource_id": operation.get("PreferredResourceId"),
+                "work_center_no": operation.get("WorkCenterNo"),
+                "operation_part_no": operation.get("PartNo"),
+                "operation_part_description": operation.get("PartNoDesc"),
+            }
+        )
+        rows.append(row)
+        if is_blocked:
+            blocked_rows.append(row)
+
+    part_summaries = _label_material_part_summaries(
+        part_numbers,
+        demand_by_part,
+        available_by_part,
+        onhand_by_part,
+    )
+    return rows, blocked_rows, part_summaries
+
+
+async def fetch_label_material_availability(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    access_token: str | None = None,
+    concurrency: int = PLANNING_IFS_CONCURRENCY,
+) -> dict[str, Any]:
+    """Monitor HM/YM material availability for active label production.
+
+    This is intentionally read-only: it fetches fresh IFS operation, material,
+    and U1 stock rows and returns audit data for the caller.
+    """
+
+    _require_settings(
+        settings,
+        (
+            ("ifs_base_url", "IFS_BASE_URL"),
+            ("ifs_contract", "IFS_CONTRACT"),
+            ("ifs_company_id", "IFS_COMPANY_ID"),
+            ("ifs_dispatch_filter_id", "IFS_DISPATCH_FILTER_ID"),
+            ("ifs_u1_location", "IFS_U1_LOCATION"),
+        ),
+    )
+
+    close_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        token = access_token or await obtain_access_token(settings, client=http_client)
+        source_operations = await fetch_pet_ongoing_operations(
+            settings,
+            client=http_client,
+            access_token=token,
+            include_operation_status=True,
+        )
+        active_operations = _deduplicated_operations(
+            [
+                operation
+                for operation in source_operations
+                if str(operation.get("OperStatusCode") or "").strip()
+                == LABEL_MATERIAL_AVAILABILITY_ACTIVE_STATUS
+            ]
+        )
+        materials = await _fetch_materials_by_prefixes_for_operations(
+            settings,
+            active_operations,
+            LABEL_MATERIAL_AVAILABILITY_PREFIXES,
+            client=http_client,
+            access_token=token,
+            concurrency=concurrency,
+        )
+        material_part_numbers = sorted(used_hm02_part_numbers(materials))
+        stock_rows = await fetch_u1_stock_for_part_numbers(
+            settings,
+            material_part_numbers,
+            client=http_client,
+            access_token=token,
+        )
+        checked_rows, blocked_rows, part_summaries = _label_material_availability_rows(
+            materials,
+            active_operations,
+            stock_rows,
+            u1_location=settings.ifs_u1_location,
+        )
+        status_counts = Counter(row["status"] for row in checked_rows)
+        blocked_parts = sorted(
+            part_summary["part_no"]
+            for part_summary in part_summaries
+            if part_summary["is_blocked"]
+        )
+        return {
+            "summary": {
+                "generated_at": _generated_at(settings),
+                "monitor_only": True,
+                "material_prefixes": list(LABEL_MATERIAL_AVAILABILITY_PREFIXES),
+                "active_operation_status": LABEL_MATERIAL_AVAILABILITY_ACTIVE_STATUS,
+                "u1_location": settings.ifs_u1_location,
+                "blocking_stock_field": "AvailableQty",
+                "demand_field": "QtyRemainingToReserve",
+                "material_qty_available_reference_field": "QtyAvailable",
+                "source_operation_count": len(source_operations),
+                "operation_count": len(active_operations),
+                "checked_row_count": len(checked_rows),
+                "blocked_row_count": len(blocked_rows),
+                "part_count": len(part_summaries),
+                "blocked_part_count": len(blocked_parts),
+                "stock_row_count": len(stock_rows),
+                "stock_part_count": len(
+                    {
+                        part_no
+                        for stock_row in stock_rows
+                        if (part_no := str(stock_row.get("PartNo") or "").strip())
+                    }
+                ),
+                "status_counts": dict(status_counts),
+                "blocked_parts": blocked_parts,
+            },
+            "part_summaries": part_summaries,
+            "stock_rows": [serialize_stock_row(row) for row in stock_rows],
+            "checked_rows": checked_rows,
+            "blocked_rows": blocked_rows,
+        }
+    finally:
+        if close_client:
+            await http_client.aclose()
 
 
 async def fetch_used_hm02_materials(

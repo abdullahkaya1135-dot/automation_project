@@ -1,11 +1,11 @@
-import { apiJson } from "../api.js?v=20260629-shift-manager-labels-v1";
+import { apiJson } from "../api.js?v=20260629-label-material-availability-v1";
 import {
   renderIfsReturnCandidates,
   renderIfsReturnPrintArea,
   renderListError,
   renderLoading,
-} from "./render.js?v=20260629-shift-manager-labels-v1";
-import { setButtonBusy, setMessage } from "./utils.js?v=20260629-shift-manager-labels-v1";
+} from "./render.js?v=20260629-label-material-availability-v1";
+import { setButtonBusy, setMessage } from "./utils.js?v=20260629-label-material-availability-v1";
 
 let latestIfsReturnCandidatesPayload = null;
 
