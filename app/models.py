@@ -763,6 +763,44 @@ class ProductionLossLabelEvent(Base):
     )
 
 
+class ShiftManagerNotification(Base):
+    __tablename__ = "shift_manager_notifications"
+    __table_args__ = (
+        Index(
+            "ux_shift_manager_notifications_order_pair",
+            "machine_code",
+            "current_order_no",
+            "next_order_no",
+            unique=True,
+        ),
+        Index("ix_shift_manager_notifications_machine_code", "machine_code"),
+        Index("ix_shift_manager_notifications_updated_at", "updated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    machine_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    current_order_no: Mapped[str] = mapped_column(Text, nullable=False)
+    next_order_no: Mapped[str] = mapped_column(Text, nullable=False)
+    informed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="0",
+        nullable=False,
+    )
+    informed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+
 class MachineBreakdown(Base):
     __tablename__ = "machine_breakdowns"
     __table_args__ = (

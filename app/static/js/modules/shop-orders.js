@@ -5,7 +5,7 @@ import {
   setInputValue,
   updateStatusPill,
   uniqueSorted,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 let shopOrderPairs = [];
 

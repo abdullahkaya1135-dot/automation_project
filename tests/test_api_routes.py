@@ -111,6 +111,8 @@ PAGE_SECTION_EXPECTATIONS = {
         'id="phone-sync-heading"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="run-shift-manager-check"',
+        'id="shift-manager-results"',
         'id="production-loss-form"',
         'id="production-loss-results"',
         'id="generate-whatsapp-status-message"',
@@ -135,6 +137,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="run-shift-manager-check"',
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
@@ -147,6 +150,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="run-shift-manager-check"',
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
@@ -160,6 +164,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="run-shift-manager-check"',
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
@@ -173,6 +178,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="breakdown-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="run-shift-manager-check"',
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
@@ -186,6 +192,7 @@ PAGE_SECTION_EXCLUSIONS = {
         'id="amount-control-form"',
         'id="pending-entries"',
         'id="create-cycle-report"',
+        'id="run-shift-manager-check"',
         'id="generate-whatsapp-status-message"',
         'id="run-missing-production-starts"',
         'id="run-ifs-return-candidates"',
@@ -2177,6 +2184,7 @@ def test_breakdown_page_orders_fields_for_paper_entry(client):
         'id="breakdown-shift"',
         'id="breakdown-duration"',
         'id="breakdown-reason"',
+        'id="breakdown-context-message"',
     )
     field_positions = [response.text.index(marker) for marker in field_markers]
     assert field_positions == sorted(field_positions)
@@ -2199,6 +2207,15 @@ def test_breakdown_javascript_wires_previous_day_context_lookup():
     assert "previousDay.setDate(previousDay.getDate() - 1)" in source
     assert "/api/breakdowns/context?" in source
     assert "applyFallbackBreakdownOptions" in source
+    assert "setBreakdownContextMessage" in source
+
+
+def test_breakdown_javascript_reports_empty_process_context():
+    source = Path("app/static/js/modules/breakdowns.js").read_text(encoding="utf-8")
+
+    assert "if (!contextOptions.length)" in source
+    assert "makine/is emri iceren proses kaydi yok" in source
+    assert "#breakdown-context-message" in source
 
 
 def test_breakdown_javascript_clears_stale_job_product_on_date_context_change():

@@ -163,6 +163,9 @@ OPERATION_SELECT_FIELDS = (
     "OperationNoDesc",
     "RemainingQty",
 )
+OPERATION_INVENTORY_PART_PACK_EXPAND = (
+    "InventoryPartRef($select=PartNo,Cf_Palet_Ici_Miktar)"
+)
 PACKAGE_LABEL_OPERATION_MACHINE_FIELDS = (
     "PreferredResourceId",
     "ResourceId",
@@ -1085,7 +1088,7 @@ def _odata_count_value(value: Any) -> int | None:
         return None
     try:
         count = int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return count if count >= 0 else None
 
@@ -1548,6 +1551,7 @@ async def fetch_pet_ongoing_operations(
     *,
     client: httpx.AsyncClient | None = None,
     access_token: str | None = None,
+    include_inventory_part_pack_size: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch ongoing operations from the configured PET dispatch list."""
 
@@ -1571,6 +1575,8 @@ async def fetch_pet_ongoing_operations(
             "$select": ",".join(OPERATION_SELECT_FIELDS),
             "$top": "1000",
         }
+        if include_inventory_part_pack_size:
+            params["$expand"] = OPERATION_INVENTORY_PART_PACK_EXPAND
         return await _get_all(
             http_client,
             url,
@@ -1960,12 +1966,19 @@ def _package_label_operation_match(
         for operation in operations
         if part_no and _identity_value(operation.get("PartNo")) == part_no
     ]
-    candidates = sorted(part_matches or list(operations), key=_operation_choice_sort_key)
+    candidates = sorted(
+        part_matches or list(operations), key=_operation_choice_sort_key
+    )
     if len(candidates) == 1:
         status_text = "matched" if part_matches else "matched_by_job_order"
         return candidates[0], status_text, 1, candidates
     if _operation_consensus_machine_code(candidates):
-        return candidates[0], "matched_by_machine_consensus", len(candidates), candidates
+        return (
+            candidates[0],
+            "matched_by_machine_consensus",
+            len(candidates),
+            candidates,
+        )
     return None, "ambiguous", len(candidates), candidates
 
 
@@ -1973,11 +1986,9 @@ def _operation_choice_sort_key(operation: Mapping[str, Any]) -> tuple[int, str]:
     try:
         operation_no_value = operation.get("OperationNo")
         operation_no = (
-            int(str(operation_no_value))
-            if operation_no_value is not None
-            else 999999
+            int(str(operation_no_value)) if operation_no_value is not None else 999999
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         operation_no = 999999
     return operation_no, _identity_value(_operation_machine_code(operation))
 
@@ -2005,7 +2016,9 @@ def _operation_machine_field(operation: Mapping[str, Any] | None) -> str | None:
 
 
 def _operation_no_value(operation: Mapping[str, Any]) -> str:
-    return _identity_value(operation.get("OperationNo") or operation.get("operation_no"))
+    return _identity_value(
+        operation.get("OperationNo") or operation.get("operation_no")
+    )
 
 
 def _operation_candidate_machine_codes(
@@ -2195,9 +2208,11 @@ def _package_label_checklist_row(
     if job_order in failed_operation_orders:
         operation, match_status, match_count, candidates = None, "lookup_failed", 0, []
     elif job_order:
-        operation, match_status, match_count, candidates = _package_label_operation_match(
-            stock_row,
-            operations_by_order.get(job_order, ()),
+        operation, match_status, match_count, candidates = (
+            _package_label_operation_match(
+                stock_row,
+                operations_by_order.get(job_order, ()),
+            )
         )
     else:
         operation, match_status, match_count, candidates = None, "no_job_order", 0, []
@@ -2469,8 +2484,7 @@ async def fetch_package_label_checklist(
         if failed_operation_errors:
             failed_orders = ", ".join(sorted(failed_operation_errors))
             summary["warning"] = (
-                "IFS operasyonlari okunamayan is emirleri var: "
-                f"{failed_orders}"
+                f"IFS operasyonlari okunamayan is emirleri var: {failed_orders}"
             )
 
         return {

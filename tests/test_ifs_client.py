@@ -501,6 +501,47 @@ def test_fetch_pet_ongoing_operations_uses_dispatch_filter_and_follows_next_link
     assert str(requests[1].url) == "https://ifs.example.com/next-operation-page"
 
 
+def test_fetch_pet_ongoing_operations_can_expand_inventory_part_pack_size():
+    requests: list[httpx.Request] = []
+    settings = Settings(ifs_base_url="https://ifs.example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "OrderNo": "2615",
+                        "ReleaseNo": "*",
+                        "SequenceNo": "*",
+                        "OperationNo": 10,
+                        "InventoryPartRef": {
+                            "PartNo": "MM-PET-2615",
+                            "Cf_Palet_Ici_Miktar": 820,
+                        },
+                    }
+                ]
+            },
+        )
+
+    async def run() -> list[dict]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_pet_ongoing_operations(
+                settings,
+                client=client,
+                access_token="test-token",
+                include_inventory_part_pack_size=True,
+            )
+
+    rows = asyncio.run(run())
+
+    assert rows[0]["InventoryPartRef"]["Cf_Palet_Ici_Miktar"] == 820
+    assert requests[0].url.params["$expand"] == (
+        "InventoryPartRef($select=PartNo,Cf_Palet_Ici_Miktar)"
+    )
+
+
 def test_fetch_pet_stopped_operations_uses_durus_interrupted_interval_window():
     requests: list[httpx.Request] = []
     settings = Settings(ifs_base_url="https://ifs.example.com")
@@ -674,7 +715,7 @@ def test_fetch_shop_order_operation_actual_rows_uses_production_loss_query_proje
                         "RealFinished": None,
                         "RealMachRunTime": 60,
                         "InterruptionTime": 0,
-                    }
+                    },
                 ]
             },
         )
@@ -698,8 +739,7 @@ def test_fetch_shop_order_operation_actual_rows_uses_production_loss_query_proje
         "QueryProjectionPRODUCTIONLOSS.svc/PRODUCTIONLOSSSet"
     )
     assert requests[0].url.params["$filter"] == (
-        "RealStart ge 2026-06-01T00:00:00Z and "
-        "(OrderNo eq '2579' or OrderNo eq '2580')"
+        "RealStart ge 2026-06-01T00:00:00Z and (OrderNo eq '2579' or OrderNo eq '2580')"
     )
     assert requests[0].url.params["$select"] == (
         "OrderNo,PartDescription,RealStart,RealFinished,"

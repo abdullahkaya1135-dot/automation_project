@@ -1,16 +1,17 @@
-import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
-import { localIsoDate } from "./dates.js?v=20260626-breakdown-context-v2";
+import { apiJson } from "../api.js?v=20260629-shift-manager-labels-v1";
+import { localIsoDate } from "./dates.js?v=20260629-shift-manager-labels-v1";
 import {
   machineOptionsFromBootstrap,
   normalizeShopOrderOptions,
   shopOrderProductText,
-} from "./bootstrap-options.js?v=20260626-breakdown-context-v2";
+} from "./bootstrap-options.js?v=20260629-shift-manager-labels-v1";
 import {
   cleanOptional,
   cleanRequired,
   compareOptionText,
+  setMessage,
   uniqueSorted,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 let breakdownMachines = [];
 let breakdownShopOrders = [];
@@ -106,6 +107,7 @@ async function refreshBreakdownContextForDate() {
   const dateInput = document.querySelector("#breakdown-date");
   const recordDate = cleanOptional(dateInput?.value);
   if (!dateInput || !recordDate) {
+    setBreakdownContextMessage("", "");
     applyFallbackBreakdownOptions();
     return;
   }
@@ -118,11 +120,20 @@ async function refreshBreakdownContextForDate() {
     }
 
     const contextOptions = normalizeBreakdownContextOptions(payload?.options);
-    if (payload?.record_date !== recordDate || !contextOptions.length) {
+    if (payload?.record_date !== recordDate) {
       applyFallbackBreakdownOptions();
       return;
     }
+    if (!contextOptions.length) {
+      applyFallbackBreakdownOptions();
+      setBreakdownContextMessage(
+        "Secilen tarih icin makine/is emri iceren proses kaydi yok; genel liste gosteriliyor.",
+        "warning",
+      );
+      return;
+    }
 
+    setBreakdownContextMessage("", "");
     applyBreakdownOptions(
       machineOptionsFromContext(contextOptions),
       contextOptions,
@@ -130,8 +141,16 @@ async function refreshBreakdownContextForDate() {
   } catch (_error) {
     if (isCurrentBreakdownContextRequest(requestId, recordDate)) {
       applyFallbackBreakdownOptions();
+      setBreakdownContextMessage(
+        "Proses kaydi okunamadi; genel liste gosteriliyor.",
+        "warning",
+      );
     }
   }
+}
+
+function setBreakdownContextMessage(text, kind) {
+  setMessage(document.querySelector("#breakdown-context-message"), text, kind);
 }
 
 function isCurrentBreakdownContextRequest(requestId, recordDate) {

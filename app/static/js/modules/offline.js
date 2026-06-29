@@ -1,4 +1,4 @@
-import { ApiError, apiJson } from "../api.js?v=20260626-breakdown-context-v2";
+import { ApiError, apiJson } from "../api.js?v=20260629-shift-manager-labels-v1";
 import {
   OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
@@ -8,19 +8,19 @@ import {
   OFFLINE_STATUS_SERVER_SAVED,
   OFFLINE_STATUS_SYNCING,
   OFFLINE_STATUS_VALIDATION_FAILED,
-} from "./constants.js?v=20260626-breakdown-context-v2";
+} from "./constants.js?v=20260629-shift-manager-labels-v1";
 import {
   applyTourContext,
   readStoredTourContext,
   storeTourContext,
-} from "./tour-context.js?v=20260626-breakdown-context-v2";
+} from "./tour-context.js?v=20260629-shift-manager-labels-v1";
 import {
   createClientRequestId,
   downloadTextFile,
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 let offlineDbPromise = null;
 let offlineSyncInProgress = false;

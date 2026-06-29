@@ -10,10 +10,15 @@ from zipfile import BadZipFile, ZipFile
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 ORDER_TOKEN_PATTERN = re.compile(r"\d+")
+MACHINE_SECTION_PATTERN = re.compile(r"^\s*M(?P<machine_code>\d{3})\s*$", re.IGNORECASE)
 PLANNING_FILE_DATE_PATTERN = re.compile(
     r"^\s*(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{4})\b"
 )
 EXCEL_TEMP_PREFIX = "~$"
+ORDER_COLUMN_INDEX = 1
+PRODUCT_COLUMN_INDEX = 3
+MOLD_COLUMN_INDEX = 4
+ORDER_QUANTITY_COLUMN_INDEX = 5
 
 
 class ProductionPlanningError(RuntimeError):
@@ -25,6 +30,19 @@ class PlanningOrder:
     order_no: str
     sheet_name: str
     row_number: int
+    cell_value: str
+
+
+@dataclass(frozen=True)
+class MachinePlanningRow:
+    machine_code: str
+    order_no: str
+    sheet_name: str
+    row_number: int
+    sequence_index: int
+    product_no: str
+    mold: str
+    order_quantity: str
     cell_value: str
 
 
@@ -80,7 +98,7 @@ def _cell_text(cell: ElementTree.Element, shared_strings: list[str]) -> str:
             return ""
         try:
             return shared_strings[int(value.text)]
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return ""
     if cell_type == "inlineStr":
         return "".join(text.text or "" for text in cell.iter(_tag("t")))
@@ -143,6 +161,32 @@ def _visible_column_a_value(
     return ""
 
 
+def _row_cell_values(
+    row: ElementTree.Element,
+    shared_strings: list[str],
+) -> dict[int, str]:
+    values: dict[int, str] = {}
+    for cell in row.findall(_tag("c")):
+        column_index = _column_index(cell.get("r", ""))
+        if column_index:
+            values[column_index] = _cell_text(cell, shared_strings).strip()
+    return values
+
+
+def _machine_code_from_product_value(value: str) -> str | None:
+    match = MACHINE_SECTION_PATTERN.match(value)
+    if match is None:
+        return None
+    return match.group("machine_code")
+
+
+def _machine_code_from_row_values(values: dict[int, str]) -> str | None:
+    for value in values.values():
+        if machine_code := _machine_code_from_product_value(value):
+            return machine_code
+    return None
+
+
 def _date_from_planning_filename(path: Path) -> date | None:
     match = PLANNING_FILE_DATE_PATTERN.match(path.name)
     if match is None:
@@ -157,7 +201,9 @@ def _date_from_planning_filename(path: Path) -> date | None:
         return None
 
 
-def _planning_workbook_candidates(directory: str | Path) -> list[PlanningWorkbookCandidate]:
+def _planning_workbook_candidates(
+    directory: str | Path,
+) -> list[PlanningWorkbookCandidate]:
     planning_dir = Path(directory)
     try:
         entries = list(planning_dir.iterdir())
@@ -276,6 +322,86 @@ def read_visible_planning_orders(path: str | Path) -> list[PlanningOrder]:
                         )
                     element.clear()
             return orders
+    except FileNotFoundError as exc:
+        raise ProductionPlanningError(
+            f"Production planning workbook was not found: {planning_path}"
+        ) from exc
+    except (BadZipFile, ElementTree.ParseError, KeyError, OSError) as exc:
+        raise ProductionPlanningError(
+            f"Production planning workbook could not be read: {planning_path}"
+        ) from exc
+
+
+def read_machine_planning_rows(path: str | Path) -> list[MachinePlanningRow]:
+    """Read visible planning orders grouped under machine sections."""
+
+    planning_path = Path(path)
+    if planning_path.name.startswith(EXCEL_TEMP_PREFIX):
+        return []
+
+    try:
+        with ZipFile(planning_path) as workbook:
+            shared_strings = _shared_strings(workbook)
+            rows: list[MachinePlanningRow] = []
+            sequence_indexes: dict[str, int] = {}
+
+            for sheet_name, sheet_path in _visible_sheet_paths(workbook):
+                column_a_is_hidden = False
+                current_machine_code: str | None = None
+                for _event, element in ElementTree.iterparse(
+                    workbook.open(sheet_path),
+                    events=("end",),
+                ):
+                    if element.tag == _tag("col"):
+                        if _column_a_hidden(element):
+                            column_a_is_hidden = True
+                        element.clear()
+                        continue
+
+                    if element.tag != _tag("row"):
+                        continue
+
+                    if column_a_is_hidden or _is_hidden_flag(element.get("hidden")):
+                        element.clear()
+                        continue
+
+                    row_number = int(float(element.get("r", "0") or "0"))
+                    values = _row_cell_values(element, shared_strings)
+                    product_no = values.get(PRODUCT_COLUMN_INDEX, "")
+                    machine_code = _machine_code_from_row_values(values)
+                    if machine_code is not None:
+                        current_machine_code = machine_code
+                        sequence_indexes.setdefault(machine_code, 0)
+                        element.clear()
+                        continue
+
+                    if current_machine_code is None:
+                        element.clear()
+                        continue
+
+                    cell_value = values.get(ORDER_COLUMN_INDEX, "")
+                    for order_no in ORDER_TOKEN_PATTERN.findall(cell_value):
+                        if order_no == "0":
+                            continue
+                        sequence_index = sequence_indexes.get(current_machine_code, 0)
+                        rows.append(
+                            MachinePlanningRow(
+                                machine_code=current_machine_code,
+                                order_no=order_no,
+                                sheet_name=sheet_name,
+                                row_number=row_number,
+                                sequence_index=sequence_index,
+                                product_no=product_no,
+                                mold=values.get(MOLD_COLUMN_INDEX, ""),
+                                order_quantity=values.get(
+                                    ORDER_QUANTITY_COLUMN_INDEX, ""
+                                ),
+                                cell_value=cell_value,
+                            )
+                        )
+                        sequence_indexes[current_machine_code] = sequence_index + 1
+                    element.clear()
+            return rows
     except FileNotFoundError as exc:
         raise ProductionPlanningError(
             f"Production planning workbook was not found: {planning_path}"

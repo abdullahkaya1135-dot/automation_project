@@ -15,6 +15,9 @@ tests. Routes are registered centrally in `app/main.py`.
   request returns `201`, replay returns `200` and `idempotent_replay: true`.
 - IFS upstream errors map to `502`; IFS configuration/planning errors map to
   `503`.
+- Shift Manager derives the remaining package/pallet count from IFS
+  `RemainingQty / InventoryPartRef.Cf_Palet_Ici_Miktar`; `RemainingQty` itself
+  is the remaining piece quantity.
 
 ## Classification
 
@@ -39,6 +42,8 @@ tests. Routes are registered centrally in `app/main.py`.
 - `GET /api/ifs/missing-production-starts`
 - `GET /api/ifs/whatsapp-status-message`
 - `GET /api/ifs/u1-return-candidates`
+- `GET /api/shift-manager/near-complete`
+- `PUT /api/shift-manager/notifications`
 - page/static/PWA routes
 
 ### API-Only Or Diagnostic Today
@@ -51,6 +56,13 @@ tests. Routes are registered centrally in `app/main.py`.
 - `GET /api/ifs/u1-hm02-stock`
 - `GET /api/ifs/pet-ongoing-operations`
 - `GET /api/ifs/used-hm02-materials`
+
+### Shift Manager
+
+These endpoints support the reports-page Shift Manager handoff check.
+
+- `GET /api/shift-manager/near-complete`
+- `PUT /api/shift-manager/notifications`
 
 ### Likely Stale Or Reserved
 
@@ -875,6 +887,121 @@ Response:
   ]
 }
 ```
+
+### `GET /api/shift-manager/near-complete`
+
+- Handler: `app/features/shift_manager/api.py::near_complete_orders`
+- Auth: required
+- Used by: reports page Shift Manager widget
+- Related: reads active PET operations from IFS and the latest production
+  planning workbook to identify the next planned job for the same machine
+
+Query:
+
+- `threshold`, default `3`, min `0`, max `1000`
+
+Request: no body. The primary inputs are IFS active operations and the configured
+production planning workbook.
+
+Representative response:
+
+```json
+{
+  "summary": {
+    "generated_at": "2026-06-27T22:30:00+03:00",
+    "threshold": 3,
+    "active_operation_count": 1,
+    "active_machine_count": 1,
+    "near_complete_count": 1,
+    "next_job_found_count": 1,
+    "missing_plan_count": 0,
+    "planning_source_name": "27.06.2026 CIZELGE 1.xlsx",
+    "row_count": 1,
+    "informed_count": 0,
+    "uninformed_count": 1
+  },
+  "rows": [
+    {
+      "machine_code": "135",
+      "current_order_no": "SO-LOW",
+      "current_product_no": "MM-PET-SO-LOW",
+      "current_product_description": "Product SO-LOW",
+      "remaining_quantity": 200,
+      "package_pallet_size": 100,
+      "remaining_packages": 2,
+      "remaining_package_pallet_count": 2,
+      "next_order_no": "SO-NEXT",
+      "next_product_no": "MM-PET-SO-NEXT",
+      "next_mold": "Mold A",
+      "planning_sheet_name": "Plan",
+      "planning_row_number": 12,
+      "planning_match_found": true,
+      "status": "next_found",
+      "informed": false,
+      "informed_at": null,
+      "notification_id": null
+    }
+  ]
+}
+```
+
+Notes:
+
+- `remaining_quantity` is the raw IFS `RemainingQty` piece quantity.
+- `package_pallet_size` is `InventoryPartRef.Cf_Palet_Ici_Miktar` from
+  `ShopFloorWorkbenchHandling.GetOperations`.
+- `remaining_packages` / `remaining_package_pallet_count` is calculated as
+  `remaining_quantity / package_pallet_size`.
+- A row becomes actionable when the calculated package/pallet count is
+  `<= threshold`.
+- IFS resource `PKT` is excluded before summary counts and row generation.
+- The current order is matched against visible production planning rows; the
+  next visible order for the same machine is returned as the next job.
+- If the current order is missing from the plan, return the current operation
+  with a warning/status and no `next_order_no`.
+- If the current order is the last visible order for the machine, return the
+  current operation with a no-next-job status and no `next_order_no`.
+- Persisted informed state from the notification upsert is applied on every
+  fetch so the UI checkbox survives refreshes.
+
+### `PUT /api/shift-manager/notifications`
+
+- Handler: `app/features/shift_manager/api.py::upsert_notification`
+- Auth: required
+- Used by: reports page Shift Manager checkbox
+- Related: `GET /api/shift-manager/near-complete` applies the persisted state
+
+Request:
+
+```json
+{
+  "machine_code": "135",
+  "current_order_no": "SO-LOW",
+  "next_order_no": "SO-NEXT",
+  "informed": true
+}
+```
+
+Response:
+
+```json
+{
+  "notification": {
+    "machine_code": "135",
+    "current_order_no": "SO-LOW",
+    "next_order_no": "SO-NEXT",
+    "informed": true,
+    "informed_at": "2026-06-27T19:30:00Z"
+  }
+}
+```
+
+Notes:
+
+- Upsert key should include at least machine, current order, and next order so a
+  repeated checkbox submit updates the same notification row.
+- Rows without a next job currently cannot be acknowledged because
+  `next_order_no` is required by the API schema.
 
 ### `GET /api/ifs/missing-production-starts`
 

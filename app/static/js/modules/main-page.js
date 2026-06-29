@@ -1,35 +1,38 @@
-import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
+import { apiJson } from "../api.js?v=20260629-shift-manager-labels-v1";
 import {
   amountControlRequestBodies,
   initializeAmountControlControls,
   resetAmountControlForm,
   updateAmountControlBootstrap,
-} from "./amount-control.js?v=20260626-breakdown-context-v2";
+} from "./amount-control.js?v=20260629-shift-manager-labels-v1";
 import {
   breakdownRequestBody,
   initializeBreakdownControls,
   resetBreakdownForm,
   updateBreakdownBootstrap,
-} from "./breakdowns.js?v=20260626-breakdown-context-v2";
+} from "./breakdowns.js?v=20260629-shift-manager-labels-v1";
 import {
   automaticTourTimingForRequest,
   dateForDisplay,
   dateForRequest,
-} from "./dates.js?v=20260626-breakdown-context-v2";
+} from "./dates.js?v=20260629-shift-manager-labels-v1";
 import {
   handleIfsReturnCandidates,
   handlePrintIfsReturnCandidates,
-} from "./ifs-return.js?v=20260626-breakdown-context-v2";
+} from "./ifs-return.js?v=20260629-shift-manager-labels-v1";
 import {
   handlePackageLabelChecklist,
   handlePrintPackageLabelChecklist,
-} from "./package-label-checklist.js?v=20260626-breakdown-context-v2";
+} from "./package-label-checklist.js?v=20260629-shift-manager-labels-v1";
+import {
+  initializeShiftManagerSection,
+} from "./shift-manager.js?v=20260629-shift-manager-labels-v1";
 import {
   loadAmountControlShifts,
   loadAuxiliarySubmissions,
   loadBreakdowns,
   loadEntryLists,
-} from "./lists.js?v=20260626-breakdown-context-v2";
+} from "./lists.js?v=20260629-shift-manager-labels-v1";
 import {
   configureOfflineRefresh,
   exportOfflineOutbox,
@@ -42,27 +45,27 @@ import {
   syncOutbox,
   updatePhoneSyncStatus,
   writeBootstrapCache,
-} from "./offline.js?v=20260626-breakdown-context-v2";
+} from "./offline.js?v=20260629-shift-manager-labels-v1";
 import {
   auxiliaryRequestBody,
   entryRequestBody,
   hasAuxiliaryMeasurement,
-} from "./payloads.js?v=20260626-breakdown-context-v2";
+} from "./payloads.js?v=20260629-shift-manager-labels-v1";
 import {
   renderListError,
   renderLoading,
   renderMissingProductionStarts,
   renderProductionLossReport,
-} from "./render.js?v=20260626-breakdown-context-v2";
+} from "./render.js?v=20260629-shift-manager-labels-v1";
 import {
   initializeShopOrderDropdowns,
   resetShopOrderDropdowns,
   updateShopOrderOptions,
-} from "./shop-orders.js?v=20260626-breakdown-context-v2";
+} from "./shop-orders.js?v=20260629-shift-manager-labels-v1";
 import {
   initializeTemperatureShorthandInputs,
   normalizeTemperatureShorthandForm,
-} from "./temperature.js?v=20260626-breakdown-context-v2";
+} from "./temperature.js?v=20260629-shift-manager-labels-v1";
 import {
   applyAutomaticTourTiming,
   applyTourContext,
@@ -72,7 +75,7 @@ import {
   readStoredTourContext,
   storeTourContext,
   updateContextStatus,
-} from "./tour-context.js?v=20260626-breakdown-context-v2";
+} from "./tour-context.js?v=20260629-shift-manager-labels-v1";
 import {
   cleanRequired,
   createClientRequestId,
@@ -80,7 +83,7 @@ import {
   setButtonBusy,
   setMessage,
   updateStatusPill,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 export function initMainPage() {
   const page = document.body?.dataset?.page;
@@ -248,6 +251,7 @@ function initializeReportsPage() {
   }
 
   initializeProductionLossForm();
+  initializeShiftManagerSection();
 
   const whatsappMessageButton = document.querySelector("#generate-whatsapp-status-message");
   if (whatsappMessageButton) {

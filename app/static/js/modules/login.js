@@ -1,4 +1,4 @@
-import { setButtonBusy } from "./utils.js?v=20260626-breakdown-context-v2";
+import { setButtonBusy } from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 export function initLogin() {
   const loginForm = document.querySelector("#login-form");

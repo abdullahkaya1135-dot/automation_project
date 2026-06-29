@@ -16,6 +16,7 @@ from .features.health.api import router as health_router
 from .features.ifs.api import router as ifs_router
 from .features.process_entries.api import router as entries_router
 from .features.production_loss.api import router as production_loss_router
+from .features.shift_manager.api import router as shift_manager_router
 from .web import pages
 
 
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     fastapi_app.include_router(reports_router)
     fastapi_app.include_router(production_loss_router)
     fastapi_app.include_router(ifs_router)
+    fastapi_app.include_router(shift_manager_router)
     fastapi_app.include_router(health_router)
     fastapi_app.include_router(pages.router)
 

@@ -1,10 +1,10 @@
-import { SYNC_LABELS } from "./constants.js?v=20260626-breakdown-context-v2";
-import { dateForDisplay } from "./dates.js?v=20260626-breakdown-context-v2";
+import { SYNC_LABELS } from "./constants.js?v=20260629-shift-manager-labels-v1";
+import { dateForDisplay } from "./dates.js?v=20260629-shift-manager-labels-v1";
 import {
   displayValue,
   formatTimestamp,
   updateStatusPill,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 const PRODUCTION_LOSS_SHIFT_COLUMNS = [
   {

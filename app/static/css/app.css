@@ -536,6 +536,15 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.shift-manager-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.shift-manager-summary .ifs-summary-item strong {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
 .table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -569,6 +578,19 @@ button:disabled {
 
 .package-label-checklist-table {
   min-width: 1020px;
+}
+
+.shift-manager-table {
+  min-width: 1120px;
+}
+
+.shift-manager-notification-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.shift-manager-notification-cell input {
+  margin: 0 auto;
 }
 
 .package-label-checklist-group-cell,

@@ -2,7 +2,7 @@ import {
   cleanOptional,
   compareOptionText,
   uniqueSorted,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 export function machineOptionsFromBootstrap(machines, shopOrderSource) {
   let machineOptions = normalizeMachineOptions(machines);

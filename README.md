@@ -218,6 +218,20 @@ token. The app fetches active PET operations during `/api/bootstrap` and maps
 `PreferredResourceId` to the Makine dropdown and `OrderNo` to the work-order
 dropdown.
 
+The Shift Manager IFS check uses active PET operations together with the latest
+production planning workbook to warn when the current operation is close to
+handoff. The browser reads `GET /api/shift-manager/near-complete?threshold=3`
+and persists checkbox state through `/api/shift-manager/notifications`. For
+this workflow IFS `RemainingQty` is the remaining piece quantity. Shift Manager
+expands `InventoryPartRef.Cf_Palet_Ici_Miktar` from
+`ShopFloorWorkbenchHandling.GetOperations` and calculates the remaining
+package/pallet count as `RemainingQty / Cf_Palet_Ici_Miktar`; rows are
+actionable when that derived count is `<= 3`. The check should find the next
+visible planned job for the same machine, keep warning rows when the current
+order is missing from the plan or has no next job, and persist the
+shift-manager-informed checkbox so the state survives a second fetch. The
+`PKT` resource is excluded from this backend check.
+
 The `IFS U1 Iade Adaylari` check compares U1 stock against IFS usage from
 ongoing PET operations, DURUS/Interrupted stopped operations, and visible job
 orders from column `A` of the latest valid `.xlsx` workbook in

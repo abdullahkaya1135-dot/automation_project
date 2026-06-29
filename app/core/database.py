@@ -75,6 +75,15 @@ _PRODUCTION_LOSS_ROW_SHIFT_COLUMNS = {
     "shift_1600_2400_optimum_quantity": "TEXT",
     "shift_1600_2400_loss_quantity": "TEXT",
 }
+_SHIFT_MANAGER_NOTIFICATION_COLUMNS = {
+    "machine_code": "VARCHAR(16) NOT NULL DEFAULT ''",
+    "current_order_no": "TEXT NOT NULL DEFAULT ''",
+    "next_order_no": "TEXT NOT NULL DEFAULT ''",
+    "informed": "BOOLEAN NOT NULL DEFAULT 0",
+    "informed_at": "DATETIME",
+    "created_at": "DATETIME",
+    "updated_at": "DATETIME",
+}
 _ENTRY_CANONICAL_FIELDS_MIGRATION = "entries_canonical_fields_v2"
 _MACHINE_BREAKDOWNS_AMOUNT_CONTROL_MIGRATION = (
     "machine_breakdowns_amount_control_shift_fk_v1"
@@ -293,6 +302,7 @@ def init_db(settings: Settings | None = None) -> None:
         for table_name, columns in _OFFLINE_IDEMPOTENCY_COLUMNS.items():
             _ensure_columns(connection, table_name, columns)
 
+        _ensure_shift_manager_notifications(connection)
         connection.execute(
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS "
@@ -440,6 +450,143 @@ def _ensure_columns(connection, table_name: str, columns: dict[str, str]) -> Non
             connection.execute(
                 text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
             )
+
+
+def _ensure_shift_manager_notifications(connection) -> None:
+    connection.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS shift_manager_notifications ("
+            "id INTEGER NOT NULL, "
+            "machine_code VARCHAR(16) NOT NULL, "
+            "current_order_no TEXT NOT NULL, "
+            "next_order_no TEXT NOT NULL, "
+            "informed BOOLEAN NOT NULL DEFAULT 0, "
+            "informed_at DATETIME, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL, "
+            "PRIMARY KEY (id)"
+            ")"
+        )
+    )
+    existing_columns = _table_columns(connection, "shift_manager_notifications")
+    if "id" not in existing_columns:
+        _rebuild_shift_manager_notifications(connection, existing_columns)
+
+    _ensure_columns(
+        connection,
+        "shift_manager_notifications",
+        _SHIFT_MANAGER_NOTIFICATION_COLUMNS,
+    )
+    connection.execute(
+        text(
+            "UPDATE shift_manager_notifications SET "
+            "machine_code = COALESCE(machine_code, ''), "
+            "current_order_no = COALESCE(current_order_no, ''), "
+            "next_order_no = COALESCE(next_order_no, ''), "
+            "informed = COALESCE(informed, 0), "
+            "created_at = COALESCE(created_at, CURRENT_TIMESTAMP), "
+            "updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)"
+        )
+    )
+    connection.execute(
+        text(
+            "DELETE FROM shift_manager_notifications "
+            "WHERE id NOT IN ("
+            "SELECT MAX(id) FROM shift_manager_notifications "
+            "GROUP BY machine_code, current_order_no, next_order_no"
+            ")"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "ux_shift_manager_notifications_order_pair "
+            "ON shift_manager_notifications ("
+            "machine_code, current_order_no, next_order_no"
+            ")"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS "
+            "ix_shift_manager_notifications_machine_code "
+            "ON shift_manager_notifications (machine_code)"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS "
+            "ix_shift_manager_notifications_updated_at "
+            "ON shift_manager_notifications (updated_at)"
+        )
+    )
+
+
+def _rebuild_shift_manager_notifications(
+    connection,
+    existing_columns: set[str],
+) -> None:
+    select_expressions = {
+        "machine_code": (
+            "COALESCE(machine_code, '')" if "machine_code" in existing_columns else "''"
+        ),
+        "current_order_no": (
+            "COALESCE(current_order_no, '')"
+            if "current_order_no" in existing_columns
+            else "''"
+        ),
+        "next_order_no": (
+            "COALESCE(next_order_no, '')"
+            if "next_order_no" in existing_columns
+            else "''"
+        ),
+        "informed": (
+            "COALESCE(informed, 0)" if "informed" in existing_columns else "0"
+        ),
+        "informed_at": "informed_at" if "informed_at" in existing_columns else "NULL",
+        "created_at": (
+            "COALESCE(created_at, CURRENT_TIMESTAMP)"
+            if "created_at" in existing_columns
+            else "CURRENT_TIMESTAMP"
+        ),
+        "updated_at": (
+            "COALESCE(updated_at, CURRENT_TIMESTAMP)"
+            if "updated_at" in existing_columns
+            else "CURRENT_TIMESTAMP"
+        ),
+    }
+    insert_columns = tuple(select_expressions)
+    connection.execute(
+        text(
+            "ALTER TABLE shift_manager_notifications "
+            "RENAME TO shift_manager_notifications_old"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE TABLE shift_manager_notifications ("
+            "id INTEGER NOT NULL, "
+            "machine_code VARCHAR(16) NOT NULL, "
+            "current_order_no TEXT NOT NULL, "
+            "next_order_no TEXT NOT NULL, "
+            "informed BOOLEAN NOT NULL DEFAULT 0, "
+            "informed_at DATETIME, "
+            "created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL, "
+            "PRIMARY KEY (id)"
+            ")"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO shift_manager_notifications ("
+            + ", ".join(insert_columns)
+            + ") SELECT "
+            + ", ".join(select_expressions[column] for column in insert_columns)
+            + " FROM shift_manager_notifications_old"
+        )
+    )
+    connection.execute(text("DROP TABLE shift_manager_notifications_old"))
 
 
 def _table_columns(connection, table_name: str) -> set[str]:

@@ -1,12 +1,12 @@
-import { apiJson } from "../api.js?v=20260626-breakdown-context-v2";
+import { apiJson } from "../api.js?v=20260629-shift-manager-labels-v1";
 import {
   renderAmountControlShiftList,
   renderAuxiliarySubmissionList,
   renderBreakdownList,
   renderEntryList,
   renderListError,
-} from "./render.js?v=20260626-breakdown-context-v2";
-import { entryTime } from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./render.js?v=20260629-shift-manager-labels-v1";
+import { entryTime } from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 export async function loadEntryLists() {
   await Promise.all([loadRecentEntries(), loadPendingEntries()]);

@@ -4,15 +4,15 @@ import {
   ENTRY_PAYLOAD_FIELDS,
   ENTRY_PAYLOAD_SCHEMA_VERSION,
   TEMPERATURE_REPEAT_PAYLOAD_FIELDS,
-} from "./constants.js?v=20260626-breakdown-context-v2";
-import { localIsoDate } from "./dates.js?v=20260626-breakdown-context-v2";
-import { selectedShopOrderOption } from "./shop-orders.js?v=20260626-breakdown-context-v2";
-import { expandTemperatureShorthand } from "./temperature.js?v=20260626-breakdown-context-v2";
+} from "./constants.js?v=20260629-shift-manager-labels-v1";
+import { localIsoDate } from "./dates.js?v=20260629-shift-manager-labels-v1";
+import { selectedShopOrderOption } from "./shop-orders.js?v=20260629-shift-manager-labels-v1";
+import { expandTemperatureShorthand } from "./temperature.js?v=20260629-shift-manager-labels-v1";
 import {
   cleanOptional,
   cleanRequired,
   numericContextId,
-} from "./utils.js?v=20260626-breakdown-context-v2";
+} from "./utils.js?v=20260629-shift-manager-labels-v1";
 
 export function entryRequestBody(form, contextId) {
   const formData = new FormData(form);
