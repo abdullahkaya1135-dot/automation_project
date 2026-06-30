@@ -4,5 +4,4 @@ jinja2
 python-dotenv
 sqlalchemy
 openpyxl
-pytest
 httpx

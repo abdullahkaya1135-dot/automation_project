@@ -1,0 +1,16 @@
+# ruff: noqa: F401
+from .production_loss_service_cases import (
+    test_create_production_loss_report_allocates_untimed_standalone_breakdown_by_unique_shift,
+    test_create_production_loss_report_calculates_completed_shifts_for_open_actual,
+    test_create_production_loss_report_does_not_double_count_linked_breakdown,
+    test_create_production_loss_report_ignores_planned_window_for_empty_shift_loss,
+    test_create_production_loss_report_matches_label_cycle_by_job_order,
+    test_create_production_loss_report_prefers_label_stock_rows,
+    test_create_production_loss_report_preserves_operation_history_fetch_error,
+    test_create_production_loss_report_requires_operation_history_rows,
+    test_create_production_loss_report_skips_rows_without_realized_cycle,
+    test_create_production_loss_report_splits_standalone_timed_breakdown_by_shift,
+    test_create_production_loss_report_uses_latest_realized_cycle_entry,
+    test_create_production_loss_report_uses_realized_entry_cycle_for_loss_calculation,
+    test_create_production_loss_report_uses_realized_operation_statistics_window,
+)

@@ -1,0 +1,15 @@
+# ruff: noqa: F401
+from .excel_service_cases import (
+    test_append_entries_to_workbook_writes_bulk_rows_with_one_backup,
+    test_append_entry_to_workbook_blanks_first_section_injection_settings,
+    test_append_entry_to_workbook_blanks_second_section_conditioning_fields,
+    test_append_entry_to_workbook_prunes_old_backups,
+    test_append_entry_to_workbook_raises_locked_error_when_save_is_denied,
+    test_append_entry_to_workbook_raises_typed_error_for_missing_file,
+    test_append_entry_to_workbook_raises_typed_error_for_open_permission_denied,
+    test_append_entry_to_workbook_writes_next_real_row_and_creates_backup,
+    test_check_excel_reachable_reports_header_mismatch,
+    test_concurrent_appends_are_serialized_with_unique_rows,
+    test_detect_last_value_row_ignores_formatting_only_rows,
+    test_validate_headers_rejects_changed_workbook_shape,
+)

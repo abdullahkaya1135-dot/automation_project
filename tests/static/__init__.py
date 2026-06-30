@@ -1,0 +1,1 @@
+# Static asset test suites.

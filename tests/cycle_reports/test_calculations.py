@@ -1,0 +1,18 @@
+# ruff: noqa: F401
+from .cycle_report_service_cases import (
+    test_cycle_report_exact_cycle_match_wins_before_near_match,
+    test_cycle_report_leaves_optimum_blank_when_near_match_is_out_of_range,
+    test_cycle_report_near_match_tie_uses_higher_candidate_value,
+    test_cycle_report_tries_neck_fallback_before_gram_fallback,
+    test_cycle_report_uses_nearest_gram_when_neck_matches_within_range,
+    test_cycle_report_uses_nearest_neck_when_gram_matches_within_range,
+    test_normalize_machine_group_aliases,
+    test_parse_part_description_extracts_neck_and_gram_values,
+)
+from .cycle_time_analysis_comparison_cases import (
+    test_compare_with_db_optimum_keeps_nearest_lookup_diagnostic_only,
+    test_compare_with_db_optimum_matches_exact_machine_group_agiz_and_gramaj,
+    test_compare_with_db_optimum_reports_ambiguity_when_machine_cannot_resolve,
+    test_compare_with_db_optimum_reports_missing_machine_group,
+    test_resolve_exact_optimum_uses_machine_when_group_key_has_conflicting_cycles,
+)

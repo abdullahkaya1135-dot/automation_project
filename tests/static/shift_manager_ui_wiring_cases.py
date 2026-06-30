@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 UI_SOURCE_PATHS = (
     ROOT / "app" / "templates" / "pages" / "reports.html",
     ROOT / "app" / "templates" / "partials" / "shift_manager_section.html",

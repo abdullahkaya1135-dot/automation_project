@@ -11,7 +11,7 @@ from app.domain import request_settings, request_values, shifts
 from app.web import pages
 
 ISTANBUL_TIMEZONE = timezone(timedelta(hours=3), "Europe/Istanbul")
-EXPECTED_STATIC_ASSET_VERSION = "20260629-label-material-availability-v1"
+EXPECTED_STATIC_ASSET_VERSION = "20260630-ifs-planning-first-job-v1"
 
 
 def _request_with_state(**state_values):
